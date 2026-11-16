@@ -59,3 +59,7 @@ camera.lookAt({0, -5, 2}, {0, 0, 0});
 camera.perspective(45, 16.0f / 9, 0.1f, 100);
 renderer.render(*root, camera, 0, 0, width, height);
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
