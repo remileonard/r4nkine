@@ -6,3 +6,4 @@ out/
 *.ppm
 !tests/data/*.ppm
 CMakeUserPresets.json
+vcpkg_installed/

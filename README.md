@@ -53,20 +53,30 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Building
 
+The dependencies are managed by [vcpkg](https://vcpkg.io) in manifest
+mode (`vcpkg.json`):
+
+| Dependency | For | Feature |
+| --- | --- | --- |
+| stb | the PNG, JPEG, BMP, TGA and GIF images | always |
+| cgltf | glTF 2.0 | always |
+| SDL2 | r4fly, the viewer | `viewer` (default) |
+
+With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
+use its toolchain, and vcpkg installs the dependencies at configure time:
+
 ```
-cmake -S . -B build
-cmake --build build
-ctest --test-dir build
+cmake --preset linux          # or windows, macos, linux-debug
+cmake --build --preset linux
+ctest --preset linux
 ```
 
-The library needs only a C++17 compiler. stb_image (public domain) and
-cgltf (MIT) are vendored in `third_party/`. `r4fly` needs SDL2 (`libsdl2-dev`,
-vcpkg `sdl2`, or the SDL2 development package on Windows). Set
-`-DR4_BUILD_APPS=OFF` to build without it.
+Without the viewer (and without SDL2), add `-DR4_BUILD_APPS=OFF`: the
+`viewer` feature of the manifest is then left out.
 
 ```
-build/r4fly model.obj other.obj
-build/r4fly -F pftown:pftexture:pfmodel pftown/town.flt
+out/build/linux/r4fly model.obj other.obj
+out/build/linux/r4fly -F pftown:pftexture:pfmodel pftown/town.flt
 ```
 
 ## Using it
@@ -103,5 +113,4 @@ root->addChild(forest);
 
 ## License
 
-MIT, see [LICENSE](LICENSE). `third_party/stb_image.h` is public domain,
-`third_party/cgltf.h` is MIT.
+MIT, see [LICENSE](LICENSE).

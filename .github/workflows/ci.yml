@@ -5,26 +5,38 @@ on:
   pull_request:
 
 jobs:
+  # the library and the tests; the viewer needs the X11/Wayland development
+  # packages for the SDL2 of vcpkg, it is built on Windows
   linux:
     runs-on: ubuntu-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
       - uses: actions/checkout@v4
-      - name: Install SDL2
-        run: sudo apt-get update && sudo apt-get install -y libsdl2-dev
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset linux -DR4_BUILD_APPS=OFF
       - name: Build
-        run: cmake --build build -j
+        run: cmake --build --preset linux -j
       - name: Test
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --preset linux --output-on-failure
 
   windows:
     runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
     steps:
       - uses: actions/checkout@v4
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
       - name: Configure
-        run: cmake -S . -B build -DR4_BUILD_APPS=OFF
+        run: cmake --preset windows
       - name: Build
-        run: cmake --build build --config Release
+        run: cmake --build --preset windows
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
+        run: ctest --preset windows --output-on-failure

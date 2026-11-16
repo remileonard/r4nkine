@@ -1,0 +1,21 @@
+{
+  "name": "r4nkine",
+  "version": "0.2.0",
+  "description": "A 3D rendering library in the spirit of IRIS Performer",
+  "license": "MIT",
+  "dependencies": [
+    "stb",
+    "cgltf"
+  ],
+  "default-features": [
+    "viewer"
+  ],
+  "features": {
+    "viewer": {
+      "description": "r4fly, the model viewer (SDL2)",
+      "dependencies": [
+        "sdl2"
+      ]
+    }
+  }
+}

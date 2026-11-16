@@ -1,5 +1,5 @@
-// gltf_loader.cpp - glTF 2.0 (.gltf with its buffers, .glb), with cgltf (MIT,
-// third_party/cgltf.h).
+// gltf_loader.cpp - glTF 2.0 (.gltf with its buffers, .glb), with cgltf (MIT, the
+// cgltf port of vcpkg).
 //
 // Read: the node hierarchy (matrices or translation, rotation, scale), the
 // meshes and all their primitive modes, positions, normals, the first

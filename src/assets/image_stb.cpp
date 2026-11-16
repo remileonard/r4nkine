@@ -1,5 +1,5 @@
 // image_stb.cpp - the common image formats (PNG, JPEG, BMP, TGA, GIF) with
-// stb_image (public domain, third_party/stb_image.h).
+// stb_image (public domain, the stb port of vcpkg).
 #include "r4/assets/model.h"
 
 #define STB_IMAGE_IMPLEMENTATION

@@ -38,6 +38,18 @@ gpu       Device: buffers, textures, shaders, pipelines, draws
 core      math: Vec, Mat4 (column-major), Box, Sphere, Frustum
 ```
 
+## Dependencies
+
+The dependencies come from vcpkg in manifest mode (`vcpkg.json`, with the
+baseline in `vcpkg-configuration.json`, the same as libRealSpace):
+
+- **stb**: the common image formats.
+- **cgltf**: glTF 2.0.
+- **SDL2**: only for r4fly, the `viewer` feature.
+
+The library itself needs no graphics header and no GL loader, because the
+OpenGL functions are loaded at run time.
+
 ## Conventions
 
 - **Space**: Z-up, as in Performer and flight simulators. X is right, Y is
