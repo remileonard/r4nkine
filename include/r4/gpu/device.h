@@ -1,0 +1,174 @@
+// r4/gpu/device.h - the interface of the backends.
+//
+// Nothing above r4::gpu calls a graphics API: the renderer creates its
+// resources through a Device and records draws through it. The model is that
+// of the explicit APIs (Vulkan, Metal, D3D12): resources are opaque handles,
+// the states are baked into pipelines made in advance, and the uniforms live
+// in uniform buffers bound by slot. OpenGL 3.3 emulates it easily.
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace r4::gpu {
+
+// handles: 0 is none
+struct BufferHandle {
+    uint32_t id = 0;
+    explicit operator bool() const { return id != 0; }
+};
+struct TextureHandle {
+    uint32_t id = 0;
+    explicit operator bool() const { return id != 0; }
+};
+struct ShaderHandle {
+    uint32_t id = 0;
+    explicit operator bool() const { return id != 0; }
+};
+struct PipelineHandle {
+    uint32_t id = 0;
+    explicit operator bool() const { return id != 0; }
+    bool operator==(PipelineHandle o) const { return id == o.id; }
+    bool operator!=(PipelineHandle o) const { return id != o.id; }
+};
+
+enum class BufferUsage { Vertex, Index, Uniform };
+enum class IndexType { U16, U32 };
+
+enum class TextureFormat { R8, RG8, RGB8, RGBA8 };
+enum class Filter { Nearest, Linear };
+enum class Wrap { Repeat, Clamp, Mirror };
+
+struct TextureDesc {
+    int width = 0, height = 0;
+    TextureFormat format = TextureFormat::RGBA8;
+    Filter minFilter = Filter::Linear, magFilter = Filter::Linear;
+    bool mipmaps = true;
+    Wrap wrapS = Wrap::Repeat, wrapT = Wrap::Repeat;
+};
+
+enum class AttribType { Float, UByte, Short };
+
+struct VertexAttrib {
+    uint32_t location = 0;   // the shader input
+    uint32_t components = 3; // 1 to 4
+    AttribType type = AttribType::Float;
+    bool normalized = false;
+    uint32_t offset = 0;
+};
+
+// the attributes read from one vertex buffer slot
+struct VertexStream {
+    uint32_t stride = 0;
+    bool perInstance = false; // one element per instance, not per vertex
+    std::vector<VertexAttrib> attribs;
+};
+
+struct VertexLayout {
+    std::vector<VertexStream> streams; // indexed by buffer slot
+};
+
+enum class Primitive { Triangles, Lines, Points, TriangleStrip };
+enum class CullMode { None, Back, Front };
+enum class BlendMode { Opaque, Alpha, Additive, Premultiplied };
+enum class CompareOp { Never, Less, LessEqual, Equal, Greater, Always };
+
+// the sources of a shader program. The GL backend takes GLSL 330; the other
+// backends will take the same sources cross-compiled (SPIR-V, MSL...).
+// Uniform blocks are bound by name: their slot is listed here, so that the
+// sources need no binding qualifier (absent from GLSL 330). Samplers too.
+struct ShaderDesc {
+    std::string vertex, fragment;
+    std::vector<std::pair<std::string, uint32_t>> uniformBlocks; // name, slot
+    std::vector<std::pair<std::string, uint32_t>> samplers;      // name, texture slot
+    std::string debugName;
+};
+
+struct PipelineDesc {
+    ShaderHandle shader;
+    VertexLayout layout;
+    Primitive primitive = Primitive::Triangles;
+    CullMode cull = CullMode::Back;
+    bool frontCCW = true;
+    BlendMode blend = BlendMode::Opaque;
+    bool depthTest = true, depthWrite = true;
+    CompareOp depthCompare = CompareOp::LessEqual;
+    bool wireframe = false;
+    float polygonOffsetFactor = 0, polygonOffsetUnits = 0; // decals, outlines
+};
+
+struct ClearValues {
+    bool color = true, depth = true;
+    float r = 0, g = 0, b = 0, a = 1;
+    float depthValue = 1;
+};
+
+struct Limits {
+    uint32_t uniformBufferAlignment = 256;
+    uint32_t maxUniformBlockSize = 16384;
+    uint32_t maxTextureSize = 2048;
+};
+
+struct FrameStats {
+    uint32_t drawCalls = 0, triangles = 0, pipelineChanges = 0, textureChanges = 0;
+};
+
+class Device {
+public:
+    virtual ~Device() = default;
+
+    virtual const char *name() const = 0;
+    virtual Limits limits() const = 0;
+
+    virtual BufferHandle createBuffer(BufferUsage usage, const void *data, size_t size, bool dynamic) = 0;
+    // replaces bytes of a dynamic buffer
+    virtual void updateBuffer(BufferHandle b, size_t offset, const void *data, size_t size) = 0;
+    virtual void destroyBuffer(BufferHandle b) = 0;
+
+    // pixels: rows from the bottom, tightly packed; may be null
+    virtual TextureHandle createTexture(const TextureDesc &desc, const void *pixels) = 0;
+    virtual void destroyTexture(TextureHandle t) = 0;
+
+    // null handle on error, the log in lastError()
+    virtual ShaderHandle createShader(const ShaderDesc &desc) = 0;
+    virtual void destroyShader(ShaderHandle s) = 0;
+    virtual PipelineHandle createPipeline(const PipelineDesc &desc) = 0;
+    virtual void destroyPipeline(PipelineHandle p) = 0;
+    virtual const std::string &lastError() const = 0;
+
+    // a pass on the default framebuffer
+    virtual void beginPass(int x, int y, int width, int height, const ClearValues &clear) = 0;
+    virtual void endPass() = 0;
+
+    virtual void bindPipeline(PipelineHandle p) = 0;
+    virtual void bindVertexBuffer(uint32_t slot, BufferHandle b, size_t offset = 0) = 0;
+    virtual void bindIndexBuffer(BufferHandle b, IndexType type) = 0;
+    virtual void bindUniformBuffer(uint32_t slot, BufferHandle b, size_t offset, size_t size) = 0;
+    virtual void bindTexture(uint32_t slot, TextureHandle t) = 0;
+
+    virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0, uint32_t instances = 1) = 0;
+    virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0,
+                             uint32_t instances = 1) = 0;
+
+    // reads the pixels of the last pass, RGBA8 from the bottom row
+    virtual bool readPixels(int x, int y, int width, int height, void *rgba) = 0;
+
+    // the statistics since the last call, then reset
+    virtual FrameStats takeStats() = 0;
+
+    // around the drawing of the device inside a host that also draws with the
+    // same API (a game in fixed-pipeline OpenGL): the state of the host is
+    // saved before and given back after
+    virtual void beginHostInterop() {}
+    virtual void endHostInterop() {}
+};
+
+// the OpenGL 3.3 backend, in the GL context current on this thread (a
+// compatibility context works too). getProc: the function loader of the
+// window system (SDL_GL_GetProcAddress, glfwGetProcAddress...).
+std::unique_ptr<Device> createGLDevice(void *(*getProc)(const char *name), std::string *error = nullptr);
+
+} // namespace r4::gpu
