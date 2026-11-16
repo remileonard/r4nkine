@@ -15,15 +15,32 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   **OpenGL 3.3** backend. The backend loads its functions at run time and
   works in core or compatibility contexts. It caches state and can save and
   restore the GL state of a host program.
-- `r4::assets`: one neutral model format, with Wavefront **OBJ/MTL**, **SGI**
-  (`.rgb`, `.rgba`, `.bw`; RLE or verbatim, 8 or 16 bits) and **PPM/PGM**
-  loaders.
+- `r4::assets`: one neutral model format, and loaders for the formats of
+  the SGI demos and their era:
+
+  | Format | Files | From |
+  | --- | --- | --- |
+  | Wavefront OBJ/MTL | `.obj` | the smooth demos, everything else |
+  | libgobj | `.d` | the flight simulator (state bits, transforms, lit and colored sections) |
+  | YAODL | `.ydl`, `.defs` | powerflip and flip (polygons, NURBS, textures, sphere maps) |
+  | flip objects | `.bin` | flip |
+  | IRIS Performer | `.pfb` | Mekton, perfly; versions 1 and 2 (scrambled coordinates) |
+  | Designer's Workbench | `.dwb` | the F-18 demo (encrypted textures) |
+  | OpenFlight | `.flt` | 11, 12 and 14.2: palettes, subfaces, LOD, external references, `.attr` |
+  | line drawings | `.gset` | the head-up display of Mekton |
+
+  The image formats are **SGI** (`.rgb`, `.rgba`, `.bw`, `.int`, `.inta`; RLE
+  or verbatim, 8 or 16 bits), **PPM/PGM**, and the scrambled **5551E**
+  images of perfly.face. Textures and external references are searched next
+  to the model and in the search paths (`addSearchPath`, `-F` in r4fly).
 - `r4::scene`: Group, Geode, Switch and LOD nodes. Bounding spheres are kept
   up to date lazily, so the graph can change at run time.
 - `r4::render`: culling of whole subtrees, a draw list sorted by state,
-  per-frame uniform upload, and per-pixel Blinn-Phong with fog.
+  per-frame uniform upload, and per-pixel Blinn-Phong with fog. Triangles,
+  lines and points are drawn; decals and sphere maps are supported.
 - `r4fly`: the viewer. Use the trackball, `w` for wireframe and `s` for
-  statistics; `-snap` saves a frame.
+  statistics. `-snap` saves a frame, `-view` places the eye, `-state`
+  chooses the state bits of the models, and `-F` gives the search paths.
 
 ## Building
 
@@ -39,6 +56,7 @@ vcpkg `sdl2`, or the SDL2 development package on Windows). Set
 
 ```
 build/r4fly model.obj other.obj
+build/r4fly -F pftown:pftexture:pfmodel pftown/town.flt
 ```
 
 ## Using it

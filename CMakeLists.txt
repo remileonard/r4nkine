@@ -14,6 +14,13 @@ add_library(r4nkine
     src/gpu/gl/gl_device.cpp
     src/assets/model.cpp
     src/assets/obj_loader.cpp
+    src/assets/gobj_loader.cpp
+    src/assets/yaodl_loader.cpp
+    src/assets/flipbin_loader.cpp
+    src/assets/pfb_loader.cpp
+    src/assets/dwb_loader.cpp
+    src/assets/gset_loader.cpp
+    src/assets/flt_loader.cpp
     src/scene/node.cpp
     src/render/renderer.cpp
 )

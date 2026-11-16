@@ -31,6 +31,7 @@ struct MaterialBlock {
     float specular[4]; // w: shininess
     float emissive[4];
     float flags[4]; // texture, alpha cutoff (0: none), vertex colors, unlit
+    float flags2[4]; // sphere map
 };
 
 const char *kVertexShader = R"(#version 330
@@ -65,7 +66,7 @@ layout(std140) uniform Frame {
     vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams;
 };
 layout(std140) uniform Material {
-    vec4 diffuse, ambient, specular, emissive, flags;
+    vec4 diffuse, ambient, specular, emissive, flags, flags2;
 };
 uniform sampler2D diffuseMap;
 in vec3 vNormal;
@@ -75,16 +76,27 @@ in vec4 vColor;
 out vec4 fragColor;
 void main() {
     vec4 base = diffuse;
-    if (flags.x > 0.5) base *= texture(diffuseMap, vUV);
+    vec2 uv = vUV;
+    if (flags2.x > 0.5) {
+        // the sphere map of IRIS GL and OpenGL 1.x
+        vec3 u = normalize(vPosition);
+        vec3 n = normalize(vNormal);
+        if (dot(n, u) > 0.0) n = -n;
+        vec3 r = reflect(u, n);
+        float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
+        uv = r.xy / m + 0.5;
+    }
+    if (flags.x > 0.5) base *= texture(diffuseMap, uv);
     if (flags.z > 0.5) base *= vColor;
     if (flags.y > 0.0 && base.a < flags.y) discard;
     vec3 color;
-    if (flags.w > 0.5) {
-        color = base.rgb;
+    if (flags.w > 0.5 || dot(vNormal, vNormal) < 1e-12) {
+        color = base.rgb; // unlit, or no normal (lines, points)
     } else {
-        // Blinn-Phong, both faces lit
+        // Blinn-Phong, both faces lit: the normal turned towards the eye
+        // (whatever the winding of the faces, as the two-sided lighting)
         vec3 n = normalize(vNormal);
-        if (!gl_FrontFacing) n = -n;
+        if (dot(n, vPosition) > 0.0) n = -n;
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
         float nl = max(dot(n, l), 0.0);
@@ -164,19 +176,28 @@ bool Renderer::createShaders() {
     return (bool)shader_;
 }
 
-gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m) {
+gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
     bool blend = m.alpha == assets::AlphaMode::Blend;
-    uint32_t key = (blend ? 1u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u);
+    uint32_t key = (blend ? 1u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) |
+                   (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8;
     auto it = pipelines_.find(key);
     if (it != pipelines_.end())
         return it->second;
     gpu::PipelineDesc d;
     d.shader = shader_;
     d.layout = vertexLayout();
-    d.cull = m.doubleSided || wireframe_ ? gpu::CullMode::None : gpu::CullMode::Back;
+    d.primitive = primitive == assets::Primitive::Lines    ? gpu::Primitive::Lines
+                  : primitive == assets::Primitive::Points ? gpu::Primitive::Points
+                                                           : gpu::Primitive::Triangles;
+    bool tris = primitive == assets::Primitive::Triangles;
+    d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::None : gpu::CullMode::Back;
     d.blend = blend ? gpu::BlendMode::Alpha : gpu::BlendMode::Opaque;
-    d.depthWrite = !blend;
-    d.wireframe = wireframe_;
+    d.depthWrite = !blend && m.depthWrite;
+    d.wireframe = wireframe_ && tris;
+    if (m.decal) {
+        d.polygonOffsetFactor = -1;
+        d.polygonOffsetUnits = -2;
+    }
     gpu::PipelineHandle p = device_.createPipeline(d);
     pipelines_[key] = p;
     return p;
@@ -189,6 +210,8 @@ gpu::TextureHandle Renderer::uploadImage(const assets::Image &image, bool mipmap
     d.width = image.width;
     d.height = image.height;
     d.mipmaps = mipmaps;
+    d.wrapS = image.clampS ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
+    d.wrapT = image.clampT ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
     // grey images are expanded: the shader reads RGBA
     std::vector<uint8_t> rgba;
     const void *pixels = image.pixels.data();
@@ -226,6 +249,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     m->indices = device_.createBuffer(gpu::BufferUsage::Index, mesh.indices.data(),
                                       mesh.indices.size() * sizeof(uint32_t), false);
     m->indexCount = (uint32_t)mesh.indices.size();
+    m->primitive = mesh.primitive;
     Box b = mesh.bounds;
     if (b.empty())
         for (const assets::Vertex &v : mesh.vertices)
@@ -255,6 +279,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.flags[1] = p.alpha == assets::AlphaMode::Mask ? p.alphaCutoff : 0.0f;
     b.flags[2] = p.vertexColors ? 1.0f : 0.0f;
     b.flags[3] = p.shading == assets::Shading::Unlit ? 1.0f : 0.0f;
+    b.flags2[0] = p.sphereMap ? 1.0f : 0.0f;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::Uniform, &b, sizeof b, false);
     return m;
 }
@@ -276,7 +301,17 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     for (size_t i = 0; i < model.nodes.size(); i++) {
         const assets::Node &n = model.nodes[i];
         scene::NodePtr node;
-        if (!n.meshes.empty()) {
+        if (n.kind == assets::NodeKind::Switch) {
+            auto sw = scene::make<scene::Switch>();
+            sw->setValue(n.switchValue == -1 ? scene::Switch::kAll : n.switchValue < -1 ? scene::Switch::kNone : n.switchValue);
+            node = sw;
+        } else if (n.kind == assets::NodeKind::LOD) {
+            auto lod = scene::make<scene::LOD>();
+            lod->setRanges(n.lodRanges);
+            if (n.hasLodCenter)
+                lod->setCenter(n.lodCenter);
+            node = lod;
+        } else if (!n.meshes.empty()) {
             auto g = scene::make<scene::Geode>();
             for (int mi : n.meshes) {
                 const assets::Mesh &mesh = model.meshes[mi];
@@ -290,18 +325,24 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
         }
         node->setName(n.name);
         node->setMatrix(n.local);
+        node->setMask(n.mask);
         nodes[i] = node;
     }
     for (size_t i = 0; i < model.nodes.size(); i++)
         for (int c : model.nodes[i].children)
             if (c > 0 && c < (int)nodes.size())
                 nodes[i]->addChild(nodes[c]);
-    return nodes.empty() ? scene::make<scene::Group>() : nodes[0];
+    if (nodes.empty())
+        return scene::make<scene::Group>();
+    nodes[0]->setStateFilter(model.defaultState);
+    return nodes[0];
 }
 
-void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, const Camera &cam) {
-    if (!(node.mask() & cam.mask))
+void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
+                    const Camera &cam) {
+    if (!(node.mask() & state))
         return;
+    state &= node.stateFilter();
     stats_.nodesVisited++;
     if (!inside) {
         Frustum::Result r = frustum.test(node.bounds().transformed(parent));
@@ -324,7 +365,7 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
             item.world = world;
             Vec3 c = world.transformPoint(d.mesh->bounds.center);
             item.depth = length(c - cam.position);
-            item.pipeline = pipelineFor(mat->params);
+            item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
             item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 |
                        (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
             (mat->params.alpha == assets::AlphaMode::Blend ? transparent_ : opaque_).push_back(item);
@@ -337,7 +378,7 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
         auto &sw = static_cast<scene::Switch &>(node);
         for (size_t i = 0; i < children.size(); i++)
             if (sw.isActive((int)i))
-                cull(*children[i], world, frustum, inside, cam);
+                cull(*children[i], world, frustum, inside, state, cam);
         break;
     }
     case scene::NodeType::LOD: {
@@ -345,12 +386,12 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
         Vec3 c = world.transformPoint(lod.center());
         int i = lod.select(length(c - cam.position));
         if (i >= 0)
-            cull(*children[i], world, frustum, inside, cam);
+            cull(*children[i], world, frustum, inside, state, cam);
         break;
     }
     default:
         for (const scene::NodePtr &c : children)
-            cull(*c, world, frustum, inside, cam);
+            cull(*c, world, frustum, inside, state, cam);
     }
 }
 
@@ -362,7 +403,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         return;
 
     Mat4 viewProj = cam.projection * cam.view;
-    cull(root, Mat4::identity(), Frustum::fromMatrix(viewProj), false, cam);
+    cull(root, Mat4::identity(), Frustum::fromMatrix(viewProj), false, cam.mask, cam);
     std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) { return a.key < b.key; });
     std::sort(transparent_.begin(), transparent_.end(),
               [](const DrawItem &a, const DrawItem &b) { return a.depth > b.depth; });

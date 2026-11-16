@@ -57,6 +57,54 @@ Box Model::bounds() const {
     return box;
 }
 
+static std::vector<std::string> &paths() {
+    static std::vector<std::string> p;
+    return p;
+}
+
+void addSearchPath(const std::string &folder) {
+    if (folder.empty())
+        return;
+    std::string f = folder;
+    if (f.back() != '/' && f.back() != '\\')
+        f += '/';
+    paths().push_back(f);
+}
+
+const std::vector<std::string> &searchPaths() { return paths(); }
+
+static bool fileExists(const std::string &p) {
+    FILE *f = std::fopen(p.c_str(), "rb");
+    if (!f)
+        return false;
+    std::fclose(f);
+    return true;
+}
+
+std::string findAsset(const std::string &dir, const std::string &name) {
+    if (name.empty())
+        return {};
+    if (name[0] == '/' || name[0] == '\\') {
+        if (fileExists(name))
+            return name;
+    } else {
+        if (fileExists(dir + name))
+            return dir + name;
+        for (const std::string &p : paths())
+            if (fileExists(p + name))
+                return p + name;
+    }
+    size_t s = name.find_last_of("/\\");
+    std::string base = s == std::string::npos ? name : name.substr(s + 1);
+    for (const std::string &p : {dir + base, dir + "../textures/" + base, dir + "textures/" + base, base})
+        if (fileExists(p))
+            return p;
+    for (const std::string &p : paths())
+        if (fileExists(p + base))
+            return p + base;
+    return {};
+}
+
 static std::string extensionOf(const std::string &path) {
     size_t dot = path.find_last_of('.');
     size_t slash = path.find_last_of("/\\");
@@ -67,12 +115,26 @@ static std::string extensionOf(const std::string &path) {
     return e;
 }
 
-std::vector<std::string> modelExtensions() { return {"obj"}; }
+std::vector<std::string> modelExtensions() { return {"obj", "d", "ydl", "defs", "bin", "pfb", "dwb", "gset", "flt"}; }
 
 std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
     std::string ext = extensionOf(path);
     if (ext == "obj")
         return loadOBJ(path, error);
+    if (ext == "d")
+        return loadGObj(path, error);
+    if (ext == "ydl" || ext == "defs")
+        return loadYAODL(path, error);
+    if (ext == "bin")
+        return loadFlipBin(path, error);
+    if (ext == "pfb")
+        return loadPFB(path, error);
+    if (ext == "dwb")
+        return loadDWB(path, error);
+    if (ext == "gset")
+        return loadGSet(path, error);
+    if (ext == "flt")
+        return loadFLT(path, error);
     if (error)
         *error = "unknown model format: " + path;
     return nullptr;
@@ -235,6 +297,60 @@ static bool loadPNM(const std::vector<uint8_t> &d, Image &img, std::string *erro
     return true;
 }
 
+// the scrambled 16-bit images of perfly.face (.5551E): "SEn", the count of
+// inserted bytes, the width, the height (big-endian ints), then the bytes
+// xor'ed with 13 plus their position, runs of junk bytes inserted between
+// runs of image bytes, the image written from its last byte back to its
+// first; the pixels are RGBA 5551
+static void numbers5551E(unsigned &s, unsigned &count, unsigned &skip) {
+    const unsigned X = 10733, Y = 951;
+    count = ((X >> s) + (Y << s)) % 0x7fffffffu;
+    skip = ((X << s) + (Y >> s)) % 37;
+    s = (s + 5) % 7;
+}
+
+static bool load5551E(const std::vector<uint8_t> &in, Image &img, std::string *error) {
+    if (in.size() < 15 || std::memcmp(in.data(), "SEn", 3) != 0) {
+        if (error)
+            *error = "not a 5551E image";
+        return false;
+    }
+    int w = (int)be32(&in[7]), h = (int)be32(&in[11]);
+    if (w <= 0 || h <= 0 || w > 16384 || h > 16384) {
+        if (error)
+            *error = "bad 5551E size";
+        return false;
+    }
+    std::vector<uint8_t> out((size_t)w * h * 2, 0);
+    long pos = (long)out.size() - 1;
+    unsigned s = 2, count, skip;
+    numbers5551E(s, count, skip);
+    for (size_t i = 0; i + 15 < in.size() && pos >= 0; i++) {
+        uint8_t b = (uint8_t)(in[15 + i] ^ ((13 + i) & 0xff));
+        if (count) {
+            count--;
+            out[pos--] = b;
+        } else if (skip) {
+            skip--;
+        } else {
+            numbers5551E(s, count, skip);
+            out[pos--] = b;
+        }
+    }
+    img.width = w;
+    img.height = h;
+    img.channels = 4;
+    img.pixels.resize((size_t)w * h * 4);
+    for (size_t i = 0; i < (size_t)w * h; i++) {
+        unsigned v = (unsigned)out[2 * i] << 8 | out[2 * i + 1];
+        img.pixels[4 * i] = (uint8_t)(((v >> 11) & 31) * 255 / 31);
+        img.pixels[4 * i + 1] = (uint8_t)(((v >> 6) & 31) * 255 / 31);
+        img.pixels[4 * i + 2] = (uint8_t)(((v >> 1) & 31) * 255 / 31);
+        img.pixels[4 * i + 3] = v & 1 ? 255 : 0;
+    }
+    return true;
+}
+
 bool loadImage(const std::string &path, Image &img, std::string *error) {
     std::vector<uint8_t> data;
     if (!readFile(path, data)) {
@@ -249,6 +365,8 @@ bool loadImage(const std::string &path, Image &img, std::string *error) {
         ok = loadSGI(data, img, error);
     else if (data.size() >= 2 && data[0] == 'P' && (data[1] == '6' || data[1] == '5'))
         ok = loadPNM(data, img, error);
+    else if (data.size() >= 3 && std::memcmp(data.data(), "SEn", 3) == 0)
+        ok = load5551E(data, img, error);
     else {
         if (error)
             *error = "unknown image format: " + path;

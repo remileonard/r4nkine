@@ -30,8 +30,9 @@ apps      r4fly (the viewer, heir of perfly), demos
 render    cull → draw list → sort → batch/instance → passes; materials
 scene     Node, Group, Geode, Switch, LOD (+ Instancer, Billboard to come)
 terrain   (to come) blocks, LOD, seams, placement rules
-assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, SGI, PPM
-          (to come: glTF 2.0, OpenFlight, pfb, dwb, RealSpace IFF, PNG...)
+assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
+          YAODL, flip .bin, pfb, dwb, OpenFlight, gset; SGI, PPM, 5551E
+          (to come: glTF 2.0, RealSpace IFF, PNG/JPEG...)
 gpu       Device: buffers, textures, shaders, pipelines, draws
           backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (to come)
 core      math: Vec, Mat4 (column-major), Box, Sphere, Frustum
@@ -99,11 +100,44 @@ drawables) marks it and its ancestors dirty, and the next `bounds()` call
 recomputes only what was marked. The world can therefore change at run
 time, nodes added or removed, without full updates.
 
+## The old formats
+
+Each loader is a port of the loader of legacy_opengl_demo. The original
+behaviors are kept, translated into the neutral format:
+
+- **State bits (libgobj)**: the statebits of the flight objects become node
+  masks. The model's `defaultState` is the state of the original `drawobj`
+  call (body, landing gear and weapons), applied as the state filter of the
+  model's root.
+- **Modes**: culled back faces, transparency and no depth writes (flames)
+  are material flags. Subfaces (OpenFlight) and layers (pfb, dwb) are
+  `decal` materials, drawn with a polygon offset.
+- **YAODL execution**: YAODL objects are executed as in the original (the
+  attributes pushed and popped per element), and the drawing calls are
+  recorded into meshes. The matrices are applied to the vertices.
+- **YAODL extras**: NURBS surfaces are tessellated, but their trimming
+  curves are ignored. Sphere maps are done in the shader, and the linear
+  texture coordinate generation on the CPU.
+- **Switches and LODs**: sequences show their first frame, LODs keep their
+  ranges, and switches their value.
+- **Billboards**: billboard faces are placed at their centers. They do not
+  turn yet; a Billboard node comes with step 2.
+- **Encrypted data**: the coordinates of version 2 pfb files and the
+  textures of the F-18 demo are decrypted. Some copies of the F-18 textures
+  carry the encryption mark but are already in clear; the loader keeps the
+  smoother image.
+- **Orientation**: the Y-up formats (OBJ, libgobj, YAODL, flip, Y-up dwb)
+  turn their root node to Z-up.
+
 ## Materials (lighting models)
 
 - `Unlit`: the color as is.
 - `Phong`: per-pixel Blinn-Phong with one directional light, ambient light,
-  emission and linear fog. Faces are lit on both sides.
+  emission and linear fog. Two-sided faces get the normal turned towards the
+  eye, whatever their winding (two-sided lighting).
+- **Common options** (all models): vertex colors (lmcolor / color material),
+  diffuse texture, alpha masks and blending, decals, sphere maps, and no
+  depth writes.
 - `PaletteRamp` (to come): lighting along the ramps of a fixed 256-color
   palette, through a lookup texture (colour index × intensity). This is the
   look of Strike Commander and of the other 8-bit games.
@@ -114,7 +148,7 @@ time, nodes added or removed, without full updates.
 | --- | --- | --- |
 | 1 | the foundation: math, `r4::gpu` and the GL 3.3 backend, Model, OBJ/MTL, SGI and PPM loaders, scene graph with culling and LOD/Switch, Phong renderer, r4fly, tests | **done** |
 | 2 | instancing in the renderer (equal mesh and material in one draw), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG via stb_image, glTF 2.0 | |
-| 3 | the old formats: OpenFlight, pfb, dwb, 5551E (ported from legacy_opengl_demo); all the demos in r4fly | |
+| 3 | the old formats, ported from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
 | 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
 | 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |

@@ -59,9 +59,14 @@ public:
     // the bounding sphere in the space of the parent (the matrix applied)
     const Sphere &bounds();
 
-    // the visibility mask: a node is skipped when (mask & camera mask) == 0
+    // the visibility mask: a node is skipped when (mask & state) == 0, the
+    // state being the mask of the camera
     uint32_t mask() const { return mask_; }
     void setMask(uint32_t m) { mask_ = m; }
+    // the state of the subtree: the state below is (state & filter); so one
+    // model can be drawn in its own state (drawobj(obj, state) of libgobj)
+    uint32_t stateFilter() const { return filter_; }
+    void setStateFilter(uint32_t f) { filter_ = f; }
 
     // marks the bounds of this node and its ancestors to be computed again
     void markDirty();
@@ -79,6 +84,7 @@ private:
     Sphere bounds_;
     bool dirty_ = true;
     uint32_t mask_ = 0xffffffffu;
+    uint32_t filter_ = 0xffffffffu;
 };
 
 class Group : public Node {

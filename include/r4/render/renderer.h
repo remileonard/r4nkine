@@ -23,6 +23,7 @@ namespace r4::render {
 struct GpuMesh {
     gpu::BufferHandle vertices, indices;
     uint32_t indexCount = 0;
+    assets::Primitive primitive = assets::Primitive::Triangles;
     Sphere bounds;
     std::string name;
 };
@@ -99,8 +100,9 @@ private:
         uint64_t key;
         gpu::PipelineHandle pipeline;
     };
-    void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, const Camera &cam);
-    gpu::PipelineHandle pipelineFor(const assets::Material &m);
+    void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
+              const Camera &cam);
+    gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
     bool createShaders();
 
     gpu::Device &device_;

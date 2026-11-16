@@ -1,0 +1,8 @@
+#YAODL
+# a test object (written for the tests): two quads, one with normals and
+# colors per vertex, the other translated
+quad = (vertices 0 0 0  1 0 0  1 1 0  0 1 0),
+(group
+  (polygons quad : normals 0 0 1, colors 1 0 0),
+  (polygons quad) : translates 0 0 2
+)

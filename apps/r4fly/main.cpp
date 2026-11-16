@@ -6,6 +6,9 @@
 //     -frames N        quit after N frames
 //     -snap file.ppm   save the last frame before quitting
 //     -stats           print the statistics once a second
+//     -view H,P,Z      the trackball: heading, pitch (degrees), zoom (2: twice closer)
+//     -state MASK      the state of the models (their default otherwise)
+//     -F dir:dir...    the folders where the textures and references are searched
 //
 // The files are loaded side by side under one root. The mouse turns the
 // trackball (left), pans (middle), zooms (right or the wheel). Keys: w
@@ -61,7 +64,7 @@ bool savePPM(const char *path, int w, int h, const std::vector<uint8_t> &rgba) {
 }
 
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-frames N] [-snap file.ppm] [-stats] file ...\n");
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] [-state MASK] [-F dirs] file ...\n");
     std::exit(1);
 }
 
@@ -71,6 +74,8 @@ int main(int argc, char **argv) {
     int width = 1024, height = 768, frames = -1;
     bool wire = false, printStats = false;
     const char *snap = nullptr;
+    float viewH = 30, viewP = 25, viewZ = 1;
+    long state = -1;
     std::vector<std::string> files;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -83,6 +88,21 @@ int main(int argc, char **argv) {
             frames = std::atoi(argv[++i]);
         } else if (a == "-snap" && i + 1 < argc) {
             snap = argv[++i];
+        } else if (a == "-view" && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%f,%f,%f", &viewH, &viewP, &viewZ) < 2)
+                usage();
+        } else if (a == "-state" && i + 1 < argc) {
+            state = std::strtol(argv[++i], nullptr, 0);
+        } else if (a == "-F" && i + 1 < argc) {
+            std::string list = argv[++i];
+            size_t p = 0;
+            while (p <= list.size()) {
+                size_t c = list.find(':', p);
+                if (c == std::string::npos)
+                    c = list.size();
+                assets::addSearchPath(list.substr(p, c - p));
+                p = c + 1;
+            }
         } else if (a == "-stats") {
             printStats = true;
         } else if (!a.empty() && a[0] == '-') {
@@ -143,6 +163,8 @@ int main(int argc, char **argv) {
                 continue;
             }
             scene::NodePtr node = renderer.upload(*model);
+            if (state >= 0)
+                node->setStateFilter((uint32_t)state);
             Sphere s = node->bounds();
             auto place = scene::make<scene::Group>();
             place->setName(f);
@@ -154,15 +176,26 @@ int main(int argc, char **argv) {
             place->addChild(node);
             root->addChild(place);
             x += 2.2f;
-            size_t tris = 0;
+            size_t tris = 0, lines = 0, points = 0;
             for (const auto &m : model->meshes)
-                tris += m.indices.size() / 3;
-            std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu materials, %zu images\n", f.c_str(),
-                        model->meshes.size(), tris, model->materials.size(), model->images.size());
+                switch (m.primitive) {
+                case assets::Primitive::Triangles: tris += m.indices.size() / 3; break;
+                case assets::Primitive::Lines: lines += m.indices.size() / 2; break;
+                case assets::Primitive::Points: points += m.indices.size(); break;
+                }
+            std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n",
+                        f.c_str(), model->meshes.size(), tris, lines, points, model->materials.size(),
+                        model->images.size());
         }
 
         Trackball ball;
-        ball.reset(root->bounds());
+        auto resetView = [&]() {
+            ball.reset(root->bounds());
+            ball.heading = viewH;
+            ball.pitch = viewP;
+            ball.distance /= viewZ > 0 ? viewZ : 1;
+        };
+        resetView();
         render::Camera camera;
         bool running = true;
         int frame = 0;
@@ -178,7 +211,7 @@ int main(int argc, char **argv) {
                     switch (e.key.keysym.sym) {
                     case SDLK_ESCAPE: running = false; break;
                     case SDLK_w: renderer.setWireframe(!renderer.wireframe()); break;
-                    case SDLK_r: ball.reset(root->bounds()); break;
+                    case SDLK_r: resetView(); break;
                     case SDLK_s: printStats = !printStats; break;
                     }
                     break;
@@ -200,6 +233,12 @@ int main(int argc, char **argv) {
             int w, h;
             SDL_GL_GetDrawableSize(window, &w, &h);
             ball.apply(camera, h > 0 ? (float)w / h : 1);
+            // a light over the shoulder of the viewer, as the eye light of perfly
+            {
+                float hh = radians(ball.heading), pp = radians(ball.pitch);
+                Vec3 toTarget = -Vec3{std::cos(pp) * std::sin(hh), -std::cos(pp) * std::cos(hh), std::sin(pp)};
+                renderer.environment().lightDirection = normalize(toTarget + Vec3{0.3f, 0, -0.6f});
+            }
             renderer.render(*root, camera, 0, 0, w, h);
             frame++;
             framesSinceStats++;

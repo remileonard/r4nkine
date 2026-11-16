@@ -4,6 +4,7 @@
 #include "r4/math.h"
 #include "r4/scene/node.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -118,12 +119,104 @@ static void testLoaders(const std::string &dir) {
     CHECK(!assets::loadModel(dir + "/missing.obj", &err));
 }
 
+// the loaders of the old formats, on the small files of tests/data
+static void testLegacyFormats(const std::string &dir) {
+    std::string err;
+    auto ext = assets::modelExtensions();
+    CHECK(ext.size() == 9);
+
+    // flight (libgobj): two branches with their state bits, a translation,
+    // a lit section and a colored one
+    auto d = assets::loadModel(dir + "/plane.d", &err);
+    CHECK(d != nullptr);
+    if (d) {
+        CHECK(d->nodes.size() == 4 && d->meshes.size() == 2);
+        CHECK(d->nodes[2].mask == 0x1 && d->nodes[3].mask == 0x8);
+        CHECK(near(d->nodes[2].local.translation(), {0, 1, 0}));
+        CHECK(d->defaultState == 0xff03);
+        const assets::Material &lit = d->materials[d->meshes[0].material];
+        CHECK(lit.shading == assets::Shading::Phong && near(lit.diffuse.x, 0.7f) && !lit.doubleSided);
+        const assets::Mesh &shadow = d->meshes[1];
+        CHECK(d->materials[shadow.material].shading == assets::Shading::Unlit);
+        CHECK((shadow.vertices[0].color & 0xffffff) == 0x0000ff); // red, cpack 0xBBGGRR
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // YAODL: the attributes of the polygons, a translated copy
+    auto y = assets::loadModel(dir + "/cube.ydl", &err);
+    CHECK(y != nullptr);
+    if (y) {
+        size_t tris = 0;
+        float zmax = -1;
+        bool red = false;
+        for (const auto &m : y->meshes) {
+            tris += m.indices.size() / 3;
+            for (const auto &v : m.vertices) {
+                zmax = std::max(zmax, v.position.z);
+                red = red || (v.color & 0xffffff) == 0x0000ff;
+            }
+        }
+        CHECK(tris == 4 && near(zmax, 2) && red);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // flip: one quad with its normals
+    auto b = assets::loadModel(dir + "/square.bin", &err);
+    CHECK(b && b->meshes.size() == 1 && b->meshes[0].indices.size() == 6);
+    if (b)
+        CHECK(near(b->meshes[0].vertices[2].position, {1, 1, 0}) && near(b->meshes[0].vertices[0].normal, {0, 0, 1}));
+
+    // Performer binary: two triangles, an overall color
+    auto p = assets::loadModel(dir + "/quad.pfb", &err);
+    CHECK(p != nullptr);
+    if (p) {
+        CHECK(p->meshes.size() == 1 && p->meshes[0].indices.size() == 6);
+        CHECK(near(p->meshes[0].bounds.max, {2, 1, 0}));
+        CHECK((p->meshes[0].vertices[0].color & 0xffffff) == 0x0000ff);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // Designer's Workbench: a polygon of 4 vertices, its color
+    auto w = assets::loadModel(dir + "/quad.dwb", &err);
+    CHECK(w != nullptr);
+    if (w) {
+        CHECK(w->meshes.size() == 1 && w->meshes[0].indices.size() == 6);
+        CHECK(near(w->meshes[0].bounds.max, {3, 1, 0}) && w->meshes[0].vertices[0].color == 0xff00ff00u);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // OpenFlight 14.2: a group, a face of the vertex palette, packed color
+    auto f = assets::loadModel(dir + "/tri.flt", &err);
+    CHECK(f != nullptr);
+    if (f) {
+        CHECK(f->meshes.size() == 1 && f->meshes[0].indices.size() == 3);
+        CHECK((f->meshes[0].vertices[0].color & 0xffffff) == 0xff0000); // blue
+        CHECK(f->materials[f->meshes[0].material].shading == assets::Shading::Unlit);
+        bool named = false;
+        for (const auto &n : f->nodes)
+            named = named || n.name == "g1";
+        CHECK(named);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // gset: one line strip of 3 points: 2 segments
+    auto g = assets::loadModel(dir + "/lines.gset", &err);
+    CHECK(g && g->meshes.size() == 1 && g->meshes[0].primitive == assets::Primitive::Lines &&
+          g->meshes[0].indices.size() == 4);
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
     testBounds();
     testScene();
     testLoaders(dir);
+    testLegacyFormats(dir);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

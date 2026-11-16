@@ -24,6 +24,7 @@ struct Image {
     std::string name; // the file it came from
     int width = 0, height = 0, channels = 0; // 1 grey, 2 grey+alpha, 3 RGB, 4 RGBA
     std::vector<uint8_t> pixels;
+    bool clampS = false, clampT = false; // the wrap: clamped to the edges, else repeated
     bool valid() const { return width > 0 && height > 0 && channels > 0; }
 };
 
@@ -45,11 +46,19 @@ struct Material {
     Vec3 emissive{0, 0, 0};
     float shininess = 16;
     int diffuseImage = -1; // an index in Model::images
+    bool sphereMap = false; // the texture coordinates from the normals (environment map)
     AlphaMode alpha = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
     bool vertexColors = false; // the vertex colors multiply the diffuse
+    bool depthWrite = true;    // false: drawn without writing the depth (flames, glows)
+    // drawn over the coplanar faces before it (decals: runway markings,
+    // the subfaces of OpenFlight)
+    bool decal = false;
 };
+
+// how the indices of a mesh are read
+enum class Primitive { Triangles, Lines, Points };
 
 // the vertex of every mesh: the renderer uses one format, so that any mesh
 // can go with any material in one pipeline
@@ -63,7 +72,8 @@ struct Vertex {
 struct Mesh {
     std::string name;
     std::vector<Vertex> vertices;
-    std::vector<uint32_t> indices; // triangles
+    std::vector<uint32_t> indices; // by 3 (triangles), 2 (lines) or 1 (points)
+    Primitive primitive = Primitive::Triangles;
     int material = -1;             // an index in Model::materials, -1: the default
     Box bounds;
     void computeBounds();
@@ -71,11 +81,21 @@ struct Mesh {
     void computeNormals();
 };
 
+enum class NodeKind { Group, Switch, LOD };
+
 struct Node {
     std::string name;
+    NodeKind kind = NodeKind::Group;
     Mat4 local;                  // relative to the parent
-    std::vector<int> meshes;     // indices in Model::meshes
+    std::vector<int> meshes;     // indices in Model::meshes (none on a Switch or LOD)
     std::vector<int> children;   // indices in Model::nodes
+    // the state bits the node belongs to: drawn when they meet the state of
+    // the camera (the statebits of the flight objects, the masks of pfb)
+    uint32_t mask = 0xffffffffu;
+    int switchValue = -1;            // Switch: the child shown, -1 all, -2 none
+    std::vector<float> lodRanges;    // LOD: child i in [ranges[i], ranges[i+1])
+    Vec3 lodCenter;
+    bool hasLodCenter = false;
 };
 
 struct Model {
@@ -84,6 +104,9 @@ struct Model {
     std::vector<Mesh> meshes;
     std::vector<Material> materials;
     std::vector<Image> images;
+    // the state to draw the model in when nothing else is said (a plane of
+    // flight: its body, landing gear and weapons, not its shadows)
+    uint32_t defaultState = 0xffffffffu;
     Box bounds() const;        // in the space of the root
 };
 
@@ -93,10 +116,35 @@ std::shared_ptr<Model> loadModel(const std::string &path, std::string *error = n
 // the extensions known, lowercase without the dot
 std::vector<std::string> modelExtensions();
 
-// the images: SGI (.rgb .rgba .bw .sgi), PPM/PGM; others to come
+// the folders where the files named by the models (textures, external
+// references) are searched after the folder of the model, as the file path
+// of Performer (pfFilePath, the -F option of perfly)
+void addSearchPath(const std::string &folder);
+const std::vector<std::string> &searchPaths();
+// a file named in a model of the folder dir: as given (absolute or relative
+// to dir), then by its base name in dir, ../textures, textures and the
+// search paths; empty when not found
+std::string findAsset(const std::string &dir, const std::string &name);
+
+// the images: SGI (.rgb .rgba .bw .int .inta .sgi), PPM/PGM, the scrambled
+// 5551E of perfly.face; others to come
 bool loadImage(const std::string &path, Image &image, std::string *error = nullptr);
 
 // the Wavefront OBJ (and its MTL materials) from a file
 std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error);
+// the .d objects of the SGI flight simulator (libgobj, text form)
+std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error);
+// the YAODL objects of powerflip and flip (.ydl, .defs)
+std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error);
+// the .bin objects of flip (quadrilaterals with normals)
+std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error);
+// the binary files of IRIS Performer (.pfb, versions 1 and 2)
+std::shared_ptr<Model> loadPFB(const std::string &path, std::string *error);
+// the Designer's Workbench files (.dwb) of the F-18 demo
+std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error);
+// the line drawings of the Mekton demo (.gset)
+std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error);
+// OpenFlight (.flt), versions 11, 12 and 14.2, with its external references
+std::shared_ptr<Model> loadFLT(const std::string &path, std::string *error);
 
 } // namespace r4::assets
