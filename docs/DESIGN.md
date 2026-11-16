@@ -28,11 +28,11 @@ demos.
 ```
 apps      r4fly (the viewer, heir of perfly), demos
 render    cull → draw list → sort → batch/instance → passes; materials
-scene     Node, Group, Geode, Switch, LOD (+ Instancer, Billboard to come)
+scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
 terrain   (to come) blocks, LOD, seams, placement rules
 assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
-          YAODL, flip .bin, pfb, dwb, OpenFlight, gset; SGI, PPM, 5551E
-          (to come: glTF 2.0, RealSpace IFF, PNG/JPEG...)
+          YAODL, flip .bin, pfb, dwb, OpenFlight, gset, glTF 2.0; SGI,
+          PPM, 5551E, PNG/JPEG/BMP/TGA/GIF (to come: RealSpace IFF)
 gpu       Device: buffers, textures, shaders, pipelines, draws
           backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (to come)
 core      math: Vec, Mat4 (column-major), Box, Sphere, Frustum
@@ -91,9 +91,23 @@ every backend can implement it:
 3. **Sort**: opaque items are sorted by pipeline, then material, then mesh,
    to keep state changes few. Transparent items are sorted from back to
    front.
-4. **Upload**: the object blocks (model, model-view and normal matrices)
-   go into one uniform buffer, uploaded once per frame.
-5. **Draw**: the device skips bindings that did not change.
+4. **Upload**: the model matrices of all the items go into one vertex
+   buffer, uploaded once per frame. The shader reads them as a
+   per-instance stream (locations 4 to 7). The normal matrix is computed in
+   the shader.
+5. **Draw**: consecutive items with the same mesh, material and pipeline
+   become one instanced draw, starting at their offset in the matrix
+   buffer. The device skips bindings that did not change.
+
+**Billboards** turn about the origin of their node, with -Y towards the
+eye: about Z only (axis), or about Z and X (point). Their bounds are taken
+around their origin, so they stay valid for every turn.
+
+**Instancers** hold levels (parts, each a drawable at a matrix, and the
+farthest distance the level is used at) and a list of instance matrices.
+Each instance is culled on its own sphere and gets the level for its
+distance. All the visible instances of a part become one draw call after
+sorting.
 
 **Bounds**: they are lazy. A change to a node (matrix, children,
 drawables) marks it and its ancestors dirty, and the next `bounds()` call
@@ -120,8 +134,8 @@ behaviors are kept, translated into the neutral format:
   texture coordinate generation on the CPU.
 - **Switches and LODs**: sequences show their first frame, LODs keep their
   ranges, and switches their value.
-- **Billboards**: billboard faces are placed at their centers. They do not
-  turn yet; a Billboard node comes with step 2.
+- **Billboards**: billboard faces (OpenFlight templates 2 and 4) and pfb
+  billboards become Billboard nodes at their centers, turned to the eye.
 - **Encrypted data**: the coordinates of version 2 pfb files and the
   textures of the F-18 demo are decrypted. Some copies of the F-18 textures
   carry the encryption mark but are already in clear; the loader keeps the
@@ -147,7 +161,7 @@ behaviors are kept, translated into the neutral format:
 | Step | Content | State |
 | --- | --- | --- |
 | 1 | the foundation: math, `r4::gpu` and the GL 3.3 backend, Model, OBJ/MTL, SGI and PPM loaders, scene graph with culling and LOD/Switch, Phong renderer, r4fly, tests | **done** |
-| 2 | instancing in the renderer (equal mesh and material in one draw), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG via stb_image, glTF 2.0 | |
+| 2 | instancing in the renderer (equal mesh and material in one draw), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG via stb_image, glTF 2.0 | **done** |
 | 3 | the old formats, ported from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
 | 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
 | 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |

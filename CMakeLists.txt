@@ -21,6 +21,8 @@ add_library(r4nkine
     src/assets/dwb_loader.cpp
     src/assets/gset_loader.cpp
     src/assets/flt_loader.cpp
+    src/assets/image_stb.cpp
+    src/assets/gltf_loader.cpp
     src/scene/node.cpp
     src/render/renderer.cpp
 )
@@ -28,6 +30,8 @@ add_library(r4nkine::r4nkine ALIAS r4nkine)
 target_include_directories(r4nkine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
+# stb_image and cgltf, single headers (public domain, MIT)
+target_include_directories(r4nkine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 if(MSVC)
     target_compile_options(r4nkine PRIVATE /W4)
 else()

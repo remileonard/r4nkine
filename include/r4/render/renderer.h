@@ -4,7 +4,9 @@
 // branch fully inside is not tested further), the visible drawables go to a
 // draw list, the list is sorted (opaque by pipeline, material and mesh to
 // keep the state changes few; transparent from back to front), the matrices
-// of the objects are written in one uniform buffer, then the draws are sent.
+// of the objects are written in one buffer of instances, then the draws are
+// sent: the consecutive items with the same mesh, material and pipeline go
+// in one instanced draw (a forest of one tree model is a few draw calls).
 #pragma once
 
 #include "r4/assets/model.h"
@@ -64,6 +66,7 @@ struct Environment {
 
 struct RenderStats {
     uint32_t nodesVisited = 0, nodesCulled = 0, drawables = 0;
+    uint32_t instancesVisited = 0, instancesCulled = 0; // of the instancers
     gpu::FrameStats gpu;
 };
 
@@ -76,7 +79,8 @@ public:
 
     gpu::Device &device() { return device_; }
 
-    // the GPU objects of a model, as a subgraph (nodes, geodes, drawables)
+    // the GPU objects of a model, as a subgraph (nodes, geodes, drawables);
+    // its parts for an Instancer: scene::collectParts(*upload(model))
     scene::NodePtr upload(const assets::Model &model);
     std::shared_ptr<GpuMesh> uploadMesh(const assets::Mesh &mesh);
     std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {});
@@ -102,6 +106,9 @@ private:
     };
     void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
               const Camera &cam);
+    void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside,
+                       const Camera &cam);
+    void addItem(const scene::Drawable &d, const Mat4 &world, const Camera &cam);
     gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
     bool createShaders();
 
@@ -112,9 +119,9 @@ private:
     bool wireframe_ = false;
     gpu::ShaderHandle shader_;
     std::unordered_map<uint32_t, gpu::PipelineHandle> pipelines_;
-    gpu::BufferHandle frameUniforms_, objectUniforms_;
-    size_t objectCapacity_ = 0;
-    std::vector<uint8_t> objectData_;
+    gpu::BufferHandle frameUniforms_, instanceBuffer_;
+    size_t instanceCapacity_ = 0;
+    std::vector<float> instanceData_;
     std::vector<DrawItem> opaque_, transparent_;
     std::shared_ptr<MaterialInstance> defaultMaterial_;
     gpu::TextureHandle white_;

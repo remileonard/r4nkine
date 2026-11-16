@@ -9,6 +9,8 @@
 //     -view H,P,Z      the trackball: heading, pitch (degrees), zoom (2: twice closer)
 //     -state MASK      the state of the models (their default otherwise)
 //     -F dir:dir...    the folders where the textures and references are searched
+//     -forest N[,F]    N copies of the files planted on a square (an Instancer):
+//                      the first file near, the next ones beyond F, 2F... units
 //
 // The files are loaded side by side under one root. The mouse turns the
 // trackball (left), pans (middle), zooms (right or the wheel). Keys: w
@@ -64,7 +66,7 @@ bool savePPM(const char *path, int w, int h, const std::vector<uint8_t> &rgba) {
 }
 
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] [-state MASK] [-F dirs] file ...\n");
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] [-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
     std::exit(1);
 }
 
@@ -76,6 +78,8 @@ int main(int argc, char **argv) {
     const char *snap = nullptr;
     float viewH = 30, viewP = 25, viewZ = 1;
     long state = -1;
+    int forest = 0;
+    float forestFar = 0;
     std::vector<std::string> files;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -103,6 +107,9 @@ int main(int argc, char **argv) {
                 assets::addSearchPath(list.substr(p, c - p));
                 p = c + 1;
             }
+        } else if (a == "-forest" && i + 1 < argc) {
+            if (std::sscanf(argv[++i], "%d,%f", &forest, &forestFar) < 1)
+                usage();
         } else if (a == "-stats") {
             printStats = true;
         } else if (!a.empty() && a[0] == '-') {
@@ -156,6 +163,8 @@ int main(int argc, char **argv) {
         auto root = scene::make<scene::Group>();
         root->setName("root");
         float x = 0;
+        auto instancer = scene::make<scene::Instancer>();
+        int level = 0;
         for (const std::string &f : files) {
             auto model = assets::loadModel(f, &error);
             if (!model) {
@@ -166,6 +175,19 @@ int main(int argc, char **argv) {
             if (state >= 0)
                 node->setStateFilter((uint32_t)state);
             Sphere s = node->bounds();
+            if (forest > 0) {
+                // the model as a level of the instancer, its base on the ground
+                Box box = model->bounds();
+                float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
+                Mat4 m = Mat4::scale({unit, unit, unit}) * Mat4::translate({-s.center.x, -s.center.y, -box.min.z});
+                auto parts = scene::collectParts(*node);
+                for (auto &p : parts)
+                    p.local = m * p.local;
+                float limit = forestFar > 0 && level + 1 < (int)files.size() ? forestFar * (level + 1) : 1e30f;
+                instancer->addLevel(parts, limit);
+                level++;
+                continue;
+            }
             auto place = scene::make<scene::Group>();
             place->setName(f);
             if (!s.empty()) {
@@ -186,6 +208,27 @@ int main(int argc, char **argv) {
             std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n",
                         f.c_str(), model->meshes.size(), tris, lines, points, model->materials.size(),
                         model->images.size());
+        }
+
+        if (forest > 0) {
+            // a square of instances, turned and scaled at random
+            int side = (int)std::ceil(std::sqrt((double)forest));
+            unsigned seed = 1;
+            auto rnd = [&]() {
+                seed = seed * 1103515245u + 12345u;
+                return (seed >> 8 & 0xffff) / 65535.0f;
+            };
+            std::vector<Mat4> inst;
+            for (int i = 0; i < forest; i++) {
+                float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f, py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
+                float k = 0.7f + 0.6f * rnd();
+                inst.push_back(Mat4::translate({px, py, 0}) * Mat4::rotate(rnd() * 6.2832f, {0, 0, 1}) *
+                               Mat4::scale({k, k, k}));
+            }
+            instancer->setInstances(inst);
+            instancer->setName("forest");
+            root->addChild(instancer);
+            std::printf("r4fly: %d instances, %d levels\n", forest, level);
         }
 
         Trackball ball;
@@ -253,8 +296,10 @@ int main(int argc, char **argv) {
             if (now - lastStats >= 1000 || last) {
                 char title[256];
                 float fps = framesSinceStats * 1000.0f / std::max<Uint32>(1, now - lastStats);
-                std::snprintf(title, sizeof title, "r4fly - %.0f fps, %u draws, %u triangles, %u/%u nodes culled", fps,
-                              st.gpu.drawCalls, st.gpu.triangles, st.nodesCulled, st.nodesVisited);
+                std::snprintf(title, sizeof title,
+                              "r4fly - %.0f fps, %u draws, %u triangles, %u/%u nodes culled, %u/%u instances culled", fps,
+                              st.gpu.drawCalls, st.gpu.triangles, st.nodesCulled, st.nodesVisited, st.instancesCulled,
+                              st.instancesVisited);
                 SDL_SetWindowTitle(window, title);
                 if (printStats)
                     std::printf("%s\n", title + 8);

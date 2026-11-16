@@ -3,8 +3,10 @@
 // The nodes of Performer, in C++: a Group holds children, every node has a
 // matrix relative to its parent (identity by default), a Geode holds the
 // drawables, a Switch shows some of its children, a LOD chooses one by
-// distance. The bounding spheres are kept up to date lazily: a change marks
-// the node and its ancestors, and the next cull recomputes what was marked.
+// distance, a Billboard turns its drawables to the eye, an Instancer draws
+// the same geometry at many places (forests, villages). The bounding spheres
+// are kept up to date lazily: a change marks the node and its ancestors, and
+// the next cull recomputes what was marked.
 #pragma once
 
 #include "r4/math.h"
@@ -25,7 +27,7 @@ namespace r4::scene {
 class Node;
 using NodePtr = std::shared_ptr<Node>;
 
-enum class NodeType { Group, Geode, Switch, LOD };
+enum class NodeType { Group, Geode, Switch, LOD, Billboard, Instancer };
 
 // a mesh with its material, as the renderer draws them
 struct Drawable {
@@ -74,6 +76,9 @@ public:
 protected:
     // the bounds of what the node itself draws, in its own space
     virtual Sphere contentBounds() const { return {}; }
+    // the bounds of a child as they count for this node (a billboard turns
+    // its children: their bounds must hold for every turn)
+    virtual Sphere childBounds(const Sphere &s) const { return s; }
 
 private:
     NodeType type_;
@@ -95,6 +100,7 @@ public:
 class Geode : public Node {
 public:
     Geode() : Node(NodeType::Geode) {}
+    explicit Geode(NodeType type) : Node(type) {}
     const std::vector<Drawable> &drawables() const { return drawables_; }
     void addDrawable(Drawable d) {
         drawables_.push_back(std::move(d));
@@ -146,6 +152,80 @@ private:
     Vec3 center_;
     bool hasCenter_ = false;
 };
+
+// the drawables (and the children) turned about the origin of the node to
+// face the eye, as pfBillboard: the geometry is made facing -Y. Axis: turned
+// about Z only (trees, the posts of a city); Point: turned about Z and X so
+// that it faces the eye from any direction (lights, sprites)
+class Billboard : public Geode {
+public:
+    enum class Mode { Axis, Point };
+    Billboard() : Geode(NodeType::Billboard) {}
+    Mode mode() const { return mode_; }
+    void setMode(Mode m) { mode_ = m; }
+    // the turn for an eye given in the space of the node
+    Mat4 rotationFor(Vec3 eye) const;
+
+protected:
+    Sphere contentBounds() const override;
+    Sphere childBounds(const Sphere &s) const override;
+
+private:
+    Mode mode_ = Mode::Axis;
+};
+
+// a part of what an instancer draws: a drawable at a place of the instance
+struct InstancePart {
+    Drawable drawable;
+    Mat4 local;
+};
+
+// the same geometry at many places, each one culled on its own, with levels
+// of detail by distance: level i is used up to its distance. The renderer
+// draws the visible instances of each part in one call (GPU instancing).
+class Instancer : public Node {
+public:
+    Instancer() : Node(NodeType::Instancer) {}
+
+    struct Level {
+        float maxDistance = 1e30f;
+        std::vector<InstancePart> parts;
+        Sphere bounds; // in the space of an instance
+    };
+    // the levels go from the nearest to the farthest
+    void addLevel(std::vector<InstancePart> parts, float maxDistance = 1e30f);
+    const std::vector<Level> &levels() const { return levels_; }
+
+    void addInstance(const Mat4 &m) {
+        instances_.push_back(m);
+        markDirty();
+    }
+    void setInstances(std::vector<Mat4> m) {
+        instances_ = std::move(m);
+        markDirty();
+    }
+    void clearInstances() {
+        instances_.clear();
+        markDirty();
+    }
+    const std::vector<Mat4> &instances() const { return instances_; }
+    // the level for a distance, -1: none (farther than the last)
+    int select(float distance) const;
+
+protected:
+    Sphere contentBounds() const override;
+
+private:
+    std::vector<Level> levels_;
+    std::vector<Mat4> instances_;
+};
+
+// the drawables under a node with their matrices (the node's own included),
+// as the renderer would draw them in the state given: the nodes whose mask
+// misses the state are left, the active children of the switches and the
+// most detailed child of the LODs are taken. What an Instancer draws of a
+// model.
+std::vector<InstancePart> collectParts(Node &node, uint32_t state = 0xffffffffu);
 
 template <class T, class... A> std::shared_ptr<T> make(A &&...a) { return std::make_shared<T>(std::forward<A>(a)...); }
 

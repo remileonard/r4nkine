@@ -28,19 +28,28 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   | Designer's Workbench | `.dwb` | the F-18 demo (encrypted textures) |
   | OpenFlight | `.flt` | 11, 12 and 14.2: palettes, subfaces, LOD, external references, `.attr` |
   | line drawings | `.gset` | the head-up display of Mekton |
+  | glTF 2.0 | `.gltf`, `.glb` | today's assets (cgltf) |
 
   The image formats are **SGI** (`.rgb`, `.rgba`, `.bw`, `.int`, `.inta`; RLE
-  or verbatim, 8 or 16 bits), **PPM/PGM**, and the scrambled **5551E**
-  images of perfly.face. Textures and external references are searched next
+  or verbatim, 8 or 16 bits), **PPM/PGM**, the scrambled **5551E**
+  images of perfly.face, and **PNG, JPEG, BMP, TGA, GIF** (stb_image). Textures and external references are searched next
   to the model and in the search paths (`addSearchPath`, `-F` in r4fly).
-- `r4::scene`: Group, Geode, Switch and LOD nodes. Bounding spheres are kept
-  up to date lazily, so the graph can change at run time.
+- `r4::scene`: Group, Geode, Switch, LOD, **Billboard** (axis or point) and
+  **Instancer** nodes. An Instancer draws the same geometry at many places
+  (forests, villages), culls each instance and picks its level of detail by
+  distance. `collectParts` turns any loaded model into instancer parts.
+  Bounding spheres are kept up to date lazily, so the graph can change at
+  run time.
 - `r4::render`: culling of whole subtrees, a draw list sorted by state,
-  per-frame uniform upload, and per-pixel Blinn-Phong with fog. Triangles,
+  and **GPU instancing**: the model matrices go in a per-instance vertex
+  stream, and consecutive items with the same mesh, material and pipeline
+  are one draw call. Shading is per-pixel Blinn-Phong with fog. Triangles,
   lines and points are drawn; decals and sphere maps are supported.
 - `r4fly`: the viewer. Use the trackball, `w` for wireframe and `s` for
   statistics. `-snap` saves a frame, `-view` places the eye, `-state`
-  chooses the state bits of the models, and `-F` gives the search paths.
+  chooses the state bits of the models, `-F` gives the search paths, and
+  `-forest N[,F]` plants N copies of the files with an Instancer (the
+  first file near, the next ones beyond F, 2F...).
 
 ## Building
 
@@ -50,7 +59,8 @@ cmake --build build
 ctest --test-dir build
 ```
 
-The library needs only a C++17 compiler. `r4fly` needs SDL2 (`libsdl2-dev`,
+The library needs only a C++17 compiler. stb_image (public domain) and
+cgltf (MIT) are vendored in `third_party/`. `r4fly` needs SDL2 (`libsdl2-dev`,
 vcpkg `sdl2`, or the SDL2 development package on Windows). Set
 `-DR4_BUILD_APPS=OFF` to build without it.
 
@@ -78,6 +88,20 @@ camera.perspective(45, 16.0f / 9, 0.1f, 100);
 renderer.render(*root, camera, 0, 0, width, height);
 ```
 
+## Planting a forest
+
+```cpp
+auto tree = renderer.upload(*r4::assets::loadModel("tree.glb"));
+auto far  = renderer.upload(*r4::assets::loadModel("tree_card.obj"));
+auto forest = r4::scene::make<r4::scene::Instancer>();
+forest->addLevel(r4::scene::collectParts(*tree), 150);  // up to 150 m
+forest->addLevel(r4::scene::collectParts(*far), 2000);  // then up to 2 km
+for (const r4::Mat4 &m : placements)
+    forest->addInstance(m);
+root->addChild(forest);
+```
+
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). `third_party/stb_image.h` is public domain,
+`third_party/cgltf.h` is MIT.

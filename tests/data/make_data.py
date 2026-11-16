@@ -85,3 +85,47 @@ vlist = frec(72, b''.join(be('i', x) for x in offsets))
 flt = frec(1, bytes(header)) + vpal + group + frec(10, b'') + frec(5, bytes(face)) + frec(10, b'') + vlist + \
       frec(11, b'') + frec(11, b'')
 open('tri.flt', 'wb').write(flt)
+
+# PNG: 2x2 RGBA, rows from the top: red, green / blue, white (alpha 128 on
+# the white pixel)
+import zlib, base64, json
+def png_chunk(t, body):
+    c = t + body
+    return struct.pack('>I', len(body)) + c + struct.pack('>I', zlib.crc32(c) & 0xffffffff)
+raw = b'\0' + bytes([255, 0, 0, 255, 0, 255, 0, 255]) + b'\0' + bytes([0, 0, 255, 255, 255, 255, 255, 128])
+png = b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', 2, 2, 8, 6, 0, 0, 0)) + \
+      png_chunk(b'IDAT', zlib.compress(raw)) + png_chunk(b'IEND', b'')
+open('rgba2x2.png', 'wb').write(png)
+
+# glTF: a triangle in a node translated by (0, 0, 5), indices, normals,
+# texture coordinates, a material with a base color and the PNG texture
+pos = struct.pack('<9f', 0, 0, 0, 1, 0, 0, 0, 1, 0)
+nrm = struct.pack('<9f', 0, 0, 1, 0, 0, 1, 0, 0, 1)
+uv = struct.pack('<6f', 0, 0, 1, 0, 0, 1)
+ind = struct.pack('<3H', 0, 1, 2) + b'\0\0'
+buf = pos + nrm + uv + ind
+gltf = {
+    "asset": {"version": "2.0"},
+    "scene": 0,
+    "scenes": [{"nodes": [0]}],
+    "nodes": [{"name": "tri", "mesh": 0, "translation": [0, 0, 5]}],
+    "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 1, "TEXCOORD_0": 2},
+                                "indices": 3, "material": 0}]}],
+    "materials": [{"name": "half", "pbrMetallicRoughness": {"baseColorFactor": [0.5, 0.5, 0.5, 1],
+                   "baseColorTexture": {"index": 0}, "roughnessFactor": 1, "metallicFactor": 0},
+                   "doubleSided": True}],
+    "textures": [{"source": 0}],
+    "images": [{"uri": "rgba2x2.png"}],
+    "buffers": [{"byteLength": len(buf),
+                 "uri": "data:application/octet-stream;base64," + base64.b64encode(buf).decode()}],
+    "bufferViews": [{"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                    {"buffer": 0, "byteOffset": 36, "byteLength": 36},
+                    {"buffer": 0, "byteOffset": 72, "byteLength": 24},
+                    {"buffer": 0, "byteOffset": 96, "byteLength": 6}],
+    "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+                   "min": [0, 0, 0], "max": [1, 1, 0]},
+                  {"bufferView": 1, "componentType": 5126, "count": 3, "type": "VEC3"},
+                  {"bufferView": 2, "componentType": 5126, "count": 3, "type": "VEC2"},
+                  {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"}],
+}
+open('tri.gltf', 'w').write(json.dumps(gltf, indent=1))

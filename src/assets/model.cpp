@@ -115,7 +115,7 @@ static std::string extensionOf(const std::string &path) {
     return e;
 }
 
-std::vector<std::string> modelExtensions() { return {"obj", "d", "ydl", "defs", "bin", "pfb", "dwb", "gset", "flt"}; }
+std::vector<std::string> modelExtensions() { return {"obj", "d", "ydl", "defs", "bin", "pfb", "dwb", "gset", "flt", "gltf", "glb"}; }
 
 std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
     std::string ext = extensionOf(path);
@@ -135,6 +135,8 @@ std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
         return loadGSet(path, error);
     if (ext == "flt")
         return loadFLT(path, error);
+    if (ext == "gltf" || ext == "glb")
+        return loadGLTF(path, error);
     if (error)
         *error = "unknown model format: " + path;
     return nullptr;
@@ -351,6 +353,22 @@ static bool load5551E(const std::vector<uint8_t> &in, Image &img, std::string *e
     return true;
 }
 
+bool decodeImageStb(const uint8_t *data, size_t size, Image &img, std::string *error);
+
+bool decodeImage(const uint8_t *data, size_t size, Image &img, std::string *error) {
+    std::vector<uint8_t> d(data, data + size);
+    bool ok;
+    if (size >= 2 && be16(data) == 474)
+        ok = loadSGI(d, img, error);
+    else if (size >= 2 && data[0] == 'P' && (data[1] == '6' || data[1] == '5'))
+        ok = loadPNM(d, img, error);
+    else if (size >= 3 && std::memcmp(data, "SEn", 3) == 0)
+        ok = load5551E(d, img, error);
+    else
+        ok = decodeImageStb(data, size, img, error);
+    return ok;
+}
+
 bool loadImage(const std::string &path, Image &img, std::string *error) {
     std::vector<uint8_t> data;
     if (!readFile(path, data)) {
@@ -360,18 +378,7 @@ bool loadImage(const std::string &path, Image &img, std::string *error) {
     }
     img = Image{};
     img.name = path;
-    bool ok;
-    if (data.size() >= 2 && be16(&data[0]) == 474)
-        ok = loadSGI(data, img, error);
-    else if (data.size() >= 2 && data[0] == 'P' && (data[1] == '6' || data[1] == '5'))
-        ok = loadPNM(data, img, error);
-    else if (data.size() >= 3 && std::memcmp(data.data(), "SEn", 3) == 0)
-        ok = load5551E(data, img, error);
-    else {
-        if (error)
-            *error = "unknown image format: " + path;
-        ok = false;
-    }
+    bool ok = decodeImage(data.data(), data.size(), img, error);
     if (!ok && error)
         *error = path + ": " + *error;
     return ok;

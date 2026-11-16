@@ -124,6 +124,7 @@ struct PNode {
     Vec3 lodCenter;
     bool hasLodCenter = false;
     std::vector<Vec3> bbPositions;
+    bool bbPoint = false;
     uint32_t travmask = 0xffffffffu;
 };
 
@@ -251,6 +252,9 @@ void readNode(Reader &r, PNode &nd) {
                 nd.bbPositions.push_back(
                     {wordFloat(w[2 + 3 * i]), wordFloat(w[3 + 3 * i]), wordFloat(w[4 + 3 * i])});
             p = 2 + 3 * ngsets + 4;
+            // the axis, then the mode: 0 axial, else turned to the eye
+            if (p - 1 < n)
+                nd.bbPoint = w[p - 1] != 0;
             break;
         case NODE_REF23:
         case NODE_MORPH:
@@ -700,13 +704,15 @@ struct Builder {
             std::memcpy(&n.local.m[0][0], pn.matrix, sizeof pn.matrix);
         std::vector<int> kids;
         if (pn.type == NODE_BBOARD) {
-            // the geosets at their positions (they do not turn yet)
+            // the geosets at their positions, turned to the eye
             for (size_t i = 0; i < pn.gsets.size(); i++) {
                 int mi = mesh(pn.gsets[i], decal);
                 if (mi < 0)
                     continue;
                 Node b;
                 b.name = "billboard";
+                b.kind = NodeKind::Billboard;
+                b.billboardPoint = pn.bbPoint;
                 if (i < pn.bbPositions.size())
                     b.local = Mat4::translate(pn.bbPositions[i]);
                 b.meshes.push_back(mi);

@@ -111,7 +111,7 @@ struct File {
     std::vector<FVertex> verts;
     // the batches of each node
     std::map<int, std::vector<Batch>> batches;
-    std::map<int, std::vector<std::pair<Vec3, Batch>>> billboards;
+    std::map<int, std::vector<std::tuple<Vec3, Batch, bool>>> billboards;
 
     File(Shared &s) : sh(s), model(s.model) {}
 
@@ -265,7 +265,7 @@ struct File {
             }
         }
         if (billboard)
-            billboards[owner].push_back({Vec3{(float)center[0], (float)center[1], (float)center[2]}, local});
+            billboards[owner].push_back({Vec3{(float)center[0], (float)center[1], (float)center[2]}, local, fc.templ == 4});
     }
 
     int material(const Batch &b) {
@@ -328,13 +328,16 @@ struct File {
                 model.nodes[owner].meshes.push_back((int)model.meshes.size());
                 model.meshes.push_back(std::move(b.mesh));
             }
-        // the billboards at their centers (they do not turn yet)
+        // the billboards at their centers, turned to the eye (template 2
+        // axial, 4 point)
         for (auto &[owner, list] : billboards)
-            for (auto &[center, b] : list) {
+            for (auto &[center, b, point] : list) {
                 b.mesh.material = materialOf(b);
                 b.mesh.computeBounds();
                 Node n;
                 n.name = "billboard";
+                n.kind = NodeKind::Billboard;
+                n.billboardPoint = point;
                 n.local = Mat4::translate(center);
                 n.meshes.push_back((int)model.meshes.size());
                 model.meshes.push_back(std::move(b.mesh));

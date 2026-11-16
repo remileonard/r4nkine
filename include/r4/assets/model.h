@@ -81,7 +81,7 @@ struct Mesh {
     void computeNormals();
 };
 
-enum class NodeKind { Group, Switch, LOD };
+enum class NodeKind { Group, Switch, LOD, Billboard };
 
 struct Node {
     std::string name;
@@ -96,6 +96,9 @@ struct Node {
     std::vector<float> lodRanges;    // LOD: child i in [ranges[i], ranges[i+1])
     Vec3 lodCenter;
     bool hasLodCenter = false;
+    // Billboard: its meshes turned to the eye about Z (axis) or about Z and
+    // X (point); they are made facing -Y
+    bool billboardPoint = false;
 };
 
 struct Model {
@@ -127,8 +130,10 @@ const std::vector<std::string> &searchPaths();
 std::string findAsset(const std::string &dir, const std::string &name);
 
 // the images: SGI (.rgb .rgba .bw .int .inta .sgi), PPM/PGM, the scrambled
-// 5551E of perfly.face; others to come
+// 5551E of perfly.face, PNG, JPEG, BMP, TGA, GIF (stb_image); by their
+// content, not their extension
 bool loadImage(const std::string &path, Image &image, std::string *error = nullptr);
+bool decodeImage(const uint8_t *data, size_t size, Image &image, std::string *error = nullptr);
 
 // the Wavefront OBJ (and its MTL materials) from a file
 std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error);
@@ -146,5 +151,7 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error);
 std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error);
 // OpenFlight (.flt), versions 11, 12 and 14.2, with its external references
 std::shared_ptr<Model> loadFLT(const std::string &path, std::string *error);
+// glTF 2.0 (.gltf, .glb)
+std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error);
 
 } // namespace r4::assets

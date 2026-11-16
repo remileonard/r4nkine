@@ -2,6 +2,7 @@
 // graph bounds, loaders. Usage: r4_tests <the tests/data folder>
 #include "r4/assets/model.h"
 #include "r4/math.h"
+#include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 
 #include <algorithm>
@@ -123,7 +124,7 @@ static void testLoaders(const std::string &dir) {
 static void testLegacyFormats(const std::string &dir) {
     std::string err;
     auto ext = assets::modelExtensions();
-    CHECK(ext.size() == 9);
+    CHECK(ext.size() == 11);
 
     // flight (libgobj): two branches with their state bits, a translation,
     // a lit section and a colored one
@@ -210,6 +211,80 @@ static void testLegacyFormats(const std::string &dir) {
           g->meshes[0].indices.size() == 4);
 }
 
+// step 2: billboards, instancers, PNG, glTF
+static void testStep2(const std::string &dir) {
+    // a billboard turns its -Y face towards the eye
+    scene::Billboard bb;
+    Vec3 face = bb.rotationFor({5, 0, 0}).transformVector({0, -1, 0});
+    CHECK(near(face, {1, 0, 0}));
+    face = bb.rotationFor({0, 3, 4}).transformVector({0, -1, 0});
+    CHECK(near(face, {0, 1, 0})); // axis: about Z only
+    bb.setMode(scene::Billboard::Mode::Point);
+    face = bb.rotationFor({0, 3, 4}).transformVector({0, -1, 0});
+    CHECK(near(face, normalize(Vec3{0, 3, 4})));
+
+    // an instancer: its bounds hold all the instances, its levels by distance
+    auto mesh = std::make_shared<render::GpuMesh>();
+    mesh->bounds = {{0, 0, 0}, 1};
+    scene::Instancer inst;
+    inst.addLevel({{{mesh, nullptr}, Mat4()}}, 50);
+    inst.addLevel({{{mesh, nullptr}, Mat4::scale({0.5f, 0.5f, 0.5f})}}, 200);
+    inst.addInstance(Mat4::translate({10, 0, 0}));
+    inst.addInstance(Mat4::translate({-10, 0, 0}));
+    const Sphere &s = inst.bounds();
+    CHECK(near(s.center, {0, 0, 0}) && s.radius >= 11 && s.radius < 12);
+    CHECK(inst.select(10) == 0 && inst.select(100) == 1 && inst.select(500) == -1);
+
+    // the parts of a graph, in a state
+    auto root = scene::make<scene::Group>();
+    auto body = scene::make<scene::Geode>();
+    auto shadow = scene::make<scene::Geode>();
+    body->addDrawable({mesh, nullptr});
+    shadow->addDrawable({mesh, nullptr});
+    body->setMask(0x1);
+    shadow->setMask(0x8);
+    body->setMatrix(Mat4::translate({0, 0, 2}));
+    root->addChild(body);
+    root->addChild(shadow);
+    CHECK(scene::collectParts(*root).size() == 2);
+    auto parts = scene::collectParts(*root, 0x1);
+    CHECK(parts.size() == 1 && near(parts[0].local.translation(), {0, 0, 2}));
+
+    // PNG through stb_image, rows from the bottom
+    std::string err;
+    assets::Image img;
+    CHECK(assets::loadImage(dir + "/rgba2x2.png", img, &err));
+    if (img.valid()) {
+        CHECK(img.width == 2 && img.height == 2 && img.channels == 4);
+        // the bottom row: blue, white (alpha 128)
+        CHECK(img.pixels[0] == 0 && img.pixels[2] == 255);
+        CHECK(img.pixels[4] == 255 && img.pixels[7] == 128);
+        // the top row: red, green
+        CHECK(img.pixels[8] == 255 && img.pixels[9] == 0 && img.pixels[13] == 255);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+
+    // glTF: the node, its translation, the material, the texture
+    auto g = assets::loadModel(dir + "/tri.gltf", &err);
+    CHECK(g != nullptr);
+    if (g) {
+        CHECK(g->meshes.size() == 1 && g->meshes[0].indices.size() == 3);
+        CHECK(g->nodes.size() == 2 && g->nodes[0].children.size() == 1);
+        CHECK(g->nodes[1].name == "tri" && near(g->nodes[1].local.translation(), {0, 0, 5}));
+        const assets::Material &m = g->materials[g->meshes[0].material];
+        CHECK(m.name == "half" && near(m.diffuse.x, 0.5f) && m.doubleSided && m.diffuseImage == 0);
+        CHECK(g->images.size() == 1 && g->images[0].width == 2);
+        // the texture coordinates turned upside down (glTF: the rows go down)
+        CHECK(near(g->meshes[0].vertices[2].uv.y, 0) && near(g->meshes[0].vertices[0].uv.y, 1));
+        // Y-up turned to Z-up: the translation along glTF Z goes along -Y
+        Box b = g->bounds();
+        CHECK(near(b.min.y, -5) && near(b.max.z, 1));
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
@@ -217,6 +292,7 @@ int main(int argc, char **argv) {
     testScene();
     testLoaders(dir);
     testLegacyFormats(dir);
+    testStep2(dir);
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }
