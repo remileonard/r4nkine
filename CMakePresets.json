@@ -18,6 +18,12 @@
             "architecture": "x64"
         },
         {
+            "name": "windows-vs",
+            "displayName": "Visual Studio (the newest installed) x64",
+            "inherits": "base",
+            "architecture": "x64"
+        },
+        {
             "name": "linux",
             "displayName": "Linux, Release",
             "inherits": "base",
@@ -43,14 +49,47 @@
         }
     ],
     "buildPresets": [
-        { "name": "windows", "configurePreset": "windows", "configuration": "Release" },
-        { "name": "linux", "configurePreset": "linux" },
-        { "name": "linux-debug", "configurePreset": "linux-debug" },
-        { "name": "macos", "configurePreset": "macos" }
+        {
+            "name": "windows",
+            "configurePreset": "windows",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-vs",
+            "configurePreset": "windows-vs",
+            "configuration": "Release"
+        },
+        {
+            "name": "linux",
+            "configurePreset": "linux"
+        },
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
+        },
+        {
+            "name": "macos",
+            "configurePreset": "macos"
+        }
     ],
     "testPresets": [
-        { "name": "windows", "configurePreset": "windows", "configuration": "Release" },
-        { "name": "linux", "configurePreset": "linux" },
-        { "name": "macos", "configurePreset": "macos" }
+        {
+            "name": "windows",
+            "configurePreset": "windows",
+            "configuration": "Release"
+        },
+        {
+            "name": "windows-vs",
+            "configurePreset": "windows-vs",
+            "configuration": "Release"
+        },
+        {
+            "name": "linux",
+            "configurePreset": "linux"
+        },
+        {
+            "name": "macos",
+            "configurePreset": "macos"
+        }
     ]
 }

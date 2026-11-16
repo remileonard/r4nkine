@@ -66,7 +66,7 @@ With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:
 
 ```
-cmake --preset linux          # or windows, macos, linux-debug
+cmake --preset linux          # or windows (VS 2022), windows-vs (the newest VS), macos, linux-debug
 cmake --build --preset linux
 ctest --preset linux
 ```
