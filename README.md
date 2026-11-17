@@ -45,11 +45,29 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   stream, and consecutive items with the same mesh, material and pipeline
   are one draw call. Shading is per-pixel Blinn-Phong with fog. Triangles,
   lines and points are drawn; decals and sphere maps are supported.
-- `r4fly`: the viewer. Use the trackball, `w` for wireframe and `s` for
-  statistics. `-snap` saves a frame, `-view` places the eye, `-state`
-  chooses the state bits of the models, `-F` gives the search paths, and
-  `-forest N[,F]` plants N copies of the files with an Instancer (the
-  first file near, the next ones beyond F, 2F...).
+- `r4fly`: the viewer, with a GUI (Dear ImGui):
+  - **mouse**: the left button turns about the center, the wheel zooms,
+    the right button moves the center with the mouse;
+  - **settings panel**: the camera (field of view, angles, distance, clip
+    planes, front/side/top views), the lighting (headlight or a fixed sun,
+    colors), the environment (background, fog), the rendering (wireframe,
+    textures, the state mask bit by bit), the culling (frustum culling,
+    freezing it to look at it from outside, LOD scale) and the
+    optimisations (sorting by state, instancing, vertical sync);
+  - **scene graph window**: the tree of the nodes with their types, a box
+    to hide each node, and the selected node's mask, state filter, matrix,
+    bounds (drawn in the view), drawables and materials, switch value,
+    LOD ranges, billboard mode and instancer levels;
+  - **performance window**: frame rate, curves of the frame, cull and draw
+    times over the last 240 frames, and the counters of the renderer (draw
+    calls, triangles, state changes, items per draw, nodes and instances
+    culled).
+
+  Keys: F1 shows or hides the GUI, `w` wireframe, `r` reset, `s` statistics.
+  `-snap` saves a frame, `-nogui` starts without the GUI, `-view` places
+  the eye, `-state` chooses the state bits of the models, `-F` gives the
+  search paths, and `-forest N[,F]` plants N copies of the files with an
+  Instancer (the first file near, the next ones beyond F, 2F...).
 
 ## Building
 
@@ -61,6 +79,7 @@ mode (`vcpkg.json`):
 | stb | the PNG, JPEG, BMP, TGA and GIF images | always |
 | cgltf | glTF 2.0 | always |
 | SDL2 | r4fly, the viewer | `viewer` (default) |
+| imgui (SDL2 and OpenGL 3 bindings) | the GUI of r4fly | `viewer` (default) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:
@@ -71,7 +90,7 @@ cmake --build --preset linux
 ctest --preset linux
 ```
 
-Without the viewer (and without SDL2), add `-DR4_BUILD_APPS=OFF`: the
+Without the viewer (and without SDL2 and ImGui), add `-DR4_BUILD_APPS=OFF`: the
 `viewer` feature of the manifest is then left out.
 
 ```

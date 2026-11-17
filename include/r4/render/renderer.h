@@ -64,9 +64,22 @@ struct Environment {
     float fogStart = 100, fogEnd = 1000;
 };
 
+// the switches of the renderer, for the viewers and the measures
+struct RenderOptions {
+    bool frustumCulling = true;  // off: everything is drawn
+    bool freezeCulling = false;  // the culling and the LODs keep the eye of the moment it was set
+    bool sortByState = true;     // off: the opaque items in the order of the graph
+    bool instancing = true;      // off: one draw per item
+    bool textures = true;
+    bool lighting = true;        // off: everything unlit
+    float lodScale = 1;          // the distances of the LODs and instancers are multiplied by it
+};
+
 struct RenderStats {
     uint32_t nodesVisited = 0, nodesCulled = 0, drawables = 0;
     uint32_t instancesVisited = 0, instancesCulled = 0; // of the instancers
+    uint32_t opaqueItems = 0, transparentItems = 0;
+    double cullMs = 0, sortMs = 0, uploadMs = 0, drawMs = 0; // CPU times of the frame
     gpu::FrameStats gpu;
 };
 
@@ -90,6 +103,7 @@ public:
     void render(scene::Node &root, const Camera &camera, int x, int y, int width, int height);
 
     Environment &environment() { return env_; }
+    RenderOptions &options() { return options_; }
     void setWireframe(bool on) { wireframe_ = on; }
     bool wireframe() const { return wireframe_; }
     const RenderStats &stats() const { return stats_; }
@@ -105,16 +119,20 @@ private:
         gpu::PipelineHandle pipeline;
     };
     void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
-              const Camera &cam);
-    void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside,
-                       const Camera &cam);
-    void addItem(const scene::Drawable &d, const Mat4 &world, const Camera &cam);
+              Vec3 eye);
+    void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye);
+    void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
     gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
     bool createShaders();
 
     gpu::Device &device_;
     Environment env_;
+    RenderOptions options_;
     RenderStats stats_;
+    // the eye of the culling, kept while it is frozen
+    Mat4 cullViewProj_;
+    Vec3 cullEye_;
+    bool frozen_ = false;
     std::string error_;
     bool wireframe_ = false;
     gpu::ShaderHandle shader_;

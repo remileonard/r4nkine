@@ -1,8 +1,9 @@
 // r4fly - the model viewer of R4nkine, heir of perfly.
 //
 //   r4fly [options] file ...
-//     -size WxH        the window size (default 1024x768)
+//     -size WxH        the window size (default 1280x800)
 //     -wire            start in wireframe
+//     -nogui           start without the GUI (F1 shows it)
 //     -frames N        quit after N frames
 //     -snap file.ppm   save the last frame before quitting
 //     -stats           print the statistics once a second
@@ -12,46 +13,21 @@
 //     -forest N[,F]    N copies of the files planted on a square (an Instancer):
 //                      the first file near, the next ones beyond F, 2F... units
 //
-// The files are loaded side by side under one root. The mouse turns the
-// trackball (left), pans (middle), zooms (right or the wheel). Keys: w
-// wireframe, r reset, s statistics, Esc quit.
-#include "r4/assets/model.h"
-#include "r4/gpu/device.h"
-#include "r4/render/renderer.h"
-#include "r4/scene/node.h"
+// The files are loaded side by side under one root. The mouse: the left
+// button turns, the wheel zooms, the right button moves. Keys: F1 the GUI,
+// w wireframe, r reset, s statistics, Esc quit. The GUI (Dear ImGui) holds
+// the settings of the camera, the light, the environment, the rendering, the
+// culling and the optimisations, the scene graph and the performances.
+#include "app.h"
 
-#include <SDL.h>
-
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <string>
-#include <vector>
 
-using namespace r4;
+using namespace r4fly;
 
-namespace {
-
-struct Trackball {
-    Vec3 center;
-    float radius = 1, distance = 3, heading = 30, pitch = 25;
-    Vec3 pan;
-    void reset(const Sphere &s) {
-        center = s.empty() ? Vec3{} : s.center;
-        radius = s.empty() || s.radius <= 0 ? 1 : s.radius;
-        distance = radius * 2.6f;
-        heading = 30;
-        pitch = 25;
-        pan = {};
-    }
-    void apply(render::Camera &cam, float aspect) const {
-        float h = radians(heading), p = radians(pitch);
-        Vec3 target = center + pan;
-        Vec3 eye = target + Vec3{std::cos(p) * std::sin(h), -std::cos(p) * std::cos(h), std::sin(p)} * distance;
-        cam.lookAt(eye, target, {0, 0, 1});
-        cam.perspective(45, aspect, std::max(distance - radius * 2, distance * 0.01f), distance + radius * 4);
-    }
-};
+namespace r4fly {
 
 bool savePPM(const char *path, int w, int h, const std::vector<uint8_t> &rgba) {
     FILE *f = std::fopen(path, "wb");
@@ -65,18 +41,34 @@ bool savePPM(const char *path, int w, int h, const std::vector<uint8_t> &rgba) {
     return true;
 }
 
+} // namespace r4fly
+
+namespace {
+
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] [-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
+                         "[-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
     std::exit(1);
+}
+
+double now() {
+    using namespace std::chrono;
+    return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
+}
+
+void push(std::deque<float> &d, float v) {
+    d.push_back(v);
+    while (d.size() > 240)
+        d.pop_front();
 }
 
 } // namespace
 
 int main(int argc, char **argv) {
-    int width = 1024, height = 768, frames = -1;
-    bool wire = false, printStats = false;
+    App app;
+    int width = 1280, height = 800, frames = -1;
+    bool wire = false;
     const char *snap = nullptr;
-    float viewH = 30, viewP = 25, viewZ = 1;
     long state = -1;
     int forest = 0;
     float forestFar = 0;
@@ -88,12 +80,14 @@ int main(int argc, char **argv) {
                 usage();
         } else if (a == "-wire") {
             wire = true;
+        } else if (a == "-nogui") {
+            app.showGui = false;
         } else if (a == "-frames" && i + 1 < argc) {
             frames = std::atoi(argv[++i]);
         } else if (a == "-snap" && i + 1 < argc) {
             snap = argv[++i];
         } else if (a == "-view" && i + 1 < argc) {
-            if (std::sscanf(argv[++i], "%f,%f,%f", &viewH, &viewP, &viewZ) < 2)
+            if (std::sscanf(argv[++i], "%f,%f,%f", &app.viewH, &app.viewP, &app.viewZ) < 2)
                 usage();
         } else if (a == "-state" && i + 1 < argc) {
             state = std::strtol(argv[++i], nullptr, 0);
@@ -111,7 +105,7 @@ int main(int argc, char **argv) {
             if (std::sscanf(argv[++i], "%d,%f", &forest, &forestFar) < 1)
                 usage();
         } else if (a == "-stats") {
-            printStats = true;
+            app.printStats = true;
         } else if (!a.empty() && a[0] == '-') {
             usage();
         } else {
@@ -131,63 +125,79 @@ int main(int argc, char **argv) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    SDL_Window *window = SDL_CreateWindow("r4fly", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
-                                          SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
-    if (!window) {
+    app.window = SDL_CreateWindow("r4fly", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
+                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+    if (!app.window) {
         std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
         return 1;
     }
-    SDL_GLContext context = SDL_GL_CreateContext(window);
+    SDL_GLContext context = SDL_GL_CreateContext(app.window);
     if (!context) {
         std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
         return 1;
     }
+    SDL_GL_MakeCurrent(app.window, context);
     SDL_GL_SetSwapInterval(1);
 
     std::string error;
-    auto device = gpu::createGLDevice([](const char *n) { return SDL_GL_GetProcAddress(n); }, &error);
-    if (!device) {
+    app.device = gpu::createGLDevice([](const char *n) { return SDL_GL_GetProcAddress(n); }, &error);
+    if (!app.device) {
         std::fprintf(stderr, "r4fly: %s\n", error.c_str());
         return 1;
     }
-    std::printf("r4fly: %s\n", device->name());
-    {
-        render::Renderer renderer(*device);
-        if (!renderer.error().empty()) {
-            std::fprintf(stderr, "r4fly: %s\n", renderer.error().c_str());
-            return 1;
-        }
-        renderer.setWireframe(wire);
+    std::printf("r4fly: %s\n", app.device->name());
+    app.renderer = std::make_unique<render::Renderer>(*app.device);
+    if (!app.renderer->error().empty()) {
+        std::fprintf(stderr, "r4fly: %s\n", app.renderer->error().c_str());
+        return 1;
+    }
+    render::Renderer &renderer = *app.renderer;
+    renderer.setWireframe(wire);
 
-        // the files side by side along X, each centered on the ground
-        auto root = scene::make<scene::Group>();
-        root->setName("root");
-        float x = 0;
-        auto instancer = scene::make<scene::Instancer>();
-        int level = 0;
-        for (const std::string &f : files) {
-            auto model = assets::loadModel(f, &error);
-            if (!model) {
-                std::fprintf(stderr, "r4fly: %s\n", error.c_str());
-                continue;
+    // the files side by side along X, each centered on the ground
+    app.top = scene::make<scene::Group>();
+    app.top->setName("top");
+    app.models = scene::make<scene::Group>();
+    app.models->setName("root");
+    app.top->addChild(app.models);
+    float x = 0;
+    auto instancer = scene::make<scene::Instancer>();
+    int level = 0;
+    for (const std::string &f : files) {
+        auto model = assets::loadModel(f, &error);
+        if (!model) {
+            std::fprintf(stderr, "r4fly: %s\n", error.c_str());
+            continue;
+        }
+        scene::NodePtr node = renderer.upload(*model);
+        if (state >= 0)
+            node->setStateFilter((uint32_t)state);
+        Sphere s = node->bounds();
+        LoadedFile lf;
+        lf.path = f;
+        lf.model = model;
+        lf.node = node;
+        for (const auto &m : model->meshes)
+            switch (m.primitive) {
+            case assets::Primitive::Triangles: lf.triangles += m.indices.size() / 3; break;
+            case assets::Primitive::Lines: lf.lines += m.indices.size() / 2; break;
+            case assets::Primitive::Points: lf.points += m.indices.size(); break;
             }
-            scene::NodePtr node = renderer.upload(*model);
-            if (state >= 0)
-                node->setStateFilter((uint32_t)state);
-            Sphere s = node->bounds();
-            if (forest > 0) {
-                // the model as a level of the instancer, its base on the ground
-                Box box = model->bounds();
-                float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
-                Mat4 m = Mat4::scale({unit, unit, unit}) * Mat4::translate({-s.center.x, -s.center.y, -box.min.z});
-                auto parts = scene::collectParts(*node);
-                for (auto &p : parts)
-                    p.local = m * p.local;
-                float limit = forestFar > 0 && level + 1 < (int)files.size() ? forestFar * (level + 1) : 1e30f;
-                instancer->addLevel(parts, limit);
-                level++;
-                continue;
-            }
+        std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n",
+                    f.c_str(), model->meshes.size(), lf.triangles, lf.lines, lf.points, model->materials.size(),
+                    model->images.size());
+        if (forest > 0) {
+            // the model as a level of the instancer, its base on the ground
+            Box box = model->bounds();
+            float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
+            Mat4 m = Mat4::scale({unit, unit, unit}) * Mat4::translate({-s.center.x, -s.center.y, -box.min.z});
+            auto parts = scene::collectParts(*node);
+            for (auto &p : parts)
+                p.local = m * p.local;
+            float limit = forestFar > 0 && level + 1 < (int)files.size() ? forestFar * (level + 1) : 1e30f;
+            instancer->addLevel(parts, limit);
+            level++;
+        } else {
             auto place = scene::make<scene::Group>();
             place->setName(f);
             if (!s.empty()) {
@@ -196,124 +206,171 @@ int main(int argc, char **argv) {
                                  Mat4::translate(-s.center));
             }
             place->addChild(node);
-            root->addChild(place);
+            app.models->addChild(place);
             x += 2.2f;
-            size_t tris = 0, lines = 0, points = 0;
-            for (const auto &m : model->meshes)
-                switch (m.primitive) {
-                case assets::Primitive::Triangles: tris += m.indices.size() / 3; break;
-                case assets::Primitive::Lines: lines += m.indices.size() / 2; break;
-                case assets::Primitive::Points: points += m.indices.size(); break;
-                }
-            std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n",
-                        f.c_str(), model->meshes.size(), tris, lines, points, model->materials.size(),
-                        model->images.size());
         }
-
-        if (forest > 0) {
-            // a square of instances, turned and scaled at random
-            int side = (int)std::ceil(std::sqrt((double)forest));
-            unsigned seed = 1;
-            auto rnd = [&]() {
-                seed = seed * 1103515245u + 12345u;
-                return (seed >> 8 & 0xffff) / 65535.0f;
-            };
-            std::vector<Mat4> inst;
-            for (int i = 0; i < forest; i++) {
-                float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f, py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
-                float k = 0.7f + 0.6f * rnd();
-                inst.push_back(Mat4::translate({px, py, 0}) * Mat4::rotate(rnd() * 6.2832f, {0, 0, 1}) *
-                               Mat4::scale({k, k, k}));
-            }
-            instancer->setInstances(inst);
-            instancer->setName("forest");
-            root->addChild(instancer);
-            std::printf("r4fly: %d instances, %d levels\n", forest, level);
-        }
-
-        Trackball ball;
-        auto resetView = [&]() {
-            ball.reset(root->bounds());
-            ball.heading = viewH;
-            ball.pitch = viewP;
-            ball.distance /= viewZ > 0 ? viewZ : 1;
-        };
-        resetView();
-        render::Camera camera;
-        bool running = true;
-        int frame = 0;
-        Uint32 lastStats = SDL_GetTicks();
-        int framesSinceStats = 0;
-        std::vector<uint8_t> pixels;
-        while (running) {
-            SDL_Event e;
-            while (SDL_PollEvent(&e)) {
-                switch (e.type) {
-                case SDL_QUIT: running = false; break;
-                case SDL_KEYDOWN:
-                    switch (e.key.keysym.sym) {
-                    case SDLK_ESCAPE: running = false; break;
-                    case SDLK_w: renderer.setWireframe(!renderer.wireframe()); break;
-                    case SDLK_r: resetView(); break;
-                    case SDLK_s: printStats = !printStats; break;
-                    }
-                    break;
-                case SDL_MOUSEMOTION:
-                    if (e.motion.state & SDL_BUTTON_LMASK) {
-                        ball.heading += e.motion.xrel * 0.4f;
-                        ball.pitch = std::min(89.0f, std::max(-89.0f, ball.pitch + e.motion.yrel * 0.4f));
-                    } else if (e.motion.state & SDL_BUTTON_RMASK) {
-                        ball.distance *= std::exp(e.motion.yrel * 0.01f);
-                    } else if (e.motion.state & SDL_BUTTON_MMASK) {
-                        float k = ball.distance * 0.0015f, h = radians(ball.heading);
-                        ball.pan += Vec3{-std::cos(h), -std::sin(h), 0} * (e.motion.xrel * k);
-                        ball.pan.z += e.motion.yrel * k;
-                    }
-                    break;
-                case SDL_MOUSEWHEEL: ball.distance *= std::exp(-e.wheel.y * 0.1f); break;
-                }
-            }
-            int w, h;
-            SDL_GL_GetDrawableSize(window, &w, &h);
-            ball.apply(camera, h > 0 ? (float)w / h : 1);
-            // a light over the shoulder of the viewer, as the eye light of perfly
-            {
-                float hh = radians(ball.heading), pp = radians(ball.pitch);
-                Vec3 toTarget = -Vec3{std::cos(pp) * std::sin(hh), -std::cos(pp) * std::cos(hh), std::sin(pp)};
-                renderer.environment().lightDirection = normalize(toTarget + Vec3{0.3f, 0, -0.6f});
-            }
-            renderer.render(*root, camera, 0, 0, w, h);
-            frame++;
-            framesSinceStats++;
-            bool last = frames > 0 && frame >= frames;
-            if (last && snap) {
-                pixels.resize((size_t)w * h * 4);
-                if (device->readPixels(0, 0, w, h, pixels.data()) && savePPM(snap, w, h, pixels))
-                    std::printf("r4fly: %s saved\n", snap);
-            }
-            const render::RenderStats &st = renderer.stats();
-            Uint32 now = SDL_GetTicks();
-            if (now - lastStats >= 1000 || last) {
-                char title[256];
-                float fps = framesSinceStats * 1000.0f / std::max<Uint32>(1, now - lastStats);
-                std::snprintf(title, sizeof title,
-                              "r4fly - %.0f fps, %u draws, %u triangles, %u/%u nodes culled, %u/%u instances culled", fps,
-                              st.gpu.drawCalls, st.gpu.triangles, st.nodesCulled, st.nodesVisited, st.instancesCulled,
-                              st.instancesVisited);
-                SDL_SetWindowTitle(window, title);
-                if (printStats)
-                    std::printf("%s\n", title + 8);
-                lastStats = now;
-                framesSinceStats = 0;
-            }
-            SDL_GL_SwapWindow(window);
-            if (last)
-                running = false;
-        }
+        app.files.push_back(std::move(lf));
     }
-    device.reset();
+
+    if (forest > 0) {
+        // a square of instances, turned and scaled at random
+        int side = (int)std::ceil(std::sqrt((double)forest));
+        unsigned seed = 1;
+        auto rnd = [&]() {
+            seed = seed * 1103515245u + 12345u;
+            return (seed >> 8 & 0xffff) / 65535.0f;
+        };
+        std::vector<Mat4> inst;
+        for (int i = 0; i < forest; i++) {
+            float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f, py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
+            float k = 0.7f + 0.6f * rnd();
+            inst.push_back(Mat4::translate({px, py, 0}) * Mat4::rotate(rnd() * 6.2832f, {0, 0, 1}) *
+                           Mat4::scale({k, k, k}));
+        }
+        instancer->setInstances(inst);
+        instancer->setName("forest");
+        app.models->addChild(instancer);
+        app.forest = instancer;
+        std::printf("r4fly: %d instances, %d levels\n", forest, level);
+    }
+
+    // the bounds of the selection, beside the models (so not in their bounds)
+    app.boundsMarker = makeBoundsMarker(renderer);
+    app.boundsMarker->setMask(0);
+    app.top->addChild(app.boundsMarker);
+
+    app.resetView();
+    guiInit(app, context);
+
+    bool running = true;
+    int frame = 0;
+    double lastStats = now(), frameStart = now();
+    int framesSinceStats = 0;
+    std::vector<uint8_t> pixels;
+    while (running) {
+        SDL_Event e;
+        while (SDL_PollEvent(&e)) {
+            guiEvent(e);
+            bool mouse = !(app.showGui && guiWantsMouse());
+            bool keys = !(app.showGui && guiWantsKeyboard());
+            switch (e.type) {
+            case SDL_QUIT: running = false; break;
+            case SDL_KEYDOWN:
+                if (e.key.keysym.sym == SDLK_F1) {
+                    app.showGui = !app.showGui;
+                    break;
+                }
+                if (!keys)
+                    break;
+                switch (e.key.keysym.sym) {
+                case SDLK_ESCAPE: running = false; break;
+                case SDLK_w: renderer.setWireframe(!renderer.wireframe()); break;
+                case SDLK_r: app.resetView(); break;
+                case SDLK_s: app.printStats = !app.printStats; break;
+                }
+                break;
+            case SDL_MOUSEMOTION:
+                if (!mouse)
+                    break;
+                if (e.motion.state & SDL_BUTTON_LMASK) {
+                    // the left button turns about the center
+                    app.ball.heading -= e.motion.xrel * 0.4f;
+                    if (app.ball.heading > 180)
+                        app.ball.heading -= 360;
+                    if (app.ball.heading < -180)
+                        app.ball.heading += 360;
+                    app.ball.pitch = std::min(89.0f, std::max(-89.0f, app.ball.pitch + e.motion.yrel * 0.4f));
+                } else if (e.motion.state & SDL_BUTTON_RMASK) {
+                    // the right button moves the center with the mouse
+                    int ww, wh;
+                    SDL_GetWindowSize(app.window, &ww, &wh);
+                    app.ball.move((float)e.motion.xrel, (float)e.motion.yrel, wh);
+                }
+                break;
+            case SDL_MOUSEWHEEL:
+                if (mouse)
+                    app.ball.distance *= std::exp(-e.wheel.y * 0.12f);
+                break;
+            }
+        }
+        int w, h;
+        SDL_GL_GetDrawableSize(app.window, &w, &h);
+        app.ball.apply(app.camera, h > 0 ? (float)w / h : 1);
+        if (app.headlight) {
+            // a light over the shoulder of the viewer, as the eye light of perfly
+            Vec3 toTarget = normalize(app.ball.target() - app.ball.eye());
+            renderer.environment().lightDirection = normalize(toTarget + Vec3{0.3f, 0, -0.6f});
+        } else {
+            float az = radians(app.lightAzimuth), el = radians(app.lightElevation);
+            renderer.environment().lightDirection =
+                -Vec3{std::cos(el) * std::sin(az), std::cos(el) * std::cos(az), std::sin(el)};
+        }
+
+        // the marker on the selection: its world matrix comes from the graph
+        // window of the last frame
+        if (app.selected && app.showSelectedBounds && app.showGui) {
+            Sphere s = app.selected->bounds(); // in the space of its parent
+            Mat4 parentWorld = app.selectedWorld * inverse(app.selected->matrix());
+            float r = std::max(s.radius, 1e-6f);
+            app.boundsMarker->setMatrix(parentWorld * Mat4::translate(s.center) * Mat4::scale({r, r, r}));
+            app.boundsMarker->setMask(~0u);
+        } else {
+            app.boundsMarker->setMask(0);
+        }
+
+        guiFrame(app);
+        renderer.render(*app.top, app.camera, 0, 0, w, h);
+        if (!app.snapRequest.empty()) {
+            // the scene alone, without the GUI
+            pixels.resize((size_t)w * h * 4);
+            if (app.device->readPixels(0, 0, w, h, pixels.data()) && savePPM(app.snapRequest.c_str(), w, h, pixels))
+                std::printf("r4fly: %s saved\n", app.snapRequest.c_str());
+            app.snapRequest.clear();
+        }
+        guiRender(app);
+
+        frame++;
+        framesSinceStats++;
+        bool last = frames > 0 && frame >= frames;
+        if (last && snap) {
+            pixels.resize((size_t)w * h * 4);
+            if (app.device->readPixels(0, 0, w, h, pixels.data()) && savePPM(snap, w, h, pixels))
+                std::printf("r4fly: %s saved\n", snap);
+        }
+        const render::RenderStats &st = renderer.stats();
+        double t = now();
+        push(app.frameMs, (float)(t - frameStart));
+        push(app.cullMs, (float)st.cullMs);
+        push(app.drawMs, (float)(st.uploadMs + st.drawMs));
+        frameStart = t;
+        if (t - lastStats >= 1000 || last) {
+            char title[256];
+            float fps = (float)(framesSinceStats * 1000.0 / std::max(1.0, t - lastStats));
+            std::snprintf(title, sizeof title,
+                          "r4fly - %.0f fps, %u draws, %u triangles, %u/%u nodes culled, %u/%u instances culled", fps,
+                          st.gpu.drawCalls, st.gpu.triangles, st.nodesCulled, st.nodesVisited, st.instancesCulled,
+                          st.instancesVisited);
+            SDL_SetWindowTitle(app.window, title);
+            if (app.printStats)
+                std::printf("%s\n", title + 8);
+            lastStats = t;
+            framesSinceStats = 0;
+        }
+        SDL_GL_SwapWindow(app.window);
+        if (last)
+            running = false;
+    }
+    guiShutdown();
+    app.selected = nullptr;
+    app.boundsMarker.reset();
+    app.files.clear();
+    app.forest.reset();
+    app.models.reset();
+    app.top.reset();
+    app.renderer.reset();
+    app.device.reset();
     SDL_GL_DeleteContext(context);
-    SDL_DestroyWindow(window);
+    SDL_DestroyWindow(app.window);
     SDL_Quit();
     return 0;
 }

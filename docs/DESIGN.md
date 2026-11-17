@@ -45,7 +45,7 @@ baseline in `vcpkg-configuration.json`, the same as libRealSpace):
 
 - **stb**: the common image formats.
 - **cgltf**: glTF 2.0.
-- **SDL2**: only for r4fly, the `viewer` feature.
+- **SDL2** and **Dear ImGui**: only for r4fly, the `viewer` feature.
 
 The library itself needs no graphics header and no GL loader, because the
 OpenGL functions are loaded at run time.
@@ -126,6 +126,16 @@ drawables) marks it and its ancestors dirty, and the next `bounds()` call
 recomputes only what was marked. The world can therefore change at run
 time, nodes added or removed, without full updates.
 
+## Render options and measures
+
+`Renderer::options()` turns the stages on and off at run time, to see what
+each one is worth: frustum culling, sorting by state, the merging of equal
+items into instanced draws, textures, lighting, and a scale on the
+distances of the LODs and instancers. **Freezing the culling** keeps the
+frustum and the eye of the moment: the camera can then move out and look at
+what was culled. `stats()` gives the counters of the frame and the CPU time
+of each stage (cull, sort, upload, draw).
+
 ## The old formats
 
 Each loader is a port of the loader of legacy_opengl_demo. The original
@@ -178,7 +188,8 @@ behaviors are kept, translated into the neutral format:
 | 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
 | 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |
-| later | threaded culling (APP/CULL/DRAW as in Performer), shadows, an ImGui panel in r4fly | |
+| 3b | r4fly with a GUI (Dear ImGui): settings, scene graph, performances; render options in the renderer (culling, freeze, sorting, instancing, textures, lighting, LOD scale) and CPU timings | **done** |
+| later | threaded culling (APP/CULL/DRAW as in Performer), shadows | |
 
 ## Integration in libRealSpace
 

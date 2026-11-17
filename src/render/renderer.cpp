@@ -1,6 +1,7 @@
 #include "r4/render/renderer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstring>
 
@@ -19,6 +20,7 @@ struct FrameBlock {
     float ambient[4];
     float fogColor[4];
     float fogParams[4]; // start, end, enabled
+    float options[4];   // textures, lighting
 };
 
 struct MaterialBlock {
@@ -33,7 +35,7 @@ struct MaterialBlock {
 const char *kVertexShader = R"(#version 330
 layout(std140) uniform Frame {
     mat4 view, projection, viewProjection;
-    vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams;
+    vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams, options;
 };
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -63,7 +65,7 @@ void main() {
 const char *kFragmentShader = R"(#version 330
 layout(std140) uniform Frame {
     mat4 view, projection, viewProjection;
-    vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams;
+    vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams, options;
 };
 layout(std140) uniform Material {
     vec4 diffuse, ambient, specular, emissive, flags, flags2;
@@ -86,11 +88,11 @@ void main() {
         float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
         uv = r.xy / m + 0.5;
     }
-    if (flags.x > 0.5) base *= texture(diffuseMap, uv);
+    if (flags.x > 0.5 && options.x > 0.5) base *= texture(diffuseMap, uv);
     if (flags.z > 0.5) base *= vColor;
     if (flags.y > 0.0 && base.a < flags.y) discard;
     vec3 color;
-    if (flags.w > 0.5 || dot(vNormal, vNormal) < 1e-12) {
+    if (flags.w > 0.5 || options.y < 0.5 || dot(vNormal, vNormal) < 1e-12) {
         color = base.rgb; // unlit, or no normal (lines, points)
     } else {
         // Blinn-Phong, both faces lit: the normal turned towards the eye
@@ -349,7 +351,7 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     return nodes[0];
 }
 
-void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, const Camera &cam) {
+void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     if (!d.mesh || !d.mesh->indexCount)
         return;
     MaterialInstance *mat = d.material ? d.material.get() : defaultMaterial_.get();
@@ -358,7 +360,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, const Camera
     item.material = mat;
     item.world = world;
     Vec3 c = world.transformPoint(d.mesh->bounds.center);
-    item.depth = length(c - cam.position);
+    item.depth = length(c - eye);
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 |
                (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
@@ -368,7 +370,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, const Camera
 
 // each instance culled on its own sphere, its level chosen by its distance
 void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside,
-                             const Camera &cam) {
+                             Vec3 eye) {
     const auto &levels = node.levels();
     if (levels.empty())
         return;
@@ -383,18 +385,18 @@ void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Fr
             stats_.instancesCulled++;
             continue;
         }
-        int level = node.select(length(s.center - cam.position));
+        int level = node.select(length(s.center - eye) * options_.lodScale);
         if (level < 0) {
             stats_.instancesCulled++;
             continue;
         }
         for (const scene::InstancePart &p : levels[level].parts)
-            addItem(p.drawable, w * p.local, cam);
+            addItem(p.drawable, w * p.local, eye);
     }
 }
 
 void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
-                    const Camera &cam) {
+                    Vec3 eye) {
     if (!(node.mask() & state))
         return;
     state &= node.stateFilter();
@@ -411,13 +413,13 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
     if (node.type() == scene::NodeType::Billboard) {
         // turned to the eye, about the origin of the node
         auto &bb = static_cast<scene::Billboard &>(node);
-        world = world * bb.rotationFor(inverse(world).transformPoint(cam.position));
+        world = world * bb.rotationFor(inverse(world).transformPoint(eye));
     }
     if (node.type() == scene::NodeType::Geode || node.type() == scene::NodeType::Billboard) {
         for (const scene::Drawable &d : static_cast<scene::Geode &>(node).drawables())
-            addItem(d, world, cam);
+            addItem(d, world, eye);
     } else if (node.type() == scene::NodeType::Instancer) {
-        cullInstancer(static_cast<scene::Instancer &>(node), world, frustum, inside, cam);
+        cullInstancer(static_cast<scene::Instancer &>(node), world, frustum, inside, eye);
     }
     const auto &children = node.children();
     switch (node.type()) {
@@ -425,20 +427,20 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
         auto &sw = static_cast<scene::Switch &>(node);
         for (size_t i = 0; i < children.size(); i++)
             if (sw.isActive((int)i))
-                cull(*children[i], world, frustum, inside, state, cam);
+                cull(*children[i], world, frustum, inside, state, eye);
         break;
     }
     case scene::NodeType::LOD: {
         auto &lod = static_cast<scene::LOD &>(node);
         Vec3 c = world.transformPoint(lod.center());
-        int i = lod.select(length(c - cam.position));
+        int i = lod.select(length(c - eye) * options_.lodScale);
         if (i >= 0)
-            cull(*children[i], world, frustum, inside, state, cam);
+            cull(*children[i], world, frustum, inside, state, eye);
         break;
     }
     default:
         for (const scene::NodePtr &c : children)
-            cull(*c, world, frustum, inside, state, cam);
+            cull(*c, world, frustum, inside, state, eye);
     }
 }
 
@@ -449,11 +451,30 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     if (!shader_)
         return;
 
+    using clock = std::chrono::steady_clock;
+    auto ms = [](clock::time_point a, clock::time_point b) {
+        return std::chrono::duration<double, std::milli>(b - a).count();
+    };
+    auto t0 = clock::now();
     Mat4 viewProj = cam.projection * cam.view;
-    cull(root, Mat4::identity(), Frustum::fromMatrix(viewProj), false, cam.mask, cam);
-    std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) { return a.key < b.key; });
+    // the eye of the culling: the camera, or the one kept while frozen
+    if (!options_.freezeCulling || !frozen_) {
+        cullViewProj_ = viewProj;
+        cullEye_ = cam.position;
+    }
+    frozen_ = options_.freezeCulling;
+    cull(root, Mat4::identity(), Frustum::fromMatrix(cullViewProj_), !options_.frustumCulling, cam.mask, cullEye_);
+    auto t1 = clock::now();
+    if (options_.sortByState)
+        std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) { return a.key < b.key; });
+    // the transparent ones from back to front, from the eye of the camera
+    for (DrawItem &it : transparent_)
+        it.depth = length(it.world.transformPoint(it.mesh->bounds.center) - cam.position);
     std::sort(transparent_.begin(), transparent_.end(),
               [](const DrawItem &a, const DrawItem &b) { return a.depth > b.depth; });
+    auto t2 = clock::now();
+    stats_.opaqueItems = (uint32_t)opaque_.size();
+    stats_.transparentItems = (uint32_t)transparent_.size();
 
     // the frame
     FrameBlock fb{};
@@ -468,6 +489,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.fogParams[0] = env_.fogStart;
     fb.fogParams[1] = env_.fogEnd;
     fb.fogParams[2] = env_.fog ? 1.0f : 0.0f;
+    fb.options[0] = options_.textures ? 1.0f : 0.0f;
+    fb.options[1] = options_.lighting ? 1.0f : 0.0f;
     device_.updateBuffer(frameUniforms_, 0, &fb, sizeof fb);
 
     // the matrices of the items, in the order of the draws
@@ -484,6 +507,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         instanceBuffer_ = device_.createBuffer(gpu::BufferUsage::Vertex, nullptr, instanceCapacity_, true);
     }
     device_.updateBuffer(instanceBuffer_, 0, instanceData_.data(), bytes);
+    auto t3 = clock::now();
 
     gpu::ClearValues clear;
     clear.r = env_.clearColor.x;
@@ -501,8 +525,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
             const DrawItem &it = items[i];
             // the run of the same mesh, material and pipeline: one draw
             size_t j = i + 1;
-            while (j < items.size() && items[j].mesh == it.mesh && items[j].material == it.material &&
-                   items[j].pipeline == it.pipeline)
+            while (options_.instancing && j < items.size() && items[j].mesh == it.mesh &&
+                   items[j].material == it.material && items[j].pipeline == it.pipeline)
                 j++;
             device_.bindPipeline(it.pipeline);
             if (it.material != lastMaterial) {
@@ -523,6 +547,11 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     }
     device_.endPass();
     stats_.gpu = device_.takeStats();
+    auto t4 = clock::now();
+    stats_.cullMs = ms(t0, t1);
+    stats_.sortMs = ms(t1, t2);
+    stats_.uploadMs = ms(t2, t3);
+    stats_.drawMs = ms(t3, t4);
 }
 
 } // namespace r4::render
