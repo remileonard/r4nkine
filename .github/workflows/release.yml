@@ -8,12 +8,14 @@ name: Release
 #   release: the tag given, or dev-<run number> as a prerelease.
 # - Pushing a tag v* (git tag v0.3.0 && git push origin v0.3.0) builds and
 #   publishes the release of that tag.
+# - A commit whose message holds [release] builds the archives once pushed
+#   (without publishing). Other pushes skip the jobs: no minutes used.
 # The "Run workflow" button needs this file on the default branch (main).
 
 on:
   push:
     tags: ["v*"]
-    # every push builds the archives, to try them (without publishing)
+    # the archives of a commit marked [release], to try them (without publishing)
     branches: ["**"]
   workflow_dispatch:
     inputs:
@@ -31,6 +33,7 @@ permissions:
 
 jobs:
   build:
+    if: github.event_name != 'push' || github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
     strategy:
       fail-fast: false
       matrix:

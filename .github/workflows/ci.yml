@@ -1,13 +1,17 @@
 name: CI
 
+# On demand only, to spare the minutes of Actions:
+# - Actions > CI > Run workflow (the button needs this file on main);
+# - or a commit whose message holds [ci], once pushed.
 on:
   push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   # the library and the tests; the viewer needs the X11/Wayland development
   # packages for the SDL2 of vcpkg, it is built on Windows
   linux:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
     # the GCC 11 of the archives: the oldest compiler the project builds with
     runs-on: ubuntu-22.04
     env:
@@ -27,6 +31,7 @@ jobs:
 
   # the library, the viewer (OpenGL 4.1 core) and the tests on macOS
   macos:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
     runs-on: macos-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -44,6 +49,7 @@ jobs:
         run: ctest --preset macos --output-on-failure
 
   windows:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
     runs-on: windows-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg

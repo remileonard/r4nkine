@@ -109,7 +109,13 @@ r4fly, the examples (below) and sample models (`samples/`):
 - *Actions > Release > Run workflow*: the archives are attached to the run
   (Artifacts); check *publish* to also make a GitHub release (a prerelease
   `dev-N`, or the tag given);
-- pushing a tag `v*` publishes the release of that tag.
+- pushing a tag `v*` publishes the release of that tag;
+- a commit whose message holds `[release]` builds the archives once pushed.
+
+The workflows run only when asked, to spare the minutes of Actions: a push
+skips their jobs unless its last commit says `[ci]` (CI), `[release]`
+(Release) or `[viewer]` (libRealSpace viewer). The *Run workflow* button of
+each one appears once the workflow files are on `main`.
 
 On macOS (Apple silicon), the archive is not signed: after unpacking it,
 `xattr -dr com.apple.quarantine r4fly-*` lets it start. On Windows,
@@ -124,7 +130,8 @@ the exe, or run `r4fly samples\quad.obj`.
 viewer of the 3D objects of the game, with its CMake integration and its
 README (in French). They are meant to be copied into libRealSpace.
 
-The **libRealSpace viewer** workflow builds `r4objviewer.exe` for Windows:
+The **libRealSpace viewer** workflow (on demand, or `[viewer]` in a commit
+message) builds `r4objviewer.exe` for Windows:
 it clones libRealSpace, lays the bridge over it (in the runner only) and
 attaches the exe and its DLLs to the run (Artifacts). The game data are not
 in it: `r4objviewer -data <the folder of the TRE files>`.

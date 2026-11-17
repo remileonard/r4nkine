@@ -8,15 +8,12 @@ name: libRealSpace viewer
 # The archive (r4objviewer.exe and its DLLs) is attached to the run
 # (Artifacts). The game data are not in it: r4objviewer -data <folder of the TRE>.
 
+# On demand only: Actions > libRealSpace viewer > Run workflow (the button
+# needs this file on main), or a commit whose message holds [viewer], once
+# pushed. Other pushes skip the job: no minutes used.
 on:
   push:
     branches: ["**"]
-    paths:
-      - "contrib/librealspace/**"
-      - "include/**"
-      - "src/**"
-      - "CMakeLists.txt"
-      - ".github/workflows/librealspace-viewer.yml"
   workflow_dispatch:
     inputs:
       librealspace_ref:
@@ -26,6 +23,7 @@ on:
 
 jobs:
   windows:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[viewer]')
     runs-on: windows-latest
     env:
       VCPKG_ROOT: ${{ github.workspace }}\vcpkg
