@@ -69,6 +69,19 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   search paths, and `-forest N[,F]` plants N copies of the files with an
   Instancer (the first file near, the next ones beyond F, 2F...).
 
+## Downloads
+
+The **Release** workflow builds archives of r4fly for Linux and Windows,
+with sample models (`samples/`):
+
+- *Actions > Release > Run workflow*: the archives are attached to the run
+  (Artifacts); check *publish* to also make a GitHub release (a prerelease
+  `dev-N`, or the tag given);
+- pushing a tag `v*` publishes the release of that tag.
+
+On Windows, `r4fly.exe` and `SDL2.dll` are side by side: drop a model on
+the exe, or run `r4fly samples\quad.obj`.
+
 ## Building
 
 The dependencies are managed by [vcpkg](https://vcpkg.io) in manifest

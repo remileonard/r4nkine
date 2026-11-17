@@ -63,6 +63,11 @@ if(R4_BUILD_APPS)
     target_link_libraries(r4fly PRIVATE r4nkine imgui::imgui
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+    # the viewer and the DLLs it needs (SDL2 on Windows), side by side
+    install(TARGETS r4fly RUNTIME DESTINATION bin)
+    if(WIN32)
+        install(FILES $<TARGET_RUNTIME_DLLS:r4fly> DESTINATION bin)
+    endif()
 endif()
 
 if(R4_BUILD_TESTS)
