@@ -939,7 +939,9 @@ bool Context::section(const char *label, bool &open) {
     columns(1);
     s.cursorY += 2;
     Rect r = s.next(kRowH);
-    uint32_t id = s.idOf(label);
+    // its own ids: a section often holds a widget of its name ("Lighting",
+    // the toggle of the lighting), which would take its clicks
+    uint32_t id = hashOf("section", s.idOf(label));
     if (s.behave(id, r, true))
         open = !open;
     if (s.visible(r)) {
