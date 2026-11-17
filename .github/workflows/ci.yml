@@ -24,6 +24,24 @@ jobs:
       - name: Test
         run: ctest --preset linux --output-on-failure
 
+  # the library, the viewer (OpenGL 4.1 core) and the tests on macOS
+  macos:
+    runs-on: macos-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure
+        run: cmake --preset macos
+      - name: Build
+        run: cmake --build --preset macos -j
+      - name: Test
+        run: ctest --preset macos --output-on-failure
+
   windows:
     runs-on: windows-latest
     env:

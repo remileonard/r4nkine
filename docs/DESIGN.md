@@ -36,7 +36,7 @@ assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
           PPM, 5551E, PNG/JPEG/BMP/TGA/GIF (to come: RealSpace IFF)
 gpu       Device: buffers, textures, shaders, pipelines, draws
           backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (to come)
-core      math: Vec, Mat4 (column-major), Box, Sphere, Frustum
+core      math: glm (Vec3, Mat4, column-major), Box, Sphere, Frustum
 ```
 
 ## Dependencies
@@ -44,6 +44,10 @@ core      math: Vec, Mat4 (column-major), Box, Sphere, Frustum
 The dependencies come from vcpkg in manifest mode (`vcpkg.json`, with the
 baseline in `vcpkg-configuration.json`, the same as libRealSpace):
 
+- **glm**: the vectors and matrices. `r4::Vec3` and `r4::Mat4` are
+  `glm::vec3` and `glm::mat4`, so a program using glm passes its values as
+  they are. R4nkine needs `GLM_FORCE_CTOR_INIT` (zero vectors, identity
+  matrices by default): the target defines it for its users.
 - **stb**: the common image formats.
 - **cgltf**: glTF 2.0.
 - **SDL2**: only for r4fly, the `viewer` feature.
@@ -94,6 +98,8 @@ every backend can implement it:
   attributes are pointed again only when the buffers bound to a VAO change.
 - **State cache**: every state is cached, so redundant calls are skipped.
 - **Profiles**: it works in a core context and in a compatibility context.
+  macOS has only core contexts above OpenGL 2.1 (up to 4.1): r4fly asks for
+  a 4.1 core context there.
 
 ## Rendering a frame
 

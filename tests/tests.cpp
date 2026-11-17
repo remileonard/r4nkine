@@ -27,16 +27,16 @@ static bool near(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) 
 static bool near(Vec3 a, Vec3 b, float eps = 1e-4f) { return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps); }
 
 static void testMath() {
-    Mat4 m = Mat4::translate({1, 2, 3}) * Mat4::rotate(radians(90), {0, 0, 1}) * Mat4::scale({2, 2, 2});
-    CHECK(near(m.transformPoint({1, 0, 0}), {1, 4, 3}));
+    Mat4 m = translate({1, 2, 3}) * rotate(radians(90), {0, 0, 1}) * scale({2, 2, 2});
+    CHECK(near(transformPoint(m, {1, 0, 0}), {1, 4, 3}));
     Mat4 i = inverse(m);
-    CHECK(near(i.transformPoint(m.transformPoint({0.3f, -2, 5})), {0.3f, -2, 5}));
-    CHECK(near(m.maxScale(), 2));
+    CHECK(near(transformPoint(i, transformPoint(m, {0.3f, -2, 5})), {0.3f, -2, 5}));
+    CHECK(near(maxScale(m), 2));
     // the normals of a non-uniform scale
-    Mat4 n = normalMatrix(Mat4::scale({2, 1, 1}));
-    CHECK(near(normalize(n.transformVector({1, 1, 0})), normalize(Vec3{0.5f, 1, 0})));
-    Mat4 v = Mat4::lookAt({0, -10, 0}, {0, 0, 0}, {0, 0, 1});
-    CHECK(near(v.transformPoint({0, 0, 0}), {0, 0, -10}));
+    Mat4 n = normalMatrix(scale({2, 1, 1}));
+    CHECK(near(normalize(transformVector(n, {1, 1, 0})), normalize(Vec3{0.5f, 1, 0})));
+    Mat4 v = lookAt({0, -10, 0}, {0, 0, 0}, {0, 0, 1});
+    CHECK(near(transformPoint(v, {0, 0, 0}), {0, 0, -10}));
 }
 
 static void testBounds() {
@@ -47,7 +47,7 @@ static void testBounds() {
     c.extend({{1, 0, 0}, 1}); // inside
     CHECK(near(c.radius, 5));
 
-    Mat4 vp = Mat4::perspective(radians(90), 1, 1, 100) * Mat4::lookAt({0, 0, 0}, {0, 1, 0}, {0, 0, 1});
+    Mat4 vp = perspective(radians(90), 1, 1, 100) * lookAt({0, 0, 0}, {0, 1, 0}, {0, 0, 1});
     Frustum f = Frustum::fromMatrix(vp);
     CHECK(f.test({{0, 10, 0}, 1}) == Frustum::Inside);
     CHECK(f.test({{0, -10, 0}, 1}) == Frustum::Outside);   // behind
@@ -133,7 +133,7 @@ static void testLegacyFormats(const std::string &dir) {
     if (d) {
         CHECK(d->nodes.size() == 4 && d->meshes.size() == 2);
         CHECK(d->nodes[2].mask == 0x1 && d->nodes[3].mask == 0x8);
-        CHECK(near(d->nodes[2].local.translation(), {0, 1, 0}));
+        CHECK(near(translationOf(d->nodes[2].local), {0, 1, 0}));
         CHECK(d->defaultState == 0xff03);
         const assets::Material &lit = d->materials[d->meshes[0].material];
         CHECK(lit.shading == assets::Shading::Phong && near(lit.diffuse.x, 0.7f) && !lit.doubleSided);
@@ -215,12 +215,12 @@ static void testLegacyFormats(const std::string &dir) {
 static void testStep2(const std::string &dir) {
     // a billboard turns its -Y face towards the eye
     scene::Billboard bb;
-    Vec3 face = bb.rotationFor({5, 0, 0}).transformVector({0, -1, 0});
+    Vec3 face = transformVector(bb.rotationFor({5, 0, 0}), {0, -1, 0});
     CHECK(near(face, {1, 0, 0}));
-    face = bb.rotationFor({0, 3, 4}).transformVector({0, -1, 0});
+    face = transformVector(bb.rotationFor({0, 3, 4}), {0, -1, 0});
     CHECK(near(face, {0, 1, 0})); // axis: about Z only
     bb.setMode(scene::Billboard::Mode::Point);
-    face = bb.rotationFor({0, 3, 4}).transformVector({0, -1, 0});
+    face = transformVector(bb.rotationFor({0, 3, 4}), {0, -1, 0});
     CHECK(near(face, normalize(Vec3{0, 3, 4})));
 
     // an instancer: its bounds hold all the instances, its levels by distance
@@ -228,9 +228,9 @@ static void testStep2(const std::string &dir) {
     mesh->bounds = {{0, 0, 0}, 1};
     scene::Instancer inst;
     inst.addLevel({{{mesh, nullptr}, Mat4()}}, 50);
-    inst.addLevel({{{mesh, nullptr}, Mat4::scale({0.5f, 0.5f, 0.5f})}}, 200);
-    inst.addInstance(Mat4::translate({10, 0, 0}));
-    inst.addInstance(Mat4::translate({-10, 0, 0}));
+    inst.addLevel({{{mesh, nullptr}, scale({0.5f, 0.5f, 0.5f})}}, 200);
+    inst.addInstance(translate({10, 0, 0}));
+    inst.addInstance(translate({-10, 0, 0}));
     const Sphere &s = inst.bounds();
     CHECK(near(s.center, {0, 0, 0}) && s.radius >= 11 && s.radius < 12);
     CHECK(inst.select(10) == 0 && inst.select(100) == 1 && inst.select(500) == -1);
@@ -243,12 +243,12 @@ static void testStep2(const std::string &dir) {
     shadow->addDrawable({mesh, nullptr});
     body->setMask(0x1);
     shadow->setMask(0x8);
-    body->setMatrix(Mat4::translate({0, 0, 2}));
+    body->setMatrix(translate({0, 0, 2}));
     root->addChild(body);
     root->addChild(shadow);
     CHECK(scene::collectParts(*root).size() == 2);
     auto parts = scene::collectParts(*root, 0x1);
-    CHECK(parts.size() == 1 && near(parts[0].local.translation(), {0, 0, 2}));
+    CHECK(parts.size() == 1 && near(translationOf(parts[0].local), {0, 0, 2}));
 
     // PNG through stb_image, rows from the bottom
     std::string err;
@@ -271,7 +271,7 @@ static void testStep2(const std::string &dir) {
     if (g) {
         CHECK(g->meshes.size() == 1 && g->meshes[0].indices.size() == 3);
         CHECK(g->nodes.size() == 2 && g->nodes[0].children.size() == 1);
-        CHECK(g->nodes[1].name == "tri" && near(g->nodes[1].local.translation(), {0, 0, 5}));
+        CHECK(g->nodes[1].name == "tri" && near(translationOf(g->nodes[1].local), {0, 0, 5}));
         const assets::Material &m = g->materials[g->meshes[0].material];
         CHECK(m.name == "half" && near(m.diffuse.x, 0.5f) && m.doubleSided && m.diffuseImage == 0);
         CHECK(g->images.size() == 1 && g->images[0].width == 2);

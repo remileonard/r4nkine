@@ -338,7 +338,7 @@ struct File {
                 n.name = "billboard";
                 n.kind = NodeKind::Billboard;
                 n.billboardPoint = point;
-                n.local = Mat4::translate(center);
+                n.local = translate(center);
                 n.meshes.push_back((int)model.meshes.size());
                 model.meshes.push_back(std::move(b.mesh));
                 int ni = (int)model.nodes.size();
@@ -563,12 +563,12 @@ struct File {
             case OP_MATRIX:
                 if (last >= 0 && lastParent >= 0 && len >= 68) {
                     Mat4 m;
-                    float *o = &m.m[0][0];
+                    float *o = &m[0][0];
                     for (int k = 0; k < 16; k++)
                         o[k] = bef(r + 4 + 4 * k);
                     if (version < 13)
                         for (int k = 0; k < 3; k++)
-                            m.m[3][k] *= (float)unit;
+                            m[3][k] *= (float)unit;
                     // the matrix applies to the node: it is put above its own
                     model.nodes[last].local = m * model.nodes[last].local;
                 }

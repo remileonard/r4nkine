@@ -4,6 +4,7 @@
   "description": "A 3D rendering library in the spirit of IRIS Performer",
   "license": "MIT",
   "dependencies": [
+    "glm",
     "stb",
     "cgltf"
   ],

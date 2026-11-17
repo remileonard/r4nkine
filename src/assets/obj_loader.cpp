@@ -260,7 +260,7 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
     Node root;
     root.name = path;
     // OBJ is Y-up, R4nkine is Z-up: the root turns +Y into +Z
-    root.local = Mat4::rotate(radians(90), {1, 0, 0});
+    root.local = rotate(radians(90), {1, 0, 0});
     for (int m : order) {
         Builder &b = builders[m];
         if (b.mesh.indices.empty())

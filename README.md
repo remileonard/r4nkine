@@ -87,8 +87,18 @@ with sample models (`samples/`):
   `dev-N`, or the tag given);
 - pushing a tag `v*` publishes the release of that tag.
 
-On Windows, `r4fly.exe` and `SDL2.dll` are side by side: drop a model on
+On macOS (Apple silicon), the archive is not signed: after unpacking it,
+`xattr -dr com.apple.quarantine r4fly-*` lets it start. On Windows,
+`r4fly.exe` and `SDL2.dll` are side by side: drop a model on
 the exe, or run `r4fly samples\quad.obj`.
+
+## Platforms
+
+Linux, Windows and macOS. On macOS, OpenGL stops at 4.1 in a core context:
+the backend and the shaders are written for a core context, and r4fly asks
+for one there (`-core` does the same elsewhere). The GUI follows Retina
+screens: it is laid out in points and its text uses glyphs baked at twice
+the size (`-scale S` enlarges it on the other screens).
 
 ## Building
 
@@ -97,6 +107,7 @@ mode (`vcpkg.json`):
 
 | Dependency | For | Feature |
 | --- | --- | --- |
+| glm | the vectors and matrices (`r4::Vec3` is `glm::vec3`, `r4::Mat4` is `glm::mat4`) | always |
 | stb | the PNG, JPEG, BMP, TGA and GIF images | always |
 | cgltf | glTF 2.0 | always |
 | SDL2 | r4fly, the viewer | `viewer` (default) |

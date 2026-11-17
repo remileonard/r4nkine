@@ -86,8 +86,8 @@ struct Recorder {
         if (kind == None)
             return;
         Vertex v;
-        v.position = top().transformPoint(p);
-        v.normal = normalize(normalMatrix(top()).transformVector(normal));
+        v.position = transformPoint(top(), p);
+        v.normal = normalize(transformVector(normalMatrix(top()), normal));
         v.uv = uv;
         for (int c = 0; c < 2; c++)
             if (contour[c] && contour[c]->mode == 1) {
@@ -350,18 +350,18 @@ struct Exec {
         }
         case Cls::Translates: {
             const float *t = element(o, i);
-            r.top() = r.top() * Mat4::translate({t[0], t[1], t[2]});
+            r.top() = r.top() * translate({t[0], t[1], t[2]});
             break;
         }
         case Cls::Scales: {
             const float *s = element(o, i);
-            r.top() = r.top() * Mat4::scale({s[0], s[1], s[2]});
+            r.top() = r.top() * scale({s[0], s[1], s[2]});
             break;
         }
         case Cls::Rotates: {
             const float *a = element(o, i);
             if (a[1] != 0 || a[2] != 0 || a[3] != 0)
-                r.top() = r.top() * Mat4::rotate(radians(a[0]), {a[1], a[2], a[3]});
+                r.top() = r.top() * rotate(radians(a[0]), {a[1], a[2], a[3]});
             break;
         }
         case Cls::Group:
@@ -1054,7 +1054,7 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     // ambient and diffuse as lmcolor(LMC_AD), the faces are two-sided
     Node root;
     root.name = path;
-    root.local = Mat4::rotate(radians(90), {1, 0, 0});
+    root.local = rotate(radians(90), {1, 0, 0});
     std::map<std::tuple<int, bool, bool>, int> materials;
     for (auto &[key, mesh] : rec.meshes) {
         auto [texture, lit, prim, sphere] = key;

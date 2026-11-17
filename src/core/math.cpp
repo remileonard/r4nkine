@@ -3,61 +3,17 @@
 namespace r4 {
 
 Mat4 inverse(const Mat4 &a) {
-    const float *m = a.data();
-    float inv[16];
-    inv[0] = m[5] * m[10] * m[15] - m[5] * m[11] * m[14] - m[9] * m[6] * m[15] + m[9] * m[7] * m[14] +
-             m[13] * m[6] * m[11] - m[13] * m[7] * m[10];
-    inv[4] = -m[4] * m[10] * m[15] + m[4] * m[11] * m[14] + m[8] * m[6] * m[15] - m[8] * m[7] * m[14] -
-             m[12] * m[6] * m[11] + m[12] * m[7] * m[10];
-    inv[8] = m[4] * m[9] * m[15] - m[4] * m[11] * m[13] - m[8] * m[5] * m[15] + m[8] * m[7] * m[13] +
-             m[12] * m[5] * m[11] - m[12] * m[7] * m[9];
-    inv[12] = -m[4] * m[9] * m[14] + m[4] * m[10] * m[13] + m[8] * m[5] * m[14] - m[8] * m[6] * m[13] -
-              m[12] * m[5] * m[10] + m[12] * m[6] * m[9];
-    inv[1] = -m[1] * m[10] * m[15] + m[1] * m[11] * m[14] + m[9] * m[2] * m[15] - m[9] * m[3] * m[14] -
-             m[13] * m[2] * m[11] + m[13] * m[3] * m[10];
-    inv[5] = m[0] * m[10] * m[15] - m[0] * m[11] * m[14] - m[8] * m[2] * m[15] + m[8] * m[3] * m[14] +
-             m[12] * m[2] * m[11] - m[12] * m[3] * m[10];
-    inv[9] = -m[0] * m[9] * m[15] + m[0] * m[11] * m[13] + m[8] * m[1] * m[15] - m[8] * m[3] * m[13] -
-             m[12] * m[1] * m[11] + m[12] * m[3] * m[9];
-    inv[13] = m[0] * m[9] * m[14] - m[0] * m[10] * m[13] - m[8] * m[1] * m[14] + m[8] * m[2] * m[13] +
-              m[12] * m[1] * m[10] - m[12] * m[2] * m[9];
-    inv[2] = m[1] * m[6] * m[15] - m[1] * m[7] * m[14] - m[5] * m[2] * m[15] + m[5] * m[3] * m[14] +
-             m[13] * m[2] * m[7] - m[13] * m[3] * m[6];
-    inv[6] = -m[0] * m[6] * m[15] + m[0] * m[7] * m[14] + m[4] * m[2] * m[15] - m[4] * m[3] * m[14] -
-             m[12] * m[2] * m[7] + m[12] * m[3] * m[6];
-    inv[10] = m[0] * m[5] * m[15] - m[0] * m[7] * m[13] - m[4] * m[1] * m[15] + m[4] * m[3] * m[13] +
-              m[12] * m[1] * m[7] - m[12] * m[3] * m[5];
-    inv[14] = -m[0] * m[5] * m[14] + m[0] * m[6] * m[13] + m[4] * m[1] * m[14] - m[4] * m[2] * m[13] -
-              m[12] * m[1] * m[6] + m[12] * m[2] * m[5];
-    inv[3] = -m[1] * m[6] * m[11] + m[1] * m[7] * m[10] + m[5] * m[2] * m[11] - m[5] * m[3] * m[10] -
-             m[9] * m[2] * m[7] + m[9] * m[3] * m[6];
-    inv[7] = m[0] * m[6] * m[11] - m[0] * m[7] * m[10] - m[4] * m[2] * m[11] + m[4] * m[3] * m[10] +
-             m[8] * m[2] * m[7] - m[8] * m[3] * m[6];
-    inv[11] = -m[0] * m[5] * m[11] + m[0] * m[7] * m[9] + m[4] * m[1] * m[11] - m[4] * m[3] * m[9] -
-              m[8] * m[1] * m[7] + m[8] * m[3] * m[5];
-    inv[15] = m[0] * m[5] * m[10] - m[0] * m[6] * m[9] - m[4] * m[1] * m[10] + m[4] * m[2] * m[9] +
-              m[8] * m[1] * m[6] - m[8] * m[2] * m[5];
-    float det = m[0] * inv[0] + m[1] * inv[4] + m[2] * inv[8] + m[3] * inv[12];
-    Mat4 r;
+    float det = glm::determinant(a);
     if (std::fabs(det) < 1e-30f)
-        return r;
-    det = 1.0f / det;
-    float *o = &r.m[0][0];
-    for (int i = 0; i < 16; i++)
-        o[i] = inv[i] * det;
-    return r;
+        return Mat4(1.0f);
+    return glm::inverse(a);
 }
 
 Mat4 normalMatrix(const Mat4 &a) {
-    Mat4 u = a;
-    u.m[3][0] = u.m[3][1] = u.m[3][2] = 0;
-    u.m[0][3] = u.m[1][3] = u.m[2][3] = 0;
-    u.m[3][3] = 1;
-    Mat4 i = inverse(u), t;
-    for (int c = 0; c < 4; c++)
-        for (int r = 0; r < 4; r++)
-            t.m[c][r] = i.m[r][c];
-    return t;
+    glm::mat3 u(a);
+    if (std::fabs(glm::determinant(u)) < 1e-30f)
+        return Mat4(1.0f);
+    return Mat4(glm::transpose(glm::inverse(u)));
 }
 
 void Sphere::extend(const Sphere &s) {
@@ -88,7 +44,7 @@ Sphere sphereOf(const Box &b) {
 
 Frustum Frustum::fromMatrix(const Mat4 &vp) {
     // Gribb & Hartmann: the rows of the matrix
-    auto row = [&](int i) { return Vec4{vp.m[0][i], vp.m[1][i], vp.m[2][i], vp.m[3][i]}; };
+    auto row = [&](int i) { return Vec4{vp[0][i], vp[1][i], vp[2][i], vp[3][i]}; };
     Vec4 r0 = row(0), r1 = row(1), r2 = row(2), r3 = row(3);
     auto add = [](Vec4 a, Vec4 b, float s) { return Vec4{a.x + s * b.x, a.y + s * b.y, a.z + s * b.z, a.w + s * b.w}; };
     Frustum f;

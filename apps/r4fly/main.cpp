@@ -4,6 +4,9 @@
 //     -size WxH        the window size (default 1280x800)
 //     -wire            start in wireframe
 //     -nogui           start without the GUI (F1 shows it)
+//     -core            an OpenGL core context (always on macOS)
+//     -scale S         the size of the GUI (2: twice as large; Retina screens
+//                      are already taken into account)
 //     -frames N        quit after N frames
 //     -snap file.ppm   save the last frame before quitting
 //     -stats           print the statistics once a second
@@ -46,8 +49,15 @@ bool savePPM(const char *path, int w, int h, const std::vector<uint8_t> &rgba) {
 
 namespace {
 
+// the core context: 4.1 is the newest of macOS, 3.3 enough elsewhere
+#ifdef __APPLE__
+constexpr int kCoreMajor = 4, kCoreMinor = 1;
+#else
+constexpr int kCoreMajor = 3, kCoreMinor = 3;
+#endif
+
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-core] [-scale S] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
                          "[-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
     std::exit(1);
 }
@@ -69,6 +79,12 @@ int main(int argc, char **argv) {
     App app;
     int width = 1280, height = 800, frames = -1;
     bool wire = false;
+    float uiScale = 1;
+#ifdef __APPLE__
+    bool core = true;
+#else
+    bool core = false;
+#endif
     const char *snap = nullptr;
     long state = -1;
     int forest = 0;
@@ -81,6 +97,10 @@ int main(int argc, char **argv) {
                 usage();
         } else if (a == "-wire") {
             wire = true;
+        } else if (a == "-scale" && i + 1 < argc) {
+            uiScale = std::max(0.5f, (float)std::atof(argv[++i]));
+        } else if (a == "-core") {
+            core = true;
         } else if (a == "-nogui") {
             app.showGui = false;
         } else if (a == "-frames" && i + 1 < argc) {
@@ -120,19 +140,29 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
         return 1;
     }
-    // a compatibility context: what a host game in fixed-pipeline GL has
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
-    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    app.window = SDL_CreateWindow("r4fly", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
-                                  SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
-    if (!app.window) {
-        std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
-        return 1;
+    // a compatibility context, what a host game in fixed-pipeline GL has; a
+    // core one on macOS (it has no other above 2.1) or with -core, and when
+    // the compatibility one is refused
+    SDL_GLContext context = nullptr;
+    for (int attempt = core ? 1 : 0; attempt < 2 && !context; attempt++) {
+        bool coreProfile = attempt == 1;
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, coreProfile ? kCoreMajor : 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, coreProfile ? kCoreMinor : 3);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
+                            coreProfile ? SDL_GL_CONTEXT_PROFILE_CORE : SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, coreProfile ? SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG : 0);
+        SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+        SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+        if (app.window)
+            SDL_DestroyWindow(app.window);
+        app.window = SDL_CreateWindow("r4fly", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, width, height,
+                                      SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI);
+        if (!app.window) {
+            std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
+            return 1;
+        }
+        context = SDL_GL_CreateContext(app.window);
     }
-    SDL_GLContext context = SDL_GL_CreateContext(app.window);
     if (!context) {
         std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
         return 1;
@@ -191,7 +221,7 @@ int main(int argc, char **argv) {
             // the model as a level of the instancer, its base on the ground
             Box box = model->bounds();
             float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
-            Mat4 m = Mat4::scale({unit, unit, unit}) * Mat4::translate({-s.center.x, -s.center.y, -box.min.z});
+            Mat4 m = scale({unit, unit, unit}) * translate({-s.center.x, -s.center.y, -box.min.z});
             auto parts = scene::collectParts(*node);
             for (auto &p : parts)
                 p.local = m * p.local;
@@ -202,9 +232,9 @@ int main(int argc, char **argv) {
             auto place = scene::make<scene::Group>();
             place->setName(f);
             if (!s.empty()) {
-                float scale = 1.0f / std::max(s.radius, 1e-6f);
-                place->setMatrix(Mat4::translate({x + 1, 0, 0}) * Mat4::scale({scale, scale, scale}) *
-                                 Mat4::translate(-s.center));
+                float k = 1.0f / std::max(s.radius, 1e-6f);
+                place->setMatrix(translate({x + 1, 0, 0}) * scale({k, k, k}) *
+                                 translate(-s.center));
             }
             place->addChild(node);
             app.models->addChild(place);
@@ -225,8 +255,8 @@ int main(int argc, char **argv) {
         for (int i = 0; i < forest; i++) {
             float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f, py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
             float k = 0.7f + 0.6f * rnd();
-            inst.push_back(Mat4::translate({px, py, 0}) * Mat4::rotate(rnd() * 6.2832f, {0, 0, 1}) *
-                           Mat4::scale({k, k, k}));
+            inst.push_back(translate({px, py, 0}) * rotate(rnd() * 6.2832f, {0, 0, 1}) *
+                           scale({k, k, k}));
         }
         instancer->setInstances(inst);
         instancer->setName("forest");
@@ -252,8 +282,11 @@ int main(int argc, char **argv) {
         int w, h, ww, wh;
         SDL_GL_GetDrawableSize(app.window, &w, &h);
         SDL_GetWindowSize(app.window, &ww, &wh);
-        // the mouse in the pixels of the drawable (high density screens)
-        float sx = ww > 0 ? (float)w / ww : 1, sy = wh > 0 ? (float)h / wh : 1;
+        // the GUI and the mouse in points, the framebuffer in pixels (twice
+        // as many on a Retina screen); -scale enlarges the GUI further
+        float pixelScale = (ww > 0 ? (float)w / ww : 1) * uiScale;
+        ww = std::max(1, (int)(ww / uiScale));
+        wh = std::max(1, (int)(wh / uiScale));
         app.input.wheel = 0;
         app.input.pressed = app.input.released = false;
         SDL_Event e;
@@ -273,8 +306,8 @@ int main(int argc, char **argv) {
             case SDL_MOUSEBUTTONDOWN:
             case SDL_MOUSEBUTTONUP: {
                 bool down = e.type == SDL_MOUSEBUTTONDOWN;
-                app.input.mouseX = e.button.x * sx;
-                app.input.mouseY = e.button.y * sy;
+                app.input.mouseX = e.button.x / uiScale;
+                app.input.mouseY = e.button.y / uiScale;
                 // a press in the view belongs to the view until released
                 if (down && !gui && (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT))
                     app.sceneDrag = true;
@@ -287,8 +320,8 @@ int main(int argc, char **argv) {
                 break;
             }
             case SDL_MOUSEMOTION:
-                app.input.mouseX = e.motion.x * sx;
-                app.input.mouseY = e.motion.y * sy;
+                app.input.mouseX = e.motion.x / uiScale;
+                app.input.mouseY = e.motion.y / uiScale;
                 if (!app.sceneDrag)
                     break;
                 if (e.motion.state & SDL_BUTTON_LMASK) {
@@ -316,8 +349,8 @@ int main(int argc, char **argv) {
                 break;
             }
         }
-        ui::Rect view = sceneViewport(app, w, h);
-        int vx = (int)view.x, vw = (int)view.w;
+        ui::Rect view = sceneViewport(app, ww, wh);
+        int vx = (int)std::lround(view.x * pixelScale), vw = std::max(1, (int)std::lround(view.w * pixelScale));
         app.ball.apply(app.camera, h > 0 ? (float)vw / h : 1);
         if (app.headlight) {
             // a light over the shoulder of the viewer, as the eye light of perfly
@@ -335,13 +368,13 @@ int main(int argc, char **argv) {
             Sphere s = app.selected->bounds(); // in the space of its parent
             Mat4 parentWorld = app.selectedWorld * inverse(app.selected->matrix());
             float r = std::max(s.radius, 1e-6f);
-            app.boundsMarker->setMatrix(parentWorld * Mat4::translate(s.center) * Mat4::scale({r, r, r}));
+            app.boundsMarker->setMatrix(parentWorld * translate(s.center) * scale({r, r, r}));
             app.boundsMarker->setMask(~0u);
         } else {
             app.boundsMarker->setMask(0);
         }
 
-        guiFrame(app, w, h);
+        guiFrame(app, ww, wh, pixelScale);
         renderer.render(*app.top, app.camera, vx, 0, vw, h);
         if (!app.snapRequest.empty()) {
             // the scene alone, without the GUI

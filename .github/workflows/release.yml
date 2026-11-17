@@ -1,6 +1,7 @@
 name: Release
 
-# Archives of r4fly for Linux and Windows, to download and try.
+# Archives of r4fly for Linux, Windows and macOS (Apple silicon), to
+# download and try.
 #
 # - Actions > Release > Run workflow: the archives are built and attached to
 #   the run (Artifacts). With "publish" checked, they also go into a GitHub
@@ -41,6 +42,9 @@ jobs:
           - os: windows
             runner: windows-latest
             preset: windows-vs
+          - os: macos
+            runner: macos-latest
+            preset: macos
     runs-on: ${{ matrix.runner }}
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
@@ -60,8 +64,8 @@ jobs:
             libxss-dev libxxf86vm-dev libxinerama-dev libxkbcommon-dev \
             libgl1-mesa-dev libegl1-mesa-dev libwayland-dev libdbus-1-dev libibus-1.0-dev
 
-      - name: vcpkg (Linux)
-        if: matrix.os == 'linux'
+      - name: vcpkg (Linux, macOS)
+        if: matrix.os != 'windows'
         run: |
           git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
           "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
@@ -90,7 +94,9 @@ jobs:
             version="dev-${{ github.run_number }}"
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "dir=r4fly-$version-${{ matrix.os }}-x64" >> "$GITHUB_OUTPUT"
+          arch=x64
+          [ "${{ matrix.os }}" = macos ] && arch=arm64
+          echo "dir=r4fly-$version-${{ matrix.os }}-$arch" >> "$GITHUB_OUTPUT"
 
       # r4fly (and SDL2.dll on Windows), the license, the README and the
       # small models of the tests as samples

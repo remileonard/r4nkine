@@ -701,7 +701,7 @@ struct Builder {
         if (pn.type != NODE_SCENE)
             n.mask = pn.travmask ? pn.travmask : 0xffffffffu;
         if (pn.type == NODE_DCS || pn.type == NODE_SCS)
-            std::memcpy(&n.local.m[0][0], pn.matrix, sizeof pn.matrix);
+            std::memcpy(&n.local[0][0], pn.matrix, sizeof pn.matrix);
         std::vector<int> kids;
         if (pn.type == NODE_BBOARD) {
             // the geosets at their positions, turned to the eye
@@ -714,7 +714,7 @@ struct Builder {
                 b.kind = NodeKind::Billboard;
                 b.billboardPoint = pn.bbPoint;
                 if (i < pn.bbPositions.size())
-                    b.local = Mat4::translate(pn.bbPositions[i]);
+                    b.local = translate(pn.bbPositions[i]);
                 b.meshes.push_back(mi);
                 kids.push_back((int)model.nodes.size());
                 model.nodes.push_back(b);

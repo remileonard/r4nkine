@@ -96,7 +96,10 @@ struct Context::Impl {
     size_t vboSize = 0;
     float whiteU = 0, whiteV = 0;
 
-    int width = 0, height = 0;
+    int width = 0, height = 0; // in points
+    float pixelScale = 1;      // pixels per point
+    int fontBase = 0;          // the fonts at 1x (0) or 2x (4)
+    float fontDiv = 1;         // their pixels per point
     Input in, prev;
     bool pressed = false, released = false;
     std::vector<Vertex> verts;
@@ -173,7 +176,9 @@ struct Context::Impl {
         box(r, c, true);
     }
 
-    float glyphAdvance(int font, int code) const { return kGlyphMetrics[font][glyphIndex(code)][2]; }
+    float glyphAdvance(int font, int code) const {
+        return kGlyphMetrics[font + fontBase][glyphIndex(code)][2] / fontDiv;
+    }
     float textWidth(const char *s, Font font) const {
         float w = 0;
         while (*s) {
@@ -186,23 +191,24 @@ struct Context::Impl {
     }
     // y: the top of the line; returns the width drawn
     float text(float x, float y, const char *s, Color c, Font font, float maxWidth) {
-        int f = (int)font;
-        float pen = std::floor(x), base = std::floor(y + kFontMetrics[f][1]);
+        int f = (int)font + fontBase;
+        float k = 1 / fontDiv;
+        float pen = std::floor(x), base = std::floor(y + kFontMetrics[f][1] * k);
         float start = pen;
         while (*s) {
             int code = nextCode(s);
             if (code == '\n')
                 break;
             int g = glyphIndex(code);
-            float adv = kGlyphMetrics[f][g][2];
+            float adv = kGlyphMetrics[f][g][2] * k;
             if (pen + adv - start > maxWidth)
                 break;
             const short *b = kGlyphBox[f][g];
             if (b[2] > b[0]) {
-                float gx = pen + kGlyphMetrics[f][g][0], gy = base + kGlyphMetrics[f][g][1];
-                float w = (float)(b[2] - b[0]), h = (float)(b[3] - b[1]);
-                gx = std::floor(gx + 0.5f);
-                gy = std::floor(gy + 0.5f);
+                // on the pixels of the screen
+                float gx = std::floor((pen + kGlyphMetrics[f][g][0] * k) * pixelScale + 0.5f) / pixelScale;
+                float gy = std::floor((base + kGlyphMetrics[f][g][1] * k) * pixelScale + 0.5f) / pixelScale;
+                float w = (b[2] - b[0]) * k, h = (b[3] - b[1]) * k;
                 quad(gx, gy, gx + w, gy + h, b[0] / (float)kAtlasWidth, 1 - b[1] / (float)kAtlasHeight,
                      b[2] / (float)kAtlasWidth, 1 - b[3] / (float)kAtlasHeight, c);
             }
@@ -212,7 +218,7 @@ struct Context::Impl {
     }
     float lineHeight(Font f) const {
         int i = (int)f;
-        return std::ceil(kFontMetrics[i][1] - kFontMetrics[i][2]);
+        return std::ceil(kFontMetrics[i][1] - kFontMetrics[i][2]); // the 1x metrics: the layout in points
     }
     // the text centered vertically in a rectangle
     void textIn(Rect r, float dx, const char *s, Color c, Font f = Font::Regular, bool center = false) {
@@ -351,10 +357,13 @@ Context::~Context() {
     dev.destroyTexture(d->atlas);
 }
 
-void Context::beginFrame(int width, int height, const Input &input) {
+void Context::beginFrame(int width, int height, const Input &input, float pixelScale) {
     Impl &s = *d;
     s.width = width;
     s.height = height;
+    s.pixelScale = pixelScale > 0 ? pixelScale : 1;
+    s.fontBase = s.pixelScale >= 1.5f ? 4 : 0;
+    s.fontDiv = s.fontBase ? 2.0f : 1.0f;
     s.prev = s.in;
     s.in = input;
     s.pressed = input.pressed || (input.left && !s.prev.left) || (input.right && !s.prev.right);
@@ -419,7 +428,10 @@ void Context::render() {
     dev.updateBuffer(s.ubo, 0, screen, sizeof screen);
     gpu::ClearValues none;
     none.color = none.depth = false;
-    dev.beginPass(0, 0, s.width, s.height, none);
+    // the points of the layout on the pixels of the framebuffer
+    float k = s.pixelScale;
+    int pw = (int)std::lround(s.width * k), ph = (int)std::lround(s.height * k);
+    dev.beginPass(0, 0, pw, ph, none);
     dev.bindPipeline(s.pipeline);
     dev.bindVertexBuffer(0, s.vbo);
     dev.bindUniformBuffer(0, s.ubo, 0, sizeof screen);
@@ -428,9 +440,9 @@ void Context::render() {
         if (!c.count)
             continue;
         if (c.clip) {
-            int x0 = (int)std::floor(c.rect.x), y0 = (int)std::floor(c.rect.y);
-            int x1 = (int)std::ceil(c.rect.x + c.rect.w), y1 = (int)std::ceil(c.rect.y + c.rect.h);
-            dev.setScissor(x0, s.height - y1, x1 - x0, y1 - y0);
+            int x0 = (int)std::floor(c.rect.x * k), y0 = (int)std::floor(c.rect.y * k);
+            int x1 = (int)std::ceil((c.rect.x + c.rect.w) * k), y1 = (int)std::ceil((c.rect.y + c.rect.h) * k);
+            dev.setScissor(x0, ph - y1, x1 - x0, y1 - y0);
         } else {
             dev.clearScissor();
         }

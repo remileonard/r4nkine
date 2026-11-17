@@ -39,7 +39,7 @@ struct Color {
 };
 
 struct Rect {
-    float x = 0, y = 0, w = 0, h = 0; // pixels, from the top left
+    float x = 0, y = 0, w = 0, h = 0; // points, from the top left
     bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
 };
 
@@ -47,7 +47,7 @@ enum class Font { Regular, Bold, Small, Title };
 
 // the state of the mouse for a frame
 struct Input {
-    float mouseX = -1, mouseY = -1; // pixels, from the top left
+    float mouseX = -1, mouseY = -1; // points, from the top left
     bool left = false, right = false;
     float wheel = 0; // notches, positive away from the user
     // a button went down, or up, since the last frame (a quick click can do
@@ -63,7 +63,9 @@ public:
     Context &operator=(const Context &) = delete;
 
     // --- the frame ------------------------------------------------------------
-    void beginFrame(int width, int height, const Input &input);
+    // width, height and the mouse in points; pixelScale: the pixels of the
+    // framebuffer per point (2 on a Retina screen), for sharp text
+    void beginFrame(int width, int height, const Input &input, float pixelScale = 1);
     void endFrame();
     // draws the frame's GUI over what is in the framebuffer
     void render();

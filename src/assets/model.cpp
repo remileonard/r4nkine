@@ -47,7 +47,7 @@ Box Model::bounds() const {
             if (b.empty())
                 continue;
             for (int c = 0; c < 8; c++)
-                box.extend(it.m.transformPoint({c & 1 ? b.max.x : b.min.x, c & 2 ? b.max.y : b.min.y,
+                box.extend(transformPoint(it.m, {c & 1 ? b.max.x : b.min.x, c & 2 ? b.max.y : b.min.y,
                                                 c & 4 ? b.max.z : b.min.z}));
         }
         for (int c : n.children)

@@ -113,9 +113,9 @@ struct App {
 };
 
 // gui.cpp: the panels, in the look of perfly (r4::ui)
-void guiFrame(App &app, int width, int height); // builds the panels
+void guiFrame(App &app, int width, int height, float pixelScale); // builds the panels (points)
 bool guiWantsMouse(const App &app);
-// the part of the window left to the scene, beside the panels
+// the part of the window left to the scene, beside the panels (points)
 ui::Rect sceneViewport(const App &app, int width, int height);
 // the marker of the bounds of the selection, made with the renderer
 std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer);

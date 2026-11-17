@@ -625,7 +625,7 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
     // node 0: the root turning Y-up into Z-up; branch i: node 1 + i
     model->nodes.resize(1 + L.branches.size());
     model->nodes[0].name = path;
-    model->nodes[0].local = Mat4::rotate(radians(90), {1, 0, 0});
+    model->nodes[0].local = rotate(radians(90), {1, 0, 0});
     model->nodes[0].children.push_back(1);
     for (size_t i = 0; i < L.branches.size(); i++) {
         const Branch &b = L.branches[i];
@@ -635,11 +635,11 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
                 continue;
             const Transform &t = L.transforms[ti];
             switch (t.type) {
-            case 0: m = m * Mat4::rotate(radians(t.angle / 10.0f), {1, 0, 0}); break;
-            case 1: m = m * Mat4::rotate(radians(t.angle / 10.0f), {0, 1, 0}); break;
-            case 2: m = m * Mat4::rotate(radians(t.angle / 10.0f), {0, 0, 1}); break;
-            case 3: m = m * Mat4::translate(t.v); break;
-            case 4: m = m * Mat4::scale(t.v); break;
+            case 0: m = m * rotate(radians(t.angle / 10.0f), {1, 0, 0}); break;
+            case 1: m = m * rotate(radians(t.angle / 10.0f), {0, 1, 0}); break;
+            case 2: m = m * rotate(radians(t.angle / 10.0f), {0, 0, 1}); break;
+            case 3: m = m * translate(t.v); break;
+            case 4: m = m * scale(t.v); break;
             }
         }
         // filled after: model->nodes may grow (the views of an eight view node)

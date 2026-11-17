@@ -483,7 +483,7 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     }
     model->nodes[0].children = {content};
     if (yUp)
-        model->nodes[0].local = Mat4::rotate(radians(90), {1, 0, 0});
+        model->nodes[0].local = rotate(radians(90), {1, 0, 0});
     return model;
 }
 

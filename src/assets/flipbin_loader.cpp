@@ -67,7 +67,7 @@ std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error) 
     model->meshes.push_back(std::move(mesh));
     Node root;
     root.name = path;
-    root.local = Mat4::rotate(radians(90), {1, 0, 0});
+    root.local = rotate(radians(90), {1, 0, 0});
     root.meshes.push_back(0);
     model->nodes.push_back(root);
     return model;

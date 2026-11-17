@@ -237,11 +237,11 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
     if (g.bits("State Filter", filter, 16))
         n->setStateFilter(filter);
     const Mat4 &m = n->matrix();
-    Vec3 t = m.translation();
+    Vec3 t = translationOf(m);
     Sphere bs = n->bounds();
     std::vector<std::pair<std::string, std::string>> rows = {
         {"Translation", fmt("%.4g %.4g %.4g", t.x, t.y, t.z)},
-        {"Scale", fmt("%.4g", m.maxScale())},
+        {"Scale", fmt("%.4g", maxScale(m))},
         {"Bounds center", fmt("%.4g %.4g %.4g", bs.center.x, bs.center.y, bs.center.z)},
         {"Bounds radius", fmt("%.4g", bs.radius)},
         {"Children", fmt("%.0f", (double)n->children().size())},
@@ -359,9 +359,9 @@ void perfPanel(App &app, ui::Context &g, ui::Rect r) {
 
 } // namespace
 
-void guiFrame(App &app, int width, int height) {
+void guiFrame(App &app, int width, int height, float pixelScale) {
     ui::Context &g = *app.ui;
-    g.beginFrame(width, height, app.input);
+    g.beginFrame(width, height, app.input, pixelScale);
     if (app.showGui) {
         float h = (float)height;
         settingsPanel(app, g, h);

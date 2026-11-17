@@ -45,12 +45,12 @@ struct Camera {
     float znear = 0.1f, zfar = 1000.0f;
     void lookAt(Vec3 eye, Vec3 center, Vec3 up = {0, 0, 1}) {
         position = eye;
-        view = Mat4::lookAt(eye, center, up);
+        view = glm::lookAt(eye, center, up);
     }
     void perspective(float fovyDeg, float aspect, float n, float f) {
         znear = n;
         zfar = f;
-        projection = Mat4::perspective(radians(fovyDeg), aspect, n, f);
+        projection = glm::perspective(radians(fovyDeg), aspect, n, f);
     }
 };
 

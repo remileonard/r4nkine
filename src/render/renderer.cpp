@@ -116,7 +116,7 @@ void main() {
 }
 )";
 
-void copyMat(float *dst, const Mat4 &m) { std::memcpy(dst, m.data(), 64); }
+void copyMat(float *dst, const Mat4 &m) { std::memcpy(dst, dataOf(m), 64); }
 void copyVec(float *dst, Vec3 v, float w) {
     dst[0] = v.x;
     dst[1] = v.y;
@@ -359,7 +359,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     item.mesh = d.mesh.get();
     item.material = mat;
     item.world = world;
-    Vec3 c = world.transformPoint(d.mesh->bounds.center);
+    Vec3 c = transformPoint(world, d.mesh->bounds.center);
     item.depth = length(c - eye);
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 |
@@ -413,7 +413,7 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
     if (node.type() == scene::NodeType::Billboard) {
         // turned to the eye, about the origin of the node
         auto &bb = static_cast<scene::Billboard &>(node);
-        world = world * bb.rotationFor(inverse(world).transformPoint(eye));
+        world = world * bb.rotationFor(transformPoint(inverse(world), eye));
     }
     if (node.type() == scene::NodeType::Geode || node.type() == scene::NodeType::Billboard) {
         for (const scene::Drawable &d : static_cast<scene::Geode &>(node).drawables())
@@ -432,7 +432,7 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
     }
     case scene::NodeType::LOD: {
         auto &lod = static_cast<scene::LOD &>(node);
-        Vec3 c = world.transformPoint(lod.center());
+        Vec3 c = transformPoint(world, lod.center());
         int i = lod.select(length(c - eye) * options_.lodScale);
         if (i >= 0)
             cull(*children[i], world, frustum, inside, state, eye);
@@ -463,13 +463,13 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         cullEye_ = cam.position;
     }
     frozen_ = options_.freezeCulling;
-    cull(root, Mat4::identity(), Frustum::fromMatrix(cullViewProj_), !options_.frustumCulling, cam.mask, cullEye_);
+    cull(root, Mat4(1.0f), Frustum::fromMatrix(cullViewProj_), !options_.frustumCulling, cam.mask, cullEye_);
     auto t1 = clock::now();
     if (options_.sortByState)
         std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) { return a.key < b.key; });
     // the transparent ones from back to front, from the eye of the camera
     for (DrawItem &it : transparent_)
-        it.depth = length(it.world.transformPoint(it.mesh->bounds.center) - cam.position);
+        it.depth = length(transformPoint(it.world, it.mesh->bounds.center) - cam.position);
     std::sort(transparent_.begin(), transparent_.end(),
               [](const DrawItem &a, const DrawItem &b) { return a.depth > b.depth; });
     auto t2 = clock::now();
@@ -481,7 +481,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     copyMat(fb.view, cam.view);
     copyMat(fb.projection, cam.projection);
     copyMat(fb.viewProjection, viewProj);
-    Vec3 l = normalize(cam.view.transformVector(-env_.lightDirection));
+    Vec3 l = normalize(transformVector(cam.view, -env_.lightDirection));
     copyVec(fb.lightDirection, l, 0);
     copyVec(fb.lightColor, env_.lightColor, 1);
     copyVec(fb.ambient, env_.ambient, 1);
@@ -499,7 +499,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     size_t k = 0;
     for (auto *list : {&opaque_, &transparent_})
         for (const DrawItem &it : *list)
-            std::memcpy(&instanceData_[16 * k++], it.world.data(), 64);
+            std::memcpy(&instanceData_[16 * k++], dataOf(it.world), 64);
     size_t bytes = instanceData_.size() * sizeof(float);
     if (bytes > instanceCapacity_) {
         device_.destroyBuffer(instanceBuffer_);

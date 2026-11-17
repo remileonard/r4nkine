@@ -18,12 +18,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(R4_BUILD_APPS "Build r4fly (needs SDL2)" ON)
 option(R4_BUILD_TESTS "Build the tests" ON)
 
-# the library: the GL functions are loaded at run time; stb (the images) and
-# cgltf (glTF) are header-only libraries of vcpkg
+# the library: the GL functions are loaded at run time; glm (the math), stb
+# (the images) and cgltf (glTF) are header-only libraries of vcpkg
+find_package(glm CONFIG QUIET)
 find_package(Stb QUIET)
 find_path(CGLTF_INCLUDE_DIR cgltf.h)
-if(NOT Stb_FOUND OR NOT CGLTF_INCLUDE_DIR)
-    message(FATAL_ERROR "stb and cgltf not found: configure with vcpkg, e.g. "
+if(NOT glm_FOUND OR NOT Stb_FOUND OR NOT CGLTF_INCLUDE_DIR)
+    message(FATAL_ERROR "glm, stb or cgltf not found: configure with vcpkg, e.g. "
                         "cmake --preset linux (VCPKG_ROOT set), or "
                         "-DCMAKE_TOOLCHAIN_FILE=<vcpkg>/scripts/buildsystems/vcpkg.cmake")
 endif()
@@ -51,6 +52,9 @@ target_include_directories(r4nkine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>)
 target_include_directories(r4nkine PRIVATE ${Stb_INCLUDE_DIR} ${CGLTF_INCLUDE_DIR})
+# glm in the interface; its vectors at zero and matrices at the identity
+target_link_libraries(r4nkine PUBLIC glm::glm)
+target_compile_definitions(r4nkine PUBLIC GLM_FORCE_CTOR_INIT)
 if(MSVC)
     target_compile_options(r4nkine PRIVATE /W4)
 else()

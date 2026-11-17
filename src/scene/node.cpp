@@ -81,11 +81,11 @@ Mat4 Billboard::rotationFor(Vec3 eye) const {
     // -Y turned towards the eye: about Z by atan2(x, -y), then for a point
     // billboard about X by the elevation
     float h = std::atan2(eye.x, -eye.y);
-    Mat4 r = Mat4::rotate(h, {0, 0, 1});
+    Mat4 r = rotate(h, {0, 0, 1});
     if (mode_ == Mode::Point) {
         float flat = std::sqrt(eye.x * eye.x + eye.y * eye.y);
         float e = std::atan2(eye.z, flat);
-        r = r * Mat4::rotate(-e, {1, 0, 0});
+        r = r * rotate(-e, {1, 0, 0});
     }
     return r;
 }

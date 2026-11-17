@@ -31,11 +31,14 @@ int main(int argc, char **argv) {
         if (std::fread(ttf[i].data(), 1, ttf[i].size(), f) != ttf[i].size()) return 1;
         std::fclose(f);
     }
-    const Face faces[] = {{0, 13, "regular"}, {1, 13, "bold"}, {0, 11, "small"}, {1, 16, "title"}};
-    const int nf = 4, W = 512, H = 256;
+    // at 1x, then at 2x for the screens of high density (Retina)
+    const Face faces[] = {{0, 13, "regular"}, {1, 13, "bold"}, {0, 11, "small"}, {1, 16, "title"},
+                          {0, 26, "regular 2x"}, {1, 26, "bold 2x"}, {0, 22, "small 2x"}, {1, 32, "title 2x"}};
+    const int nf = 8, W = 1024, H = 256;
     std::vector<unsigned char> atlas(W * H);
     stbtt_pack_context pc;
-    stbtt_PackBegin(&pc, atlas.data(), W, H, 0, 1, nullptr);
+    // the glyphs above the last rows, which keep the white texels
+    stbtt_PackBegin(&pc, atlas.data(), W, H - 4, W, 1, nullptr);
     stbtt_PackSetOversampling(&pc, 1, 1);
     std::vector<stbtt_packedchar> chars[nf][2];
     for (int f = 0; f < nf; f++) {

@@ -281,12 +281,12 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     // the nodes: node 0 the root (Y-up turned to Z-up), glTF node i at 1 + i
     model->nodes.resize(1 + data->nodes_count);
     model->nodes[0].name = path;
-    model->nodes[0].local = Mat4::rotate(radians(90), {1, 0, 0});
+    model->nodes[0].local = rotate(radians(90), {1, 0, 0});
     for (size_t i = 0; i < data->nodes_count; i++) {
         const cgltf_node &gn = data->nodes[i];
         Node &n = model->nodes[1 + i];
         n.name = gn.name ? gn.name : "";
-        cgltf_node_transform_local(&gn, &n.local.m[0][0]);
+        cgltf_node_transform_local(&gn, &n.local[0][0]);
         if (gn.mesh && meshes.count(gn.mesh))
             n.meshes = meshes[gn.mesh];
         for (size_t c = 0; c < gn.children_count; c++)
