@@ -2,6 +2,7 @@
 // graph bounds, loaders. Usage: r4_tests <the tests/data folder>
 #include "r4/assets/model.h"
 #include "r4/math.h"
+#include "r4/raster/raster.h"
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 
@@ -285,6 +286,70 @@ static void testStep2(const std::string &dir) {
     }
 }
 
+static void testRaster() {
+    using namespace r4::raster;
+    // indexed: the drawings write indices, clipped
+    Surface s(32, 20);
+    s.clear(5);
+    CHECK(s.get(0, 0) == 5 && s.get(31, 19) == 5);
+    s.pixel(3, 4, 9);
+    s.pixel(40, 4, 9); // outside: nothing
+    CHECK(s.get(3, 4) == 9);
+    s.line(0, 0, 9, 9, 7);
+    CHECK(s.get(5, 5) == 7 && s.get(9, 9) == 7);
+    s.fillRect(10, 2, 4, 3, 1);
+    CHECK(s.get(10, 2) == 1 && s.get(13, 4) == 1 && s.get(14, 4) == 5);
+    s.rect(20, 2, 5, 5, 2);
+    CHECK(s.get(20, 2) == 2 && s.get(24, 6) == 2 && s.get(22, 4) == 5);
+    s.fillCircle(16, 10, 3, 3);
+    CHECK(s.get(16, 10) == 3 && s.get(19, 10) == 3 && s.get(16, 14) == 5);
+    s.setClip(0, 0, 8, 8);
+    s.fillRect(0, 0, 32, 20, 4);
+    CHECK(s.get(7, 7) == 4 && s.get(8, 8) != 4);
+    s.resetClip();
+    s.fillTriangle(0, 19, 6, 19, 0, 13, 6);
+    CHECK(s.get(1, 18) == 6);
+    // blits: the transparent index skipped, the offset added
+    Surface sprite(2, 2);
+    sprite.clear(255);
+    sprite.pixel(0, 0, 10);
+    Surface t(4, 4);
+    t.clear(0);
+    t.blit(sprite, 1, 1, 0, 0, 0, 0, 3);
+    CHECK(t.get(1, 1) == 13 && t.get(2, 2) == 0);
+    // scroll: the content moves, the rest takes the fill
+    t.scroll(1, 0, 8);
+    CHECK(t.get(2, 1) == 13 && t.get(0, 1) == 8);
+    // text: some pixels of the color
+    Surface txt(60, 20);
+    txt.clear(0);
+    int w = txt.text(Font::builtin(13), 0, 0, "R4", 15);
+    int lit = 0;
+    for (int y = 0; y < 20; y++)
+        for (int x = 0; x < 60; x++)
+            lit += txt.get(x, y) == 15;
+    CHECK(w > 10 && lit > 20 && Font::builtin(40).height > Font::builtin(13).height);
+    // true colors, blended
+    Surface c(8, 8, Format::RGBA8);
+    c.clear(rgba(0, 0, 255));
+    c.blend = true;
+    c.fillRect(0, 0, 4, 4, rgba(255, 0, 0, 128));
+    uint32_t p = c.get(1, 1);
+    CHECK(red(p) > 100 && blue(p) > 100 && alpha(p) == 255);
+    // the palettes
+    Palette vga = Palette::vga();
+    CHECK(vga.colors[15] == rgba(255, 255, 255) && vga.nearest(250, 250, 250) == 15);
+    CHECK(vga.fadedTo(rgba(0, 0, 0), 1).colors[15] == rgba(0, 0, 0));
+    CHECK(vga.rotated(1, 3, 1).colors[2] == vga.colors[1]);
+    // indexed to RGBA through the palette, the transparent index clear
+    Surface i(2, 1);
+    i.pixel(0, 0, 15);
+    i.pixel(1, 0, 255);
+    uint8_t out[8];
+    i.toRGBA(&vga, out);
+    CHECK(out[0] == 255 && out[3] == 255 && out[7] == 0);
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
@@ -293,6 +358,7 @@ int main(int argc, char **argv) {
     testLoaders(dir);
     testLegacyFormats(dir);
     testStep2(dir);
+    testRaster();
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

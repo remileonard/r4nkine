@@ -68,6 +68,16 @@ struct GLBuffer {
 };
 struct GLTexture {
     GLuint name = 0;
+    GLenum format = 0; // of its pixels: RED, RG, RGB, RGBA
+    int bpp = 4;
+    bool owned = true; // false: the color of a render target, freed with it
+};
+struct GLRenderTarget {
+    RenderTargetDesc desc;
+    GLuint fbo = 0;            // the texture (and the depth when single sampled)
+    GLuint msaaFbo = 0;        // multisampled: where the passes draw
+    GLuint colorRb = 0, depthRb = 0;
+    uint32_t texture = 0;      // a handle in the textures
 };
 struct GLShader {
     GLuint program = 0;
@@ -142,6 +152,12 @@ public:
         gl.GetIntegerv(MAX_TEXTURE_SIZE, &v);
         if (v > 0)
             lim.maxTextureSize = (uint32_t)v;
+        v = 1;
+        gl.GetIntegerv(MAX_SAMPLES, &v);
+        lim.maxSamples = v > 0 ? v : 1;
+        // the framebuffer of the window: not always 0 (a host, some platforms)
+        gl.GetIntegerv(FRAMEBUFFER_BINDING, &v);
+        windowFbo = (GLuint)v;
         const char *renderer = (const char *)gl.GetString(RENDERER);
         const char *version = (const char *)gl.GetString(VERSION);
         nameStr = std::string("OpenGL ") + (version ? version : "?") + " (" + (renderer ? renderer : "?") + ")";
@@ -237,11 +253,118 @@ public:
         if (d.mipmaps && pixels)
             gl.GenerateMipmap(TEXTURE_2D);
         gl.BindTexture(TEXTURE_2D, 0);
+        t.format = fmt;
+        t.bpp = bpp;
         return {textures.add(t)};
     }
 
+    void updateTexture(TextureHandle h, int x, int y, int width, int height, const void *pixels) override {
+        GLTexture *t = textures.get(h.id);
+        if (!t || width <= 0 || height <= 0)
+            return;
+        gl.ActiveTexture(TEXTURE0);
+        gl.BindTexture(TEXTURE_2D, t->name);
+        textureBound[0] = 0;
+        gl.PixelStorei(UNPACK_ALIGNMENT, (width * t->bpp) % 4 == 0 ? 4 : 1);
+        gl.TexSubImage2D(TEXTURE_2D, 0, x, y, width, height, t->format, UNSIGNED_BYTE, pixels);
+        gl.PixelStorei(UNPACK_ALIGNMENT, 4);
+        gl.BindTexture(TEXTURE_2D, 0);
+    }
+
+    RenderTargetHandle createRenderTarget(const RenderTargetDesc &d) override {
+        if (d.width <= 0 || d.height <= 0)
+            return {};
+        GLRenderTarget r;
+        r.desc = d;
+        r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
+        // the texture of its color
+        TextureDesc td;
+        td.width = d.width;
+        td.height = d.height;
+        td.format = TextureFormat::RGBA8;
+        td.minFilter = td.magFilter = d.filter;
+        td.mipmaps = false;
+        td.wrapS = td.wrapT = Wrap::Clamp;
+        r.texture = createTexture(td, nullptr).id;
+        textures.get(r.texture)->owned = false;
+        gl.GenFramebuffers(1, &r.fbo);
+        gl.BindFramebuffer(FRAMEBUFFER, r.fbo);
+        gl.FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, textures.get(r.texture)->name, 0);
+        bool ok = true;
+        if (r.desc.samples > 1) {
+            // the passes draw into multisampled buffers, resolved into the texture
+            gl.GenFramebuffers(1, &r.msaaFbo);
+            gl.BindFramebuffer(FRAMEBUFFER, r.msaaFbo);
+            gl.GenRenderbuffers(1, &r.colorRb);
+            gl.BindRenderbuffer(RENDERBUFFER, r.colorRb);
+            gl.RenderbufferStorageMultisample(RENDERBUFFER, r.desc.samples, RGBA8, d.width, d.height);
+            gl.FramebufferRenderbuffer(FRAMEBUFFER, COLOR_ATTACHMENT0, RENDERBUFFER, r.colorRb);
+        }
+        if (d.depth) {
+            gl.GenRenderbuffers(1, &r.depthRb);
+            gl.BindRenderbuffer(RENDERBUFFER, r.depthRb);
+            gl.RenderbufferStorageMultisample(RENDERBUFFER, r.desc.samples > 1 ? r.desc.samples : 0,
+                                              DEPTH24_STENCIL8, d.width, d.height);
+            gl.FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, r.depthRb);
+        }
+        ok = gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
+        if (r.msaaFbo) {
+            gl.BindFramebuffer(FRAMEBUFFER, r.fbo);
+            ok = ok && gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
+        }
+        gl.BindRenderbuffer(RENDERBUFFER, 0);
+        gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
+        boundFbo = windowFbo;
+        uint32_t id = targets.add(r);
+        if (!ok) {
+            error = "render target incomplete";
+            destroyRenderTarget({id});
+            return {};
+        }
+        return {id};
+    }
+
+    void destroyRenderTarget(RenderTargetHandle h) override {
+        GLRenderTarget *r = targets.get(h.id);
+        if (!r)
+            return;
+        if (r->fbo)
+            gl.DeleteFramebuffers(1, &r->fbo);
+        if (r->msaaFbo)
+            gl.DeleteFramebuffers(1, &r->msaaFbo);
+        if (r->colorRb)
+            gl.DeleteRenderbuffers(1, &r->colorRb);
+        if (r->depthRb)
+            gl.DeleteRenderbuffers(1, &r->depthRb);
+        if (GLTexture *t = textures.get(r->texture))
+            t->owned = true;
+        destroyTexture({r->texture});
+        if (boundFbo == r->fbo || boundFbo == r->msaaFbo) {
+            gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
+            boundFbo = windowFbo;
+        }
+        targets.remove(h.id);
+    }
+
+    TextureHandle renderTargetTexture(RenderTargetHandle h) override {
+        GLRenderTarget *r = targets.get(h.id);
+        return {r ? r->texture : 0};
+    }
+
+    void resolveRenderTarget(RenderTargetHandle h) override {
+        GLRenderTarget *r = targets.get(h.id);
+        if (!r || !r->msaaFbo)
+            return;
+        gl.BindFramebuffer(READ_FRAMEBUFFER, r->msaaFbo);
+        gl.BindFramebuffer(DRAW_FRAMEBUFFER, r->fbo);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+        gl.BlitFramebuffer(0, 0, r->desc.width, r->desc.height, 0, 0, r->desc.width, r->desc.height,
+                           COLOR_BUFFER_BIT, NEAREST);
+        gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
+    }
+
     void destroyTexture(TextureHandle h) override {
-        if (GLTexture *t = textures.get(h.id)) {
+        if (GLTexture *t = textures.get(h.id); t && t->owned) {
             gl.DeleteTextures(1, &t->name);
             for (auto &b : textureBound)
                 if (b == h.id)
@@ -359,7 +482,15 @@ public:
         }
     }
 
-    void beginPass(int x, int y, int width, int height, const ClearValues &c) override {
+    void beginPass(RenderTargetHandle target, int x, int y, int width, int height,
+                   const ClearValues &c) override {
+        GLuint fbo = windowFbo;
+        if (GLRenderTarget *r = targets.get(target.id))
+            fbo = r->msaaFbo ? r->msaaFbo : r->fbo;
+        if (fbo != boundFbo) {
+            gl.BindFramebuffer(FRAMEBUFFER, fbo);
+            boundFbo = fbo;
+        }
         gl.Viewport(x, y, width, height);
         setCap(SCISSOR_TEST, false, scissorEnabled);
         GLbitfield mask = 0;
@@ -602,6 +733,10 @@ public:
         gl.GetIntegerv(POLYGON_MODE, pm);
         host.polygonMode = pm[0];
         gl.GetIntegerv(VIEWPORT, host.viewport);
+        gl.GetIntegerv(FRAMEBUFFER_BINDING, &v);
+        host.fbo = v;
+        boundFbo = (GLuint)v;
+        windowFbo = (GLuint)v; // the passes "on the window" go where the host draws
         forgetCaches();
     }
 
@@ -626,6 +761,8 @@ public:
         gl.BlendFunc(host.blendSrc, host.blendDst);
         gl.PolygonMode(FRONT_AND_BACK, host.polygonMode);
         gl.Viewport(host.viewport[0], host.viewport[1], host.viewport[2], host.viewport[3]);
+        gl.BindFramebuffer(FRAMEBUFFER, (GLuint)host.fbo);
+        boundFbo = (GLuint)host.fbo;
         forgetCaches();
     }
 
@@ -667,6 +804,8 @@ private:
     Pool<GLTexture> textures;
     Pool<GLShader> shaders;
     Pool<GLPipeline> pipelines;
+    Pool<GLRenderTarget> targets;
+    GLuint windowFbo = 0, boundFbo = 0;
 
     // the cached state
     uint32_t current = 0;
@@ -693,6 +832,7 @@ private:
         GLint cullMode = BACK, frontFace = CCW, depthMask = 1, depthFunc = LESS;
         GLint blendSrc = ONE, blendDst = ZERO, polygonMode = FILL;
         GLint viewport[4] = {};
+        GLint fbo = 0;
     } host;
 };
 

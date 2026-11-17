@@ -3,6 +3,8 @@
 // legacy_opengl_demo.
 #include "r4/ui/ui.h"
 
+#include "font_data.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdarg>
@@ -13,7 +15,14 @@
 namespace r4::ui {
 
 namespace {
-#include "font_data.inc"
+// the baked glyphs (font_data.cpp)
+const detail::BakedFont &F = detail::bakedFont();
+#define kAtlasWidth (F.width)
+#define kAtlasHeight (F.height)
+#define kFontMetrics (F.metrics)
+#define kGlyphBox (F.boxes)
+#define kGlyphMetrics (F.glyphs)
+using detail::glyphIndex;
 
 // --- the colors of pfuGUI -----------------------------------------------------
 const Color kPanel = Color::rgb(0.55f, 0.55f, 0.6f);
@@ -47,6 +56,7 @@ struct Command {
     bool clip = false;
     Rect rect;
     uint32_t first = 0, count = 0;
+    gpu::TextureHandle image; // an image (true colors) instead of the glyphs
 };
 
 uint32_t hashOf(const char *s, uint32_t h) {
@@ -75,14 +85,6 @@ int nextCode(const char *&s) {
     return '?';
 }
 
-int glyphIndex(int code) {
-    if (code >= 32 && code <= 126)
-        return code - 32;
-    if (code >= 160 && code <= 255)
-        return 95 + code - 160;
-    return '?' - 32;
-}
-
 void formatValue(char *buf, size_t n, const char *fmt, float v) { std::snprintf(buf, n, fmt, v); }
 
 } // namespace
@@ -90,7 +92,8 @@ void formatValue(char *buf, size_t n, const char *fmt, float v) { std::snprintf(
 struct Context::Impl {
     gpu::Device &device;
     gpu::ShaderHandle shader;
-    gpu::PipelineHandle pipeline;
+    gpu::PipelineHandle pipeline, imagePipeline;
+    gpu::ShaderHandle imageShader;
     gpu::TextureHandle atlas;
     gpu::BufferHandle vbo, ubo;
     size_t vboSize = 0;
@@ -140,16 +143,18 @@ struct Context::Impl {
     explicit Impl(gpu::Device &dev) : device(dev) {}
 
     // --- drawing ---------------------------------------------------------------
-    void setClip(bool on, Rect r) {
+    void setClip(bool on, Rect r, gpu::TextureHandle image = {}) {
         if (!cmds.empty() && cmds.back().count == 0) {
             cmds.back().clip = on;
             cmds.back().rect = r;
+            cmds.back().image = image;
             return;
         }
         Command c;
         c.clip = on;
         c.rect = r;
         c.first = (uint32_t)verts.size();
+        c.image = image;
         cmds.push_back(c);
     }
     void quad(float x0, float y0, float x1, float y1, float u0, float v0, float u1, float v1, Color c) {
@@ -300,11 +305,8 @@ struct Context::Impl {
 Context::Context(gpu::Device &device) : d(std::make_unique<Impl>(device)) {
     gpu::Device &dev = device;
     // the atlas, rows from the bottom for the device
-    std::vector<uint8_t> top((size_t)kAtlasWidth * kAtlasHeight), bottom(top.size());
-    size_t o = 0;
-    for (size_t i = 0; i + 1 < sizeof kAtlasRuns; i += 2)
-        for (int k = 0; k < kAtlasRuns[i] && o < top.size(); k++)
-            top[o++] = kAtlasRuns[i + 1];
+    const std::vector<uint8_t> &top = F.pixels;
+    std::vector<uint8_t> bottom(top.size());
     for (int y = 0; y < kAtlasHeight; y++)
         std::memcpy(&bottom[(size_t)y * kAtlasWidth], &top[(size_t)(kAtlasHeight - 1 - y) * kAtlasWidth], kAtlasWidth);
     gpu::TextureDesc td;
@@ -357,6 +359,18 @@ void main() { fragColor = vec4(vColor.rgb, vColor.a * texture(atlas, vUV).r); }
     pd.depthTest = false;
     pd.depthWrite = false;
     d->pipeline = dev.createPipeline(pd);
+    // the images: their colors, multiplied by the vertex color
+    sd.fragment = R"(#version 330
+uniform sampler2D atlas;
+in vec2 vUV;
+in vec4 vColor;
+out vec4 fragColor;
+void main() { fragColor = vColor * texture(atlas, vUV); }
+)";
+    sd.debugName = "r4::ui image";
+    d->imageShader = dev.createShader(sd);
+    pd.shader = d->imageShader;
+    d->imagePipeline = dev.createPipeline(pd);
     float screen[4] = {1, 1, 0, 0};
     d->ubo = dev.createBuffer(gpu::BufferUsage::Uniform, screen, sizeof screen, true);
 }
@@ -368,6 +382,8 @@ Context::~Context() {
     dev.destroyBuffer(d->ubo);
     dev.destroyPipeline(d->pipeline);
     dev.destroyShader(d->shader);
+    dev.destroyPipeline(d->imagePipeline);
+    dev.destroyShader(d->imageShader);
     dev.destroyTexture(d->atlas);
 }
 
@@ -450,9 +466,15 @@ void Context::render() {
     dev.bindVertexBuffer(0, s.vbo);
     dev.bindUniformBuffer(0, s.ubo, 0, sizeof screen);
     dev.bindTexture(0, s.atlas);
+    bool imageBound = false;
     for (const Command &c : s.cmds) {
         if (!c.count)
             continue;
+        if ((bool)c.image != imageBound || c.image) {
+            dev.bindPipeline(c.image ? s.imagePipeline : s.pipeline);
+            dev.bindTexture(0, c.image ? c.image : s.atlas);
+            imageBound = (bool)c.image;
+        }
         if (c.clip) {
             int x0 = (int)std::floor(c.rect.x * k), y0 = (int)std::floor(c.rect.y * k);
             int x1 = (int)std::ceil((c.rect.x + c.rect.w) * k), y1 = (int)std::ceil((c.rect.y + c.rect.h) * k);
@@ -539,6 +561,31 @@ void Context::space(float pixels) {
 float Context::remainingHeight() const { return d->clip.y + d->clip.h - d->cursorY - kMargin; }
 
 Rect Context::next(float height) { return d->next(height); }
+
+void Context::image(gpu::TextureHandle texture, float aspect, float maxHeight) {
+    Impl &s = *d;
+    float w = s.panel.w - 2 * 4.0f; // the width of the panel
+    float h = aspect > 0 ? w / aspect : w;
+    if (maxHeight > 0 && h > maxHeight) {
+        h = maxHeight;
+        w = aspect > 0 ? h * aspect : h;
+    }
+    Rect r = s.next(h + 4);
+    if (!s.visible(r) || !texture)
+        return;
+    s.box(r, Color::rgb(0.12f, 0.12f, 0.16f), true);
+    Rect in{r.x + (r.w - w) * 0.5f, r.y + 2, w, h};
+    image(texture, in);
+}
+
+void Context::image(gpu::TextureHandle texture, Rect r) {
+    Impl &s = *d;
+    Command back = s.cmds.back();
+    // its own draw, then the glyphs again with the same clip
+    s.setClip(back.clip, back.rect, texture);
+    s.quad(r.x, r.y, r.x + r.w, r.y + r.h, 0, 1, 1, 0, Color::rgb(1, 1, 1));
+    s.setClip(back.clip, back.rect);
+}
 
 void Context::beginCanvas(const char *id, Rect r) {
     Impl &s = *d;

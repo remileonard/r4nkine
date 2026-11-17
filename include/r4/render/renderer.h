@@ -105,6 +105,10 @@ public:
     Environment &environment() { return env_; }
     RenderOptions &options() { return options_; }
     void setWireframe(bool on) { wireframe_ = on; }
+    // where render() draws: a render target (a post process), or the window
+    // when the handle is null
+    void setTarget(gpu::RenderTargetHandle target) { target_ = target; }
+    gpu::RenderTargetHandle target() const { return target_; }
     bool wireframe() const { return wireframe_; }
     const RenderStats &stats() const { return stats_; }
     const std::string &error() const { return error_; }
@@ -128,6 +132,7 @@ private:
     gpu::Device &device_;
     Environment env_;
     RenderOptions options_;
+    gpu::RenderTargetHandle target_;
     RenderStats stats_;
     // the eye of the culling, kept while it is frozen
     Mat4 cullViewProj_;

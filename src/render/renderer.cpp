@@ -514,7 +514,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     clear.g = env_.clearColor.y;
     clear.b = env_.clearColor.z;
     clear.a = env_.clearColor.w;
-    device_.beginPass(x, y, width, height, clear);
+    device_.beginPass(target_, x, y, width, height, clear);
     device_.bindUniformBuffer(kFrameSlot, frameUniforms_, 0, sizeof(FrameBlock));
     const GpuMesh *lastMesh = nullptr;
     const MaterialInstance *lastMaterial = nullptr;

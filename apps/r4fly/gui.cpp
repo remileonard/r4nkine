@@ -4,6 +4,8 @@
 // performances.
 #include "app.h"
 
+#include "r4/ui/controls.h"
+
 #include <algorithm>
 #include <cstdio>
 
@@ -179,6 +181,8 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         g.toggle("Freeze Culling", o.freezeCulling);
         g.slider("LOD Scale", o.lodScale, 0.05f, 20, "%.2f", true);
     }
+    if (g.section("Post Process", app.openPost))
+        ui::postProcessControls(g, app.post->settings);
     if (g.section("Optimisations", app.openOptim)) {
         g.toggle("Sort by State", o.sortByState);
         g.toggle("Instancing", o.instancing);

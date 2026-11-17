@@ -117,6 +117,17 @@ enum : GLenum {
     CURRENT_PROGRAM = 0x8B8D,
     VERTEX_ARRAY_BINDING = 0x85B5,
     INVALID_INDEX = 0xFFFFFFFFu,
+    FRAMEBUFFER = 0x8D40,
+    READ_FRAMEBUFFER = 0x8CA8,
+    DRAW_FRAMEBUFFER = 0x8CA9,
+    FRAMEBUFFER_BINDING = 0x8CA6,
+    COLOR_ATTACHMENT0 = 0x8CE0,
+    DEPTH_STENCIL_ATTACHMENT = 0x821A,
+    RENDERBUFFER = 0x8D41,
+    FRAMEBUFFER_COMPLETE = 0x8CD5,
+    DEPTH24_STENCIL8 = 0x88F0,
+    MAX_SAMPLES = 0x8D57,
+    STENCIL_BUFFER_BIT = 0x00000400,
 };
 
 #define R4_GL_FUNCTIONS(X)                                                                          \
@@ -153,6 +164,21 @@ enum : GLenum {
     X(void, TexImage2D, (GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border, \
                          GLenum fmt, GLenum type, const void *pixels))                              \
     X(void, TexParameteri, (GLenum target, GLenum pname, GLint param))                              \
+    X(void, TexSubImage2D, (GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,      \
+                            GLenum fmt, GLenum type, const void *pixels))                           \
+    X(void, GenFramebuffers, (GLsizei n, GLuint * f))                                               \
+    X(void, DeleteFramebuffers, (GLsizei n, const GLuint *f))                                       \
+    X(void, BindFramebuffer, (GLenum target, GLuint f))                                             \
+    X(void, FramebufferTexture2D, (GLenum target, GLenum att, GLenum textarget, GLuint t, GLint level)) \
+    X(GLenum, CheckFramebufferStatus, (GLenum target))                                              \
+    X(void, GenRenderbuffers, (GLsizei n, GLuint * r))                                              \
+    X(void, DeleteRenderbuffers, (GLsizei n, const GLuint *r))                                      \
+    X(void, BindRenderbuffer, (GLenum target, GLuint r))                                            \
+    X(void, RenderbufferStorageMultisample, (GLenum target, GLsizei samples, GLenum ifmt, GLsizei w, \
+                                             GLsizei h))                                            \
+    X(void, FramebufferRenderbuffer, (GLenum target, GLenum att, GLenum rbtarget, GLuint r))        \
+    X(void, BlitFramebuffer, (GLint sx0, GLint sy0, GLint sx1, GLint sy1, GLint dx0, GLint dy0,     \
+                              GLint dx1, GLint dy1, GLbitfield mask, GLenum filter))               \
     X(void, GenerateMipmap, (GLenum target))                                                        \
     X(GLuint, CreateShader, (GLenum type))                                                          \
     X(void, ShaderSource, (GLuint s, GLsizei n, const GLchar *const *src, const GLint *len))        \

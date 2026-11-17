@@ -28,7 +28,9 @@ demos.
 ```
 apps      r4fly (the viewer, heir of perfly), demos
 ui        the panels of Performer: buttons, switches, sliders, menus, trees
-render    cull → draw list → sort → batch/instance → passes; materials
+raster    2D on the CPU: indexed or true-color surfaces, primitives, fonts
+render    cull → draw list → sort → batch/instance → passes; materials;
+          overlays (raster surfaces), post process (MSAA, FXAA, CRT, palette)
 scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
 terrain   (to come) blocks, LOD, seams, placement rules
 assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
@@ -147,6 +149,24 @@ built on the CPU into one vertex buffer (rectangles, triangles and glyphs,
 all with one texture: the font atlas and a white texel), then drawn with
 one pipeline and a few draws, clipped by the scissor to the panels. The
 panels scroll with the wheel when their widgets are taller.
+
+## 2D layers and the post process
+
+`r4::raster` draws on the CPU into surfaces of any size, indexed (a byte per
+pixel and a palette, as the VGA) or in true colors. It knows nothing of the
+GPU: a game can keep drawing its cockpit as it did, pixel by pixel.
+`render::Overlay` shows a surface: the indices go up as an R8 texture and
+the palette as a 256 x 1 texture, and the shader looks the colors up (the
+transparent index clear), so the palette effects cost one upload of 1 KB.
+A surface is sent again only when its version changed. `Overlay::texture()`
+draws it into a render target, for a material.
+
+The device has **render targets** (a color texture, a depth buffer, and
+multisampled buffers resolved into the texture by a blit) and
+**texture updates**. `PostProcess` gives the target the frame is drawn
+into, then applies the effects in one pass (two with FXAA). The reduction
+to a palette uses a table of 32 x 32 x 32 colors made on the CPU, each the
+nearest color of the palette, after an ordered dithering.
 
 ## Render options and measures
 

@@ -45,6 +45,22 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   stream, and consecutive items with the same mesh, material and pipeline
   are one draw call. Shading is per-pixel Blinn-Phong with fog. Triangles,
   lines and points are drawn; decals and sphere maps are supported.
+- `r4::raster`: 2D drawing on the CPU, as the old games drew their
+  cockpits: surfaces of any size, in **8-bit indexed** pixels with a palette
+  or in **RGBA** true colors (blended); pixels, lines (thick, dashed),
+  rectangles, circles, ellipses, polygons, blits (transparent index, color
+  offset, scaled), scrolling, clipping, bitmap text (fonts of 11 to 32
+  pixels, and enlarged), and the palette effects (fade, blend, tint,
+  brightness and contrast, cycling).
+- `r4::render::Overlay`: a raster surface on the GPU, over the scene or as
+  the texture of a mesh (a screen of a virtual cockpit). An indexed surface
+  goes up as bytes and its palette as 256 colors, looked up in the shader:
+  a new palette costs one small upload.
+- `r4::render::PostProcess`: effects on the whole frame, the scene drawn
+  into a target first: **MSAA**, **FXAA**, big pixels, colors (brightness,
+  contrast, saturation, gamma, tint, fade), the frame **reduced to a
+  palette** (VGA 256, EGA 16, CGA 4, handheld 4, amber; ordered
+  dithering), and a **CRT** (scanlines, curvature, aberration, vignette).
 - `r4::ui`: a small GUI in the look of the panels of IRIS Performer (the
   GUI of perfly): grey buttons in relief, switches with yellow lights, blue
   sliders, menu buttons, radio buttons, messages in yellow on dark boxes,
@@ -76,7 +92,9 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
     over the last 240 frames, and the counters of the renderer (draw calls,
     triangles, state changes, items per draw, nodes and instances culled).
 
-  The scene is drawn between the panels, as the channel of perfly.
+  The scene is drawn between the panels, as the channel of perfly. A
+  **Post Process** section holds the effects on the frame; `-post` gives
+  them on the command line (`-post msaa4,fxaa,crt,pixel3,ega`).
   Keys: F1 shows or hides the GUI, `w` wireframe, `r` reset, `s` statistics.
   `-snap` saves a frame, `-nogui` starts without the GUI, `-view` places
   the eye, `-state` chooses the state bits of the models, `-F` gives the
@@ -148,6 +166,7 @@ and distance in all of them):
 | `forest` | an Instancer: up to 50000 trees, two levels of detail, a few draw calls; the panel changes the count, the LOD scale, instancing, culling and fog, and shows the cost |
 | `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads); the panel flies the plane |
 | `ui_panel` | `r4::ui`: a panel of perfly driving a box, with the color picker |
+| `cockpit` | `r4::raster`: a cockpit drawn on the CPU (radar, horizon, compass tape, readouts) over the scene, in 320x200 indexed pixels or up to 1280x800 in true colors; palette effects; a HUD in true colors at the size of the window; the radar as a screen standing in the scene; the post process on everything |
 
 `examples/common` holds what they share and is not R4nkine: an SDL2
 window with its OpenGL context, and a few meshes made in code.

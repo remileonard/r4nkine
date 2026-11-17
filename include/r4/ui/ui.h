@@ -121,6 +121,13 @@ public:
     };
     bool treeRow(const TreeRow &row, bool &open, bool &visible);
 
+    // an image (a texture of true colors, its first row at the top: the
+    // texture of an Overlay, a render target) as wide as the panel, at the
+    // aspect given, at most maxHeight high
+    void image(gpu::TextureHandle texture, float aspect, float maxHeight = 0);
+    // an image in a rectangle, anywhere (a canvas, a panel)
+    void image(gpu::TextureHandle texture, Rect r);
+
     // --- drawing, for custom widgets --------------------------------------------
     // a canvas: a rectangle of the window to draw in freely, clipped, without
     // a background; the mouse is the GUI's only over its clickable parts

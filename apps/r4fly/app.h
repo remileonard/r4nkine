@@ -5,6 +5,7 @@
 #include "r4/assets/model.h"
 #include "r4/gpu/device.h"
 #include "r4/render/orbit.h"
+#include "r4/render/postprocess.h"
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 #include "r4/ui/ui.h"
@@ -93,6 +94,7 @@ struct App {
     SDL_Window *window = nullptr;
     std::unique_ptr<gpu::Device> device;
     std::unique_ptr<render::Renderer> renderer;
+    std::unique_ptr<render::PostProcess> post; // effects on the frame
     render::Camera camera;
     Trackball ball;
     float viewH = 30, viewP = 25, viewZ = 1;
@@ -118,7 +120,7 @@ struct App {
     float treeDepth = 6;                              // the levels drawn
     // the open sections of the panel, the open nodes of the tree
     bool openCamera = true, openLight = false, openEnv = false, openRender = false, openCull = false,
-         openOptim = false;
+         openOptim = false, openPost = false;
     std::map<scene::Node *, bool> openNodes;
     bool vsync = true;
     bool printStats = false;

@@ -47,6 +47,11 @@ add_library(r4nkine
     src/scene/node.cpp
     src/render/renderer.cpp
     src/ui/ui.cpp
+    src/ui/font_data.cpp
+    src/ui/controls.cpp
+    src/raster/raster.cpp
+    src/render/overlay.cpp
+    src/render/postprocess.cpp
 )
 add_library(r4nkine::r4nkine ALIAS r4nkine)
 target_include_directories(r4nkine PUBLIC
@@ -70,7 +75,7 @@ if(R4_BUILD_APPS)
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
     # the examples of the README, built with the viewer (SDL2)
     if(R4_BUILD_EXAMPLES)
-        foreach(example hello_model forest hierarchy ui_panel)
+        foreach(example hello_model forest hierarchy ui_panel cockpit)
             add_executable(${example} examples/${example}.cpp)
             target_link_libraries(${example} PRIVATE r4nkine
                 $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>

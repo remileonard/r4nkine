@@ -28,6 +28,12 @@ struct ShaderHandle {
     uint32_t id = 0;
     explicit operator bool() const { return id != 0; }
 };
+// an image to draw into, instead of the window: the scene before the post
+// process, a screen of a virtual cockpit
+struct RenderTargetHandle {
+    uint32_t id = 0;
+    explicit operator bool() const { return id != 0; }
+};
 struct PipelineHandle {
     uint32_t id = 0;
     explicit operator bool() const { return id != 0; }
@@ -100,6 +106,13 @@ struct PipelineDesc {
     float polygonOffsetFactor = 0, polygonOffsetUnits = 0; // decals, outlines
 };
 
+struct RenderTargetDesc {
+    int width = 0, height = 0;
+    int samples = 1;    // > 1: multisampled (MSAA), resolved into the texture
+    bool depth = true;  // a depth (and stencil) buffer
+    Filter filter = Filter::Linear; // how its texture is sampled
+};
+
 struct ClearValues {
     bool color = true, depth = true;
     float r = 0, g = 0, b = 0, a = 1;
@@ -110,6 +123,7 @@ struct Limits {
     uint32_t uniformBufferAlignment = 256;
     uint32_t maxUniformBlockSize = 16384;
     uint32_t maxTextureSize = 2048;
+    int maxSamples = 1; // of the render targets
 };
 
 struct FrameStats {
@@ -131,6 +145,16 @@ public:
     // pixels: rows from the bottom, tightly packed; may be null
     virtual TextureHandle createTexture(const TextureDesc &desc, const void *pixels) = 0;
     virtual void destroyTexture(TextureHandle t) = 0;
+    // replaces a rectangle of a texture (rows from the bottom, the format of
+    // the texture); its mipmaps are not made again
+    virtual void updateTexture(TextureHandle t, int x, int y, int width, int height, const void *pixels) = 0;
+
+    virtual RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) = 0;
+    virtual void destroyRenderTarget(RenderTargetHandle r) = 0;
+    // its color as a texture to sample; a multisampled target is resolved into
+    // it by resolveRenderTarget, after its passes
+    virtual TextureHandle renderTargetTexture(RenderTargetHandle r) = 0;
+    virtual void resolveRenderTarget(RenderTargetHandle r) = 0;
 
     // null handle on error, the log in lastError()
     virtual ShaderHandle createShader(const ShaderDesc &desc) = 0;
@@ -139,8 +163,13 @@ public:
     virtual void destroyPipeline(PipelineHandle p) = 0;
     virtual const std::string &lastError() const = 0;
 
-    // a pass on the default framebuffer
-    virtual void beginPass(int x, int y, int width, int height, const ClearValues &clear) = 0;
+    // a pass into a render target, or the window when the handle is null
+    virtual void beginPass(RenderTargetHandle target, int x, int y, int width, int height,
+                           const ClearValues &clear) = 0;
+    // a pass on the window
+    void beginPass(int x, int y, int width, int height, const ClearValues &clear) {
+        beginPass(RenderTargetHandle{}, x, y, width, height, clear);
+    }
     virtual void endPass() = 0;
     // the draws of the pass are clipped to a rectangle (from the bottom left),
     // until clearScissor() or the end of the pass

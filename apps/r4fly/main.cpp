@@ -5,6 +5,9 @@
 //     -wire            start in wireframe
 //     -nogui           start without the GUI (F1 shows it)
 //     -core            an OpenGL core context (always on macOS)
+//     -post LIST       effects on the frame, as msaa4,fxaa,crt,pixel3,ega
+//                      (msaaN, fxaa, crt, scanlines, vignette, pixelN, grey,
+//                      vga, ega, cga, handheld, amber)
 //     -scale S         the size of the GUI (2: twice as large; Retina screens
 //                      are already taken into account)
 //     -frames N        quit after N frames
@@ -23,6 +26,8 @@
 // the rendering, the culling and the optimisations, the scene graph and the
 // performances.
 #include "app.h"
+
+#include "r4/ui/controls.h"
 
 #include <chrono>
 #include <cstdio>
@@ -57,9 +62,57 @@ constexpr int kCoreMajor = 3, kCoreMinor = 3;
 #endif
 
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-core] [-scale S] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
                          "[-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
     std::exit(1);
+}
+
+// -post: msaa2/4/8, fxaa, crt, scanlines, vignette, pixel2..16, grey, and
+// the palettes vga, ega, cga, handheld, amber (separated by commas)
+void applyPostList(render::PostSettings &s, const std::string &list) {
+    size_t p = 0;
+    while (p < list.size()) {
+        size_t c = list.find(',', p);
+        if (c == std::string::npos)
+            c = list.size();
+        std::string w = list.substr(p, c - p);
+        p = c + 1;
+        auto palette = [&](int index) {
+            const auto &presets = ui::palettePresets();
+            s.quantize = true;
+            s.palette = presets[index].palette;
+            s.paletteSize = presets[index].size;
+        };
+        if (w.rfind("msaa", 0) == 0)
+            s.msaa = std::max(1, std::atoi(w.c_str() + 4));
+        else if (w == "fxaa")
+            s.fxaa = true;
+        else if (w == "crt") {
+            s.scanlines = true;
+            s.curvature = 0.08f;
+            s.aberration = 1;
+            s.vignette = 0.5f;
+        } else if (w == "scanlines")
+            s.scanlines = true;
+        else if (w == "vignette")
+            s.vignette = 0.6f;
+        else if (w.rfind("pixel", 0) == 0)
+            s.pixelate = std::max(1, std::atoi(w.c_str() + 5));
+        else if (w == "grey")
+            s.saturation = 0;
+        else if (w == "vga")
+            palette(0);
+        else if (w == "ega")
+            palette(1);
+        else if (w == "cga")
+            palette(2);
+        else if (w == "handheld")
+            palette(3);
+        else if (w == "amber")
+            palette(4);
+        else
+            std::fprintf(stderr, "r4fly: -post: %s unknown\n", w.c_str());
+    }
 }
 
 double now() {
@@ -80,6 +133,7 @@ int main(int argc, char **argv) {
     int width = 1280, height = 800, frames = -1;
     bool wire = false;
     float uiScale = 1;
+    std::string postList;
 #ifdef __APPLE__
     bool core = true;
 #else
@@ -99,6 +153,8 @@ int main(int argc, char **argv) {
             wire = true;
         } else if (a == "-scale" && i + 1 < argc) {
             uiScale = std::max(0.5f, (float)std::atof(argv[++i]));
+        } else if (a == "-post" && i + 1 < argc) {
+            postList = argv[++i];
         } else if (a == "-core") {
             core = true;
         } else if (a == "-nogui") {
@@ -178,6 +234,8 @@ int main(int argc, char **argv) {
     }
     std::printf("r4fly: %s\n", app.device->name());
     app.renderer = std::make_unique<render::Renderer>(*app.device);
+    app.post = std::make_unique<render::PostProcess>(*app.device);
+    applyPostList(app.post->settings, postList);
     if (!app.renderer->error().empty()) {
         std::fprintf(stderr, "r4fly: %s\n", app.renderer->error().c_str());
         return 1;
@@ -371,7 +429,12 @@ int main(int argc, char **argv) {
         }
 
         guiFrame(app, ww, wh, pixelScale);
-        renderer.render(*app.top, app.camera, vx, 0, vw, h);
+        // the scene into the target of the post process when an effect is on
+        gpu::RenderTargetHandle target = app.post->begin(vw, h);
+        renderer.setTarget(target);
+        renderer.render(*app.top, app.camera, target ? 0 : vx, 0, vw, h);
+        renderer.setTarget({});
+        app.post->end(vx, 0, vw, h, w, h);
         if (!app.snapRequest.empty()) {
             // the scene alone, without the GUI
             pixels.resize((size_t)vw * h * 4);
@@ -420,6 +483,7 @@ int main(int argc, char **argv) {
     app.forest.reset();
     app.models.reset();
     app.top.reset();
+    app.post.reset();
     app.renderer.reset();
     app.device.reset();
     SDL_GL_DeleteContext(context);
