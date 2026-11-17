@@ -3,6 +3,7 @@
 #include "r4/render/postprocess.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <cstring>
 #include <vector>

@@ -5,6 +5,7 @@
 #include "../ui/font_data.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <cstring>
 #include <map>

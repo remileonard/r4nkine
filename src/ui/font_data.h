@@ -2,6 +2,7 @@
 // the GUI (r4::ui) and the bitmap fonts of r4::raster. Internal.
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
