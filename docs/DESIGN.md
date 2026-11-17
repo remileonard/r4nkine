@@ -216,9 +216,12 @@ behaviors are kept, translated into the neutral format:
 - **Common options** (all models): vertex colors (lmcolor / color material),
   diffuse texture, alpha masks and blending, decals, sphere maps, and no
   depth writes.
-- `PaletteRamp` (to come): lighting along the ramps of a fixed 256-color
-  palette, through a lookup texture (colour index × intensity). This is the
-  look of Strike Commander and of the other 8-bit games.
+- `PaletteRamp`: the lighting of the 8-bit games (Strike Commander...). The
+  intensity is `rampAmbient + rampLight × max(N·L, 0)`; the palette index of
+  the face, in the red of the vertex colors, and the intensity pick the shade
+  in a table of 256 colors × 32 intensities given as the image of the
+  material (made by the loader from the ramps of the palette). With
+  `rampTextured`, a texture is multiplied by the intensity instead.
 
 ## Roadmap
 

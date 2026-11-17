@@ -29,7 +29,7 @@ struct MaterialBlock {
     float specular[4]; // w: shininess
     float emissive[4];
     float flags[4]; // texture, alpha cutoff (0: none), vertex colors, unlit
-    float flags2[4]; // sphere map
+    float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
 };
 
 const char *kVertexShader = R"(#version 330
@@ -87,6 +87,34 @@ void main() {
         vec3 r = reflect(u, n);
         float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
         uv = r.xy / m + 0.5;
+    }
+    if (flags2.y > 0.5 && options.y > 0.5 && dot(vNormal, vNormal) > 1e-12) {
+        // the lighting of the 8-bit games: an intensity from the light, then
+        // the shade along the ramp of the palette color (ramp: a table of 256
+        // colors x 32 intensities in the texture), or the texture times it
+        vec3 n = normalize(vNormal);
+        if (dot(n, vPosition) > 0.0) n = -n;
+        float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w, 0.0, 1.0);
+        vec3 c;
+        if (flags2.y < 1.5) {
+            int index = int(vColor.r * 255.0 + 0.5);
+            float t = intensity * 31.0;
+            int k = int(min(floor(t), 30.0));
+            c = mix(texelFetch(diffuseMap, ivec2(index, k), 0).rgb, texelFetch(diffuseMap, ivec2(index, k + 1), 0).rgb,
+                    t - float(k));
+            base = vec4(c, diffuse.a);
+        } else {
+            base *= texture(diffuseMap, uv);
+            if (flags.y > 0.0 && base.a < flags.y) discard;
+            base.rgb *= intensity;
+        }
+        vec3 color = base.rgb;
+        if (fogParams.z > 0.5) {
+            float f = clamp((length(vPosition) - fogParams.x) / max(fogParams.y - fogParams.x, 1e-6), 0.0, 1.0);
+            color = mix(color, fogColor.rgb, f);
+        }
+        fragColor = vec4(color, base.a);
+        return;
     }
     if (flags.x > 0.5 && options.x > 0.5) base *= texture(diffuseMap, uv);
     if (flags.z > 0.5) base *= vColor;
@@ -286,6 +314,11 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.flags[2] = p.vertexColors ? 1.0f : 0.0f;
     b.flags[3] = p.shading == assets::Shading::Unlit ? 1.0f : 0.0f;
     b.flags2[0] = p.sphereMap ? 1.0f : 0.0f;
+    if (p.shading == assets::Shading::PaletteRamp && texture) {
+        b.flags2[1] = p.rampTextured ? 2.0f : 1.0f;
+        b.flags2[2] = p.rampAmbient;
+        b.flags2[3] = p.rampLight;
+    }
     m->uniforms = device_.createBuffer(gpu::BufferUsage::Uniform, &b, sizeof b, false);
     return m;
 }

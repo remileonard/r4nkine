@@ -32,7 +32,11 @@ struct Image {
 enum class Shading {
     Unlit,       // the color as is
     Phong,       // the per-pixel Blinn-Phong of the classic demos
-    PaletteRamp, // lit along a ramp of a fixed 256 color palette (to come)
+    // lit along the ramps of a fixed 256-color palette, as the 8-bit games:
+    // the palette index in the red of the vertex colors, the table of the
+    // shades (256 colors x 32 intensities, made by the loader) as the image
+    // of the material; or, rampTextured, a texture times the intensity
+    PaletteRamp,
 };
 
 enum class AlphaMode { Opaque, Mask, Blend };
@@ -55,6 +59,9 @@ struct Material {
     // drawn over the coplanar faces before it (decals: runway markings,
     // the subfaces of OpenFlight)
     bool decal = false;
+    // PaletteRamp: the intensity is rampAmbient + rampLight * max(N.L, 0)
+    float rampAmbient = 0.375f, rampLight = 0.625f;
+    bool rampTextured = false;
 };
 
 // how the indices of a mesh are read
