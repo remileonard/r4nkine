@@ -17,7 +17,6 @@ int main(int argc, char **argv) {
         return 1;
     render::Renderer renderer(*win.device);
     renderer.environment().lightDirection = normalize(Vec3{0.4f, 0.7f, -0.6f}); // from behind the eye
-    ui::Context gui(*win.device);
 
     auto root = scene::make<scene::Group>();
     auto spinner = scene::make<scene::Group>();
@@ -35,33 +34,13 @@ int main(int argc, char **argv) {
     int style = 0;
     bool openColor = true;
 
-    ui::Input input;
     win.distance = 7;
     render::Camera camera;
-    while (true) {
-        input.pressed = input.released = false;
-        input.wheel = 0;
-        bool running = win.poll(
-            [&](const SDL_Event &e) {
-                // the mouse for the GUI, in points
-                if (e.type == SDL_MOUSEMOTION) {
-                    input.mouseX = (float)e.motion.x;
-                    input.mouseY = (float)e.motion.y;
-                } else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
-                    bool down = e.type == SDL_MOUSEBUTTONDOWN;
-                    (e.button.button == SDL_BUTTON_LEFT ? input.left : input.right) = down;
-                    (down ? input.pressed : input.released) = true;
-                } else if (e.type == SDL_MOUSEWHEEL) {
-                    input.wheel += (float)e.wheel.y;
-                }
-            },
-            gui.wantsMouse());
-        if (!running)
-            break;
-
+    while (win.poll()) {
         // the panel: called each frame with the variables it shows
-        float pixelScale = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
-        gui.beginFrame(win.pointWidth, win.pointHeight, input, pixelScale);
+        // (example::Window feeds it the mouse: beginFrame with the size in
+        // points, the input and the pixels per point)
+        ui::Context &gui = win.beginGui();
         gui.beginPanel("box", {0, 0, 260, (float)win.pointHeight}, "ui_panel");
         gui.message("Drag in the view to turn.");
         gui.columns(2);
@@ -75,8 +54,9 @@ int main(int argc, char **argv) {
         gui.toggle("Lighting", lighting);
         if (gui.section("Color", openColor))
             gui.color("Box", color);
+        win.cameraControls(30);
         gui.endPanel();
-        gui.endFrame();
+        win.endGui();
 
         // the scene follows
         if (spin)
@@ -95,7 +75,7 @@ int main(int argc, char **argv) {
         win.apply(camera, 0.1f, 100);
         camera.perspective(fov, win.height > 0 ? (float)win.width / win.height : 1, 0.1f, 100);
         renderer.render(*root, camera, 0, 0, win.width, win.height);
-        gui.render(); // over the scene
+        win.drawGui(); // over the scene
         win.swap();
     }
     return 0;

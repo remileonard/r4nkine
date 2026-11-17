@@ -95,7 +95,8 @@ public:
     bool radio(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);
     // the lights of the bits of a mask, in a row
     bool bits(const char *label, uint32_t &mask, int count);
-    // three sliders and a swatch
+    // a color picker: a button with the swatch, opening a square of
+    // saturation and value, a bar of hue, the R G B sliders and the hex code
     bool color(const char *label, Vec3 &color);
     // a header that folds the widgets after it (the caller skips them)
     bool section(const char *label, bool &open);

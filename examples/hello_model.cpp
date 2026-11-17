@@ -1,4 +1,5 @@
-// hello_model - the smallest program of R4nkine: a model in a window.
+// hello_model - the smallest program of R4nkine: a model in a window, and a
+// panel to look at it.
 //
 //   hello_model [model]     any format of R4nkine (OBJ, glTF, pfb, flt...);
 //                           a box when none is given
@@ -19,6 +20,7 @@ int main(int argc, char **argv) {
     renderer.environment().lightDirection = r4::normalize(r4::Vec3{0.4f, 0.7f, -0.6f}); // from behind the eye
 
     auto root = r4::scene::make<r4::scene::Group>();
+    std::string what = "a box made in code";
     if (argc > 1 && argv[1][0] != '-') {
         // a file: loaded into the neutral model, then uploaded as a subgraph
         std::string error;
@@ -28,6 +30,7 @@ int main(int argc, char **argv) {
             return 1;
         }
         root->addChild(renderer.upload(*model));
+        what = std::string(argv[1]) + ": " + std::to_string(model->meshes.size()) + " meshes";
     } else {
         // no file: a mesh made in code, in a Geode
         auto geode = r4::scene::make<r4::scene::Geode>();
@@ -40,9 +43,36 @@ int main(int argc, char **argv) {
     win.target = bounds.center;
     win.distance = bounds.radius * 3;
     r4::render::Camera camera;
+    r4::render::Environment &env = renderer.environment();
+    r4::Vec3 background{env.clearColor.x, env.clearColor.y, env.clearColor.z};
+    bool wireframe = false, openLight = false;
     while (win.poll()) {
+        r4::ui::Context &gui = win.beginGui();
+        gui.beginPanel("model", {0, 0, 250, (float)win.pointHeight}, "hello_model");
+        gui.message(what.c_str());
+        win.cameraControls(bounds.radius * 20);
+        if (gui.button("Reset View")) {
+            win.heading = 30, win.pitch = 25, win.roll = 0;
+            win.distance = bounds.radius * 3;
+        }
+        gui.columns(2);
+        gui.toggle("Wireframe", wireframe);
+        gui.toggle("Textures", renderer.options().textures);
+        gui.columns(1);
+        if (gui.color("Background", background))
+            env.clearColor = {background, 1};
+        if (gui.section("Light", openLight)) {
+            gui.toggle("Lighting", renderer.options().lighting);
+            gui.color("Light Color", env.lightColor);
+            gui.color("Ambient", env.ambient);
+        }
+        gui.endPanel();
+        win.endGui();
+
+        renderer.setWireframe(wireframe);
         win.apply(camera, win.distance * 0.01f, win.distance + bounds.radius * 4);
         renderer.render(*root, camera, 0, 0, win.width, win.height);
+        win.drawGui();
         win.swap();
     }
     return 0;

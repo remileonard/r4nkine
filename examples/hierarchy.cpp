@@ -5,11 +5,13 @@
 // wings; Space fires the next one: it leaves its pylon for the root, with
 // the world matrix it had, and flies on its own. R reloads. G shows or
 // hides the landing gear (a Switch). Far away, a LOD shows a simpler plane.
+// The panel does the same, and changes the flight.
 #include "common/example.h"
 #include "common/shapes.h"
 
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
+#include "r4/ui/ui.h"
 
 #include <vector>
 
@@ -123,7 +125,11 @@ int main(int argc, char **argv) {
     win.distance = 28;
     win.pitch = 20;
     render::Camera camera;
-    float t = 0;
+    float t = 0, speed = 0.4f, bank = 25, lodFar = 120;
+    bool follow = true;
+    auto toggleGear = [&]() {
+        gear->setValue(gear->value() == scene::Switch::kAll ? scene::Switch::kNone : scene::Switch::kAll);
+    };
     while (win.poll([&](const SDL_Event &e) {
         if (e.type != SDL_KEYDOWN)
             return;
@@ -132,21 +138,48 @@ int main(int argc, char **argv) {
         if (e.key.keysym.sym == SDLK_r)
             reload();
         if (e.key.keysym.sym == SDLK_g)
-            gear->setValue(gear->value() == scene::Switch::kAll ? scene::Switch::kNone : scene::Switch::kAll);
+            toggleGear();
     })) {
+        int hanging = 0;
+        for (const Missile &m : missiles)
+            hanging += m.pylon != nullptr;
+        ui::Context &gui = win.beginGui();
+        gui.beginPanel("plane", {0, 0, 250, (float)win.pointHeight}, "hierarchy");
+        char msg[96];
+        std::snprintf(msg, sizeof msg, "%d missiles on the pylons\n%d in flight", hanging,
+                      (int)missiles.size() - hanging);
+        gui.message(msg);
+        gui.columns(2);
+        if (gui.button("Fire (Space)", hanging > 0))
+            fire();
+        if (gui.button("Reload (R)"))
+            reload();
+        gui.columns(1);
+        bool down = gear->value() == scene::Switch::kAll;
+        if (gui.toggle("Landing Gear (G)", down))
+            toggleGear();
+        gui.slider("Turn Rate", speed, 0, 1.5f, "%.2f rad/s");
+        gui.slider("Bank", bank, -60, 60, "%.0f deg");
+        if (gui.slider("LOD Switch", lodFar, 20, 500, "%.0f m", true))
+            lod->setRanges({0, lodFar, 5000});
+        gui.toggle("Follow the Plane", follow);
+        win.cameraControls(300);
+        gui.endPanel();
+        win.endGui();
+
         float dt = 1 / 60.0f;
-        t += dt;
+        t += dt * speed;
         // the flight: a circle of 40 m at 12 m, nose along the circle, banked
-        float a = t * 0.4f;
-        Mat4 flight = translate({40 * std::cos(a), 40 * std::sin(a), 12}) * rotate(a, {0, 0, 1}) *
-                      rotate(radians(-25), {0, 1, 0});
+        Mat4 flight = translate({40 * std::cos(t), 40 * std::sin(t), 12}) * rotate(t, {0, 0, 1}) *
+                      rotate(radians(-bank), {0, 1, 0});
         plane->setMatrix(flight);
         for (Missile &m : missiles)
             if (!m.pylon)
                 m.node->setMatrix(translate(m.velocity * dt) * m.node->matrix());
-        win.target = translationOf(flight);
-        win.apply(camera, 0.5f, 1000);
+        win.target = follow ? translationOf(flight) : Vec3{0, 0, 10};
+        win.apply(camera, 0.5f, 3000);
         renderer.render(*root, camera, 0, 0, win.width, win.height);
+        win.drawGui();
         win.swap();
     }
     return 0;

@@ -1,13 +1,15 @@
-// forest - an Instancer: 20000 trees on a ground, two levels of detail.
+// forest - an Instancer: up to 50000 trees on a ground, two levels of detail.
 //
 // Each tree is culled on its own and takes its level by its distance; the
-// visible trees of each part are one draw call (GPU instancing). The title
-// of the window gives the draw calls and the trees culled.
+// visible trees of each part are one draw call (GPU instancing). The panel
+// changes the number of trees, the distances of the levels and the stages
+// of the renderer, and shows what they cost.
 #include "common/example.h"
 #include "common/shapes.h"
 
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
+#include "r4/ui/ui.h"
 
 #include <random>
 
@@ -38,13 +40,18 @@ int main(int argc, char **argv) {
     auto forest = scene::make<scene::Instancer>();
     forest->addLevel(near, 60);  // up to 60 m
     forest->addLevel(far, 500);  // then up to 500 m
-    std::mt19937 rng(7);
-    std::uniform_real_distribution<float> place(-240, 240), turn(0, 6.2832f), size(0.7f, 1.4f);
-    for (int i = 0; i < 20000; i++) {
-        float k = size(rng);
-        forest->addInstance(translate({place(rng), place(rng), 0}) * rotate(turn(rng), {0, 0, 1}) *
-                            scale({k, k, k}));
-    }
+    // the trees: always the same places for a count
+    auto plant = [&](int count) {
+        std::mt19937 rng(7);
+        std::uniform_real_distribution<float> place(-240, 240), turn(0, 6.2832f), size(0.7f, 1.4f);
+        std::vector<Mat4> trees;
+        for (int i = 0; i < count; i++) {
+            float x = place(rng), y = place(rng), a = turn(rng), k = size(rng);
+            trees.push_back(translate({x, y, 0}) * rotate(a, {0, 0, 1}) * scale({k, k, k}));
+        }
+        forest->setInstances(std::move(trees));
+    };
+    float count = 20000, planted = 0;
 
     auto root = scene::make<scene::Group>();
     auto ground = scene::make<scene::Geode>();
@@ -55,19 +62,40 @@ int main(int argc, char **argv) {
     win.distance = 60;
     win.pitch = 12;
     render::Camera camera;
-    Uint32 last = SDL_GetTicks();
+    render::RenderOptions &o = renderer.options();
+    render::Environment &env = renderer.environment();
+    bool openRender = true;
     while (win.poll()) {
-        win.apply(camera, 0.5f, 600);
-        renderer.render(*root, camera, 0, 0, win.width, win.height);
-        win.swap();
-        if (SDL_GetTicks() - last > 500) {
-            const render::RenderStats &s = renderer.stats();
-            char title[160];
-            std::snprintf(title, sizeof title, "forest - %u draw calls, %u triangles, %u of %u trees culled",
-                          s.gpu.drawCalls, s.gpu.triangles, s.instancesCulled, s.instancesVisited);
-            SDL_SetWindowTitle(win.window, title);
-            last = SDL_GetTicks();
+        if ((int)count != (int)planted) {
+            plant((int)count);
+            planted = count;
         }
+        const render::RenderStats &st = renderer.stats();
+        ui::Context &gui = win.beginGui();
+        gui.beginPanel("forest", {0, 0, 260, (float)win.pointHeight}, "forest");
+        gui.slider("Trees", count, 100, 50000, "%.0f", true);
+        gui.slider("LOD Scale", o.lodScale, 0.1f, 5, "%.2f", true);
+        win.cameraControls(500);
+        if (gui.section("Renderer", openRender)) {
+            gui.toggle("Instancing", o.instancing);
+            gui.toggle("View Frustum Culling", o.frustumCulling);
+            gui.toggle("Freeze Culling", o.freezeCulling);
+            gui.toggle("Fog", env.fog);
+            gui.slider("Far Fog", env.fogEnd, 100, 2000, "%.0f", true);
+        }
+        char buf[4][64];
+        std::snprintf(buf[0], 64, "%u", st.gpu.drawCalls);
+        std::snprintf(buf[1], 64, "%u", st.gpu.triangles);
+        std::snprintf(buf[2], 64, "%u / %u", st.instancesCulled, st.instancesVisited);
+        std::snprintf(buf[3], 64, "%.2f ms", st.cullMs + st.sortMs + st.uploadMs + st.drawMs);
+        gui.table({{"Draw calls", buf[0]}, {"Triangles", buf[1]}, {"Trees culled", buf[2]}, {"CPU", buf[3]}});
+        gui.endPanel();
+        win.endGui();
+
+        win.apply(camera, 0.5f, 2000);
+        renderer.render(*root, camera, 0, 0, win.width, win.height);
+        win.drawGui();
+        win.swap();
     }
     return 0;
 }

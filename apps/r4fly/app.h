@@ -25,7 +25,8 @@ using namespace r4;
 // the right button moves the center in the plane of the view
 struct Trackball {
     Vec3 center;
-    float radius = 1, distance = 3, heading = 30, pitch = 25;
+    // heading: the yaw about Z; pitch: up and down; roll: about the line of sight
+    float radius = 1, distance = 3, heading = 30, pitch = 25, roll = 0;
     Vec3 pan;
     float fov = 45;
     bool autoClip = true;
@@ -37,6 +38,7 @@ struct Trackball {
         distance = radius * 2.6f / (zoom > 0 ? zoom : 1);
         heading = h;
         pitch = p;
+        roll = 0;
         pan = {};
     }
     Vec3 target() const { return center + pan; }
@@ -45,7 +47,10 @@ struct Trackball {
         return target() + Vec3{std::cos(p) * std::sin(h), -std::cos(p) * std::cos(h), std::sin(p)} * distance;
     }
     void apply(render::Camera &cam, float aspect) {
-        cam.lookAt(eye(), target(), {0, 0, 1});
+        // the roll turns the up of the camera about the line of sight
+        Vec3 forward = normalize(target() - eye());
+        Vec3 up = transformVector(rotate(radians(roll), forward), {0, 0, 1});
+        cam.lookAt(eye(), target(), up);
         if (autoClip) {
             znear = std::max(distance - radius * 2, distance * 0.01f);
             zfar = distance + radius * 4;
@@ -55,8 +60,11 @@ struct Trackball {
     // the right button: the center moves with the mouse, in the plane of the view
     void move(float dx, float dy, int viewHeight) {
         float h = radians(heading), p = radians(pitch);
-        Vec3 right{std::cos(h), std::sin(h), 0};
-        Vec3 up{-std::sin(p) * std::sin(h), std::sin(p) * std::cos(h), std::cos(p)};
+        Vec3 right0{std::cos(h), std::sin(h), 0};
+        Vec3 up0{-std::sin(p) * std::sin(h), std::sin(p) * std::cos(h), std::cos(p)};
+        // the axes of the screen, turned by the roll
+        float r = radians(roll), cr = std::cos(r), sr = std::sin(r);
+        Vec3 right = right0 * cr + up0 * sr, up = up0 * cr - right0 * sr;
         float k = 2 * distance * std::tan(radians(fov) * 0.5f) / std::max(viewHeight, 1);
         pan = pan - right * (dx * k) + up * (dy * k);
     }

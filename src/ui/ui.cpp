@@ -114,6 +114,12 @@ struct Context::Impl {
         float scroll = 0, contentH = 0;
     };
     std::map<uint32_t, PanelState> panels;
+    // the color pickers: open or not, their hue (kept when the color is grey)
+    struct Picker {
+        bool open = false;
+        float hue = 0;
+    };
+    std::map<uint32_t, Picker> pickers;
     std::vector<Rect> panelRects, lastPanelRects;
     bool inPanel = false;
     uint32_t panelId = 0;
@@ -152,6 +158,14 @@ struct Context::Impl {
         cmds.back().count += 6;
     }
     void fill(Rect r, Color c) { quad(r.x, r.y, r.x + r.w, r.y + r.h, whiteU, whiteV, whiteU, whiteV, c); }
+    // a rectangle with a color at each corner: top left, top right, bottom right, bottom left
+    void gradient(Rect r, Color tl, Color tr, Color br, Color bl) {
+        float u = whiteU, v = whiteV;
+        Vertex a{r.x, r.y, u, v, tl}, b{r.x + r.w, r.y, u, v, tr}, c{r.x + r.w, r.y + r.h, u, v, br},
+            e{r.x, r.y + r.h, u, v, bl};
+        verts.insert(verts.end(), {a, b, c, a, c, e});
+        cmds.back().count += 6;
+    }
     void triangle(float x0, float y0, float x1, float y1, float x2, float y2, Color c) {
         verts.push_back({x0, y0, whiteU, whiteV, c});
         verts.push_back({x1, y1, whiteU, whiteV, c});
@@ -717,23 +731,124 @@ bool Context::bits(const char *label, uint32_t &mask, int count) {
     return changed;
 }
 
+namespace {
+
+Vec3 hsvToRgb(float h, float sat, float val) {
+    float hh = std::fmod(std::max(h, 0.0f), 1.0f) * 6;
+    int i = (int)hh;
+    float f = hh - i, p = val * (1 - sat), q = val * (1 - sat * f), t = val * (1 - sat * (1 - f));
+    switch (i) {
+    case 0: return {val, t, p};
+    case 1: return {q, val, p};
+    case 2: return {p, val, t};
+    case 3: return {p, q, val};
+    case 4: return {t, p, val};
+    default: return {val, p, q};
+    }
+}
+
+// hue, saturation, value; the hue is kept when the color has none
+Vec3 rgbToHsv(Vec3 c, float keepHue) {
+    float mx = std::max(c.x, std::max(c.y, c.z)), mn = std::min(c.x, std::min(c.y, c.z)), d = mx - mn;
+    float h = keepHue;
+    if (d > 1e-5f) {
+        if (mx == c.x)
+            h = std::fmod((c.y - c.z) / d + 6, 6.0f) / 6;
+        else if (mx == c.y)
+            h = ((c.z - c.x) / d + 2) / 6;
+        else
+            h = ((c.x - c.y) / d + 4) / 6;
+    }
+    return {h, mx > 0 ? d / mx : 0, mx};
+}
+
+} // namespace
+
 bool Context::color(const char *label, Vec3 &c) {
     Impl &s = *d;
     std::string name = shown(label);
+    uint32_t id = s.idOf(label);
+    Impl::Picker &pk = s.pickers[id];
     int saveCols = s.cols;
     columns(1);
-    Rect head = s.next(16);
-    if (s.visible(head)) {
-        s.text(head.x + 2, head.y + 1, name.c_str(), kText, Font::Bold, head.w - 40);
-        Rect sw{head.x + head.w - 34, head.y + 1, 34, 14};
-        s.box(sw, Color::rgb(c.x, c.y, c.z), true);
-    }
-    columns(3);
     bool changed = false;
-    std::string id = std::string("##") + label;
-    changed |= slider(("R" + id + "r").c_str(), c.x, 0, 1, "%.2f");
-    changed |= slider(("G" + id + "g").c_str(), c.y, 0, 1, "%.2f");
-    changed |= slider(("B" + id + "b").c_str(), c.z, 0, 1, "%.2f");
+
+    // the button: the name, the swatch, the arrow; it opens the picker
+    Rect r = s.next(kRowH);
+    bool held = false;
+    if (s.behave(id, r, true, &held))
+        pk.open = !pk.open;
+    if (s.visible(r)) {
+        s.box(r, held || pk.open ? kFacePressed : s.hot == id ? kFaceHot : kFace, held || pk.open);
+        s.textIn({r.x, r.y, r.w - 70, r.h}, 5, name.c_str(), kText);
+        Rect sw{r.x + r.w - 62, r.y + 4, 40, r.h - 8};
+        s.box(sw, Color::rgb(c.x, c.y, c.z), true);
+        float a = std::floor(r.h * 0.2f), cx = r.x + r.w - a - 6, cy = r.y + r.h * 0.5f;
+        if (pk.open)
+            s.triangle(cx - a, cy - a * 0.5f, cx + a, cy - a * 0.5f, cx, cy + a * 0.6f, kText);
+        else
+            s.triangle(cx - a * 0.5f, cy - a, cx + a * 0.6f, cy, cx - a * 0.5f, cy + a, kText);
+    }
+    if (pk.open) {
+        Vec3 hsv = rgbToHsv(c, pk.hue);
+        pk.hue = hsv.x;
+        // the square: saturation across, value up; the bar: the hue
+        Rect area = s.next(112);
+        Rect sq{area.x + 2, area.y + 2, area.w - 28, area.h - 4};
+        Rect bar{area.x + area.w - 22, area.y + 2, 20, area.h - 4};
+        uint32_t sqId = id ^ 0x5157u, barId = id ^ 0xbab0u;
+        for (auto [rid, rr] : {std::pair<uint32_t, Rect>{sqId, sq}, std::pair<uint32_t, Rect>{barId, bar}}) {
+            if (s.hover(rr)) {
+                s.hot = rid;
+                if (s.pressed && s.active == 0)
+                    s.active = rid;
+            }
+        }
+        if ((s.in.left || s.in.right || s.pressed) && (s.active == sqId || s.active == barId)) {
+            auto clamp01 = [](float v) { return std::max(0.0f, std::min(1.0f, v)); };
+            if (s.active == sqId) {
+                hsv.y = clamp01((s.in.mouseX - sq.x) / sq.w);
+                hsv.z = clamp01(1 - (s.in.mouseY - sq.y) / sq.h);
+            } else {
+                hsv.x = pk.hue = clamp01((s.in.mouseY - bar.y) / bar.h) * 0.9999f;
+            }
+            Vec3 n = hsvToRgb(hsv.x, hsv.y, hsv.z);
+            changed = n != c;
+            c = n;
+        }
+        if (s.visible(area)) {
+            s.box(area, kDark, true);
+            Vec3 pure = hsvToRgb(hsv.x, 1, 1);
+            Color hue = Color::rgb(pure.x, pure.y, pure.z), black0{0, 0, 0, 0}, black{0, 0, 0, 255};
+            s.gradient(sq, kWhite, hue, hue, kWhite);
+            s.gradient(sq, black0, black0, black, black);
+            for (int i = 0; i < 6; i++) {
+                Vec3 a = hsvToRgb(i / 6.0f, 1, 1), b = hsvToRgb((i + 1) / 6.0f - 1e-4f, 1, 1);
+                Color ca = Color::rgb(a.x, a.y, a.z), cb = Color::rgb(b.x, b.y, b.z);
+                s.gradient({bar.x, bar.y + bar.h * i / 6, bar.w, bar.h / 6}, ca, ca, cb, cb);
+            }
+            // the marks: a ring on the square, a notch on the bar
+            float mx = std::floor(sq.x + hsv.y * sq.w), my = std::floor(sq.y + (1 - hsv.z) * sq.h);
+            Color ring = hsv.z > 0.5f ? kText : kWhite;
+            s.fill({mx - 4, my - 4, 9, 1}, ring);
+            s.fill({mx - 4, my + 4, 9, 1}, ring);
+            s.fill({mx - 4, my - 4, 1, 9}, ring);
+            s.fill({mx + 4, my - 4, 1, 9}, ring);
+            float hy = std::floor(bar.y + hsv.x * bar.h);
+            s.box({bar.x - 2, hy - 2, bar.w + 4, 5}, kKnob, false);
+        }
+        // the exact values
+        columns(3);
+        std::string sid = std::string("##") + label;
+        changed |= slider(("R" + sid + "r").c_str(), c.x, 0, 1, "%.2f");
+        changed |= slider(("G" + sid + "g").c_str(), c.y, 0, 1, "%.2f");
+        changed |= slider(("B" + sid + "b").c_str(), c.z, 0, 1, "%.2f");
+        columns(1);
+        char hex[32];
+        std::snprintf(hex, sizeof hex, "#%02X%02X%02X", (int)std::lround(c.x * 255), (int)std::lround(c.y * 255),
+                      (int)std::lround(c.z * 255));
+        message(hex);
+    }
     columns(saveCols);
     return changed;
 }

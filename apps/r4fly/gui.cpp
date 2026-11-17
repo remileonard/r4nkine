@@ -77,7 +77,7 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     render::RenderOptions &o = app.renderer->options();
     render::Environment &env = app.renderer->environment();
     Vec3 e = b.eye();
-    g.message(fmt("X%.1f Y%.1f Z%.1f", e.x, e.y, e.z).append(fmt("  H %.0f P %.0f", b.heading, b.pitch)).c_str());
+    g.message(fmt("X%.1f Y%.1f Z%.1f", e.x, e.y, e.z).append(fmt("  H %.0f P %.0f R %.0f", b.heading, b.pitch, b.roll)).c_str());
 
     g.columns(2);
     if (g.button("Quit"))
@@ -94,17 +94,18 @@ void settingsPanel(App &app, ui::Context &g, float height) {
 
     if (g.section("Camera", app.openCamera)) {
         g.slider("Field of View", b.fov, 10, 120, "%.1f");
-        g.slider("Heading", b.heading, -180, 180, "%.1f");
+        g.slider("Yaw (Heading)", b.heading, -180, 180, "%.1f");
         g.slider("Pitch", b.pitch, -89, 89, "%.1f");
+        g.slider("Roll", b.roll, -180, 180, "%.1f");
         g.slider("Distance", b.distance, b.radius * 0.01f, b.radius * 50, "%.3g", true);
         g.toggle("Automatic Clip Planes", b.autoClip);
         g.slider("Near Clip", b.znear, b.radius * 1e-4f, b.radius * 10, "%.4g", true, !b.autoClip);
         g.slider("Far Clip", b.zfar, b.radius * 0.1f, b.radius * 1000, "%.4g", true, !b.autoClip);
         g.columns(4);
-        if (g.button("Front")) { b.heading = 0; b.pitch = 0; }
-        if (g.button("Side")) { b.heading = 90; b.pitch = 0; }
-        if (g.button("Top")) { b.heading = 0; b.pitch = 89; }
-        if (g.button("3/4")) { b.heading = 30; b.pitch = 25; }
+        if (g.button("Front")) { b.heading = 0; b.pitch = 0; b.roll = 0; }
+        if (g.button("Side")) { b.heading = 90; b.pitch = 0; b.roll = 0; }
+        if (g.button("Top")) { b.heading = 0; b.pitch = 89; b.roll = 0; }
+        if (g.button("3/4")) { b.heading = 30; b.pitch = 25; b.roll = 0; }
         g.columns(1);
         if (g.button("Recenter"))
             b.pan = {};

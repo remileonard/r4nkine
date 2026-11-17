@@ -48,7 +48,8 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
 - `r4::ui`: a small GUI in the look of the panels of IRIS Performer (the
   GUI of perfly): grey buttons in relief, switches with yellow lights, blue
   sliders, menu buttons, radio buttons, messages in yellow on dark boxes,
-  plus folding sections, trees, tables and curves. It is immediate (each
+  plus folding sections, trees, tables, curves and a color picker (a
+  square of saturation and value, a bar of hue, the R G B values). It is immediate (each
   frame calls the widgets with its own variables) and draws through
   `r4::gpu`, so it needs no other library. Its text uses glyphs baked from
   Liberation Sans (SIL Open Font License, `src/ui/OFL.txt`).
@@ -56,8 +57,8 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   - **mouse**: the left button turns about the center, the wheel zooms,
     the right button moves the center with the mouse; over a panel, the
     wheel scrolls it;
-  - **left panel**: the camera (field of view, angles, distance, clip
-    planes, front/side/top views), the lighting (headlight or a sun,
+  - **left panel**: the camera (field of view, yaw, pitch and roll,
+    distance, clip planes, front/side/top views), the lighting (headlight or a sun,
     colors), the environment (background, fog), the rendering (filled or
     lines, textures, the state mask bit by bit), the culling (view frustum,
     freezing it to look at it from outside, LOD scale) and the
@@ -132,14 +133,16 @@ out/build/linux/r4fly -F pftown:pftexture:pfmodel pftown/town.flt
 ## Examples
 
 The `examples` folder holds small programs, built with r4fly and shipped
-in the archives. They make their meshes in code, so they need no file:
+in the archives. They make their meshes in code, so they need no file, and
+each has a panel of `r4::ui` to play with it (the camera: yaw, pitch, roll
+and distance in all of them):
 
 | Example | What it shows |
 | --- | --- |
-| `hello_model [file]` | the smallest program: a model (any format) or a box, in a window |
-| `forest` | an Instancer: 20000 trees, two levels of detail, a few draw calls |
-| `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads) |
-| `ui_panel` | `r4::ui`: a panel of perfly driving the scene |
+| `hello_model [file]` | the smallest program: a model (any format) or a box, in a window; wireframe, textures, light and background colors |
+| `forest` | an Instancer: up to 50000 trees, two levels of detail, a few draw calls; the panel changes the count, the LOD scale, instancing, culling and fog, and shows the cost |
+| `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads); the panel flies the plane |
+| `ui_panel` | `r4::ui`: a panel of perfly driving a box, with the color picker |
 
 `examples/common` holds what they share and is not R4nkine: an SDL2
 window with its OpenGL context, and a few meshes made in code.

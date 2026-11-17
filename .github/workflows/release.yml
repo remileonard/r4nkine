@@ -13,9 +13,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+    # every push builds the archives, to try them (without publishing)
     branches: ["**"]
-    # a change to this workflow builds the archives (without publishing)
-    paths: [".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       publish:
