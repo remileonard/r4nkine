@@ -116,6 +116,19 @@ On macOS (Apple silicon), the archive is not signed: after unpacking it,
 `r4fly.exe`, the examples and `SDL2.dll` are side by side: drop a model on
 the exe, or run `r4fly samples\quad.obj`.
 
+### libRealSpace: r4objviewer
+
+`contrib/librealspace/` holds the bridge from
+[libRealSpace](https://github.com/remileonard/libRealSpace) to R4nkine
+(`r4bridge`: an `RSEntity` as an `r4::assets::Model`) and `r4objviewer`, a
+viewer of the 3D objects of the game, with its CMake integration and its
+README (in French). They are meant to be copied into libRealSpace.
+
+The **libRealSpace viewer** workflow builds `r4objviewer.exe` for Windows:
+it clones libRealSpace, lays the bridge over it (in the runner only) and
+attaches the exe and its DLLs to the run (Artifacts). The game data are not
+in it: `r4objviewer -data <the folder of the TRE files>`.
+
 ## Platforms
 
 Linux, Windows and macOS. On macOS, OpenGL stops at 4.1 in a core context:
