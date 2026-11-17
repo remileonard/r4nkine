@@ -1,0 +1,153 @@
+// hierarchy - a plane and its missiles in the scene graph.
+//
+// The plane flies in circles: its Group carries the matrix of the flight,
+// and everything under it follows. Its missiles hang on pylons under the
+// wings; Space fires the next one: it leaves its pylon for the root, with
+// the world matrix it had, and flies on its own. R reloads. G shows or
+// hides the landing gear (a Switch). Far away, a LOD shows a simpler plane.
+#include "common/example.h"
+#include "common/shapes.h"
+
+#include "r4/render/renderer.h"
+#include "r4/scene/node.h"
+
+#include <vector>
+
+using namespace r4;
+
+namespace {
+
+struct Missile {
+    std::shared_ptr<scene::Geode> node;
+    std::shared_ptr<scene::Group> pylon; // where it hangs, null when flying
+    Vec3 velocity;
+};
+
+} // namespace
+
+int main(int argc, char **argv) {
+    example::Window win;
+    if (!win.open("hierarchy", argc, argv))
+        return 1;
+    render::Renderer renderer(*win.device);
+    renderer.environment().clearColor = {0.55f, 0.7f, 0.9f, 1};
+    renderer.environment().lightDirection = normalize(Vec3{0.3f, 0.5f, -0.8f});
+    Vec4 grey{0.7f, 0.72f, 0.75f, 1}, dark{0.3f, 0.32f, 0.35f, 1}, white{0.95f, 0.95f, 0.95f, 1},
+        red{0.85f, 0.2f, 0.15f, 1};
+
+    auto root = scene::make<scene::Group>();
+    root->setName("world");
+    auto ground = scene::make<scene::Geode>();
+    ground->addDrawable(example::drawable(renderer, example::ground(400), {0.35f, 0.45f, 0.3f, 1}));
+    root->addChild(ground);
+
+    // the plane, nose along +Y: a Group with the flight matrix...
+    auto plane = scene::make<scene::Group>();
+    plane->setName("plane");
+    root->addChild(plane);
+    // ...a LOD: the detailed plane up to 120 m, a box beyond
+    auto lod = scene::make<scene::LOD>();
+    lod->setRanges({0, 120, 2000});
+    plane->addChild(lod);
+    auto detailed = scene::make<scene::Group>();
+    lod->addChild(detailed);
+    auto body = scene::make<scene::Geode>();
+    body->addDrawable(example::drawable(renderer, example::box({1, 7, 1}), grey));
+    body->addDrawable(example::drawable(renderer, example::box({9, 2, 0.2f}), grey));    // the wings
+    body->addDrawable(example::drawable(renderer, example::box({3.4f, 1, 0.15f}), dark)); // the tail
+    detailed->addChild(body);
+    auto tail = scene::make<scene::Geode>();
+    tail->setMatrix(translate({0, -3, 0.9f}));
+    tail->addDrawable(example::drawable(renderer, example::box({0.15f, 1.2f, 1.6f}), dark));
+    detailed->addChild(tail);
+    auto coarse = scene::make<scene::Geode>();
+    coarse->addDrawable(example::drawable(renderer, example::box({9, 7, 1}), grey));
+    lod->addChild(coarse);
+
+    // the landing gear, in a Switch: all the children or none
+    auto gear = scene::make<scene::Switch>();
+    gear->setName("gear");
+    for (Vec3 at : {Vec3{0, 2.5f, -0.9f}, Vec3{-1.5f, -0.5f, -0.9f}, Vec3{1.5f, -0.5f, -0.9f}}) {
+        auto leg = scene::make<scene::Geode>();
+        leg->setMatrix(translate(at));
+        leg->addDrawable(example::drawable(renderer, example::box({0.2f, 0.2f, 0.9f}), dark));
+        gear->addChild(leg);
+    }
+    detailed->addChild(gear);
+
+    // the pylons under the wings, a missile on each
+    auto missileGeode = [&]() {
+        auto m = scene::make<scene::Geode>();
+        m->setName("missile");
+        m->setMatrix(rotate(radians(-90), {1, 0, 0})); // the cylinders go along Z, the missile along Y
+        m->addDrawable(example::drawable(renderer, example::cylinder(0.13f, 0.13f, -1.2f, 1.0f, 10), white));
+        m->addDrawable(example::drawable(renderer, example::cylinder(0.13f, 0, 1.0f, 1.4f, 10), red));
+        return m;
+    };
+    std::vector<Missile> missiles;
+    for (float x : {-3.6f, -2.4f, 2.4f, 3.6f}) {
+        auto pylon = scene::make<scene::Group>();
+        pylon->setName("pylon");
+        pylon->setMatrix(translate({x, 0.3f, -0.35f}));
+        detailed->addChild(pylon);
+        missiles.push_back({missileGeode(), pylon, {}});
+        pylon->addChild(missiles.back().node);
+    }
+    auto reload = [&]() {
+        for (Missile &m : missiles)
+            if (!m.pylon) {
+                root->removeChild(m.node.get());
+                m.node->setMatrix(rotate(radians(-90), {1, 0, 0}));
+                for (const auto &c : detailed->children())
+                    if (c->name() == "pylon" && c->children().empty()) {
+                        m.pylon = std::static_pointer_cast<scene::Group>(c);
+                        m.pylon->addChild(m.node);
+                        break;
+                    }
+            }
+    };
+    auto fire = [&]() {
+        for (Missile &m : missiles)
+            if (m.pylon) {
+                // its world matrix: plane, pylon, then its own
+                Mat4 world = plane->matrix() * m.pylon->matrix() * m.node->matrix();
+                m.pylon->removeChild(m.node.get());
+                m.pylon = nullptr;
+                m.node->setMatrix(world);
+                root->addChild(m.node);
+                m.velocity = normalize(transformVector(plane->matrix(), {0, 1, 0})) * 35.0f;
+                return;
+            }
+    };
+
+    win.distance = 28;
+    win.pitch = 20;
+    render::Camera camera;
+    float t = 0;
+    while (win.poll([&](const SDL_Event &e) {
+        if (e.type != SDL_KEYDOWN)
+            return;
+        if (e.key.keysym.sym == SDLK_SPACE)
+            fire();
+        if (e.key.keysym.sym == SDLK_r)
+            reload();
+        if (e.key.keysym.sym == SDLK_g)
+            gear->setValue(gear->value() == scene::Switch::kAll ? scene::Switch::kNone : scene::Switch::kAll);
+    })) {
+        float dt = 1 / 60.0f;
+        t += dt;
+        // the flight: a circle of 40 m at 12 m, nose along the circle, banked
+        float a = t * 0.4f;
+        Mat4 flight = translate({40 * std::cos(a), 40 * std::sin(a), 12}) * rotate(a, {0, 0, 1}) *
+                      rotate(radians(-25), {0, 1, 0});
+        plane->setMatrix(flight);
+        for (Missile &m : missiles)
+            if (!m.pylon)
+                m.node->setMatrix(translate(m.velocity * dt) * m.node->matrix());
+        win.target = translationOf(flight);
+        win.apply(camera, 0.5f, 1000);
+        renderer.render(*root, camera, 0, 0, win.width, win.height);
+        win.swap();
+    }
+    return 0;
+}

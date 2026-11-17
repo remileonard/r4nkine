@@ -98,7 +98,7 @@ jobs:
           [ "${{ matrix.os }}" = macos ] && arch=arm64
           echo "dir=r4fly-$version-${{ matrix.os }}-$arch" >> "$GITHUB_OUTPUT"
 
-      # r4fly (and SDL2.dll on Windows), the license, the README and the
+      # r4fly, the examples (and SDL2.dll on Windows), the license, the README and the
       # small models of the tests as samples
       - name: Package
         run: |

@@ -79,8 +79,8 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
 
 ## Downloads
 
-The **Release** workflow builds archives of r4fly for Linux and Windows,
-with sample models (`samples/`):
+The **Release** workflow builds archives for Linux, Windows and macOS:
+r4fly, the examples (below) and sample models (`samples/`):
 
 - *Actions > Release > Run workflow*: the archives are attached to the run
   (Artifacts); check *publish* to also make a GitHub release (a prerelease
@@ -89,7 +89,7 @@ with sample models (`samples/`):
 
 On macOS (Apple silicon), the archive is not signed: after unpacking it,
 `xattr -dr com.apple.quarantine r4fly-*` lets it start. On Windows,
-`r4fly.exe` and `SDL2.dll` are side by side: drop a model on
+`r4fly.exe`, the examples and `SDL2.dll` are side by side: drop a model on
 the exe, or run `r4fly samples\quad.obj`.
 
 ## Platforms
@@ -129,7 +129,22 @@ out/build/linux/r4fly model.obj other.obj
 out/build/linux/r4fly -F pftown:pftexture:pfmodel pftown/town.flt
 ```
 
-## Using it
+## Examples
+
+The `examples` folder holds small programs, built with r4fly and shipped
+in the archives. They make their meshes in code, so they need no file:
+
+| Example | What it shows |
+| --- | --- |
+| `hello_model [file]` | the smallest program: a model (any format) or a box, in a window |
+| `forest` | an Instancer: 20000 trees, two levels of detail, a few draw calls |
+| `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads) |
+| `ui_panel` | `r4::ui`: a panel of perfly driving the scene |
+
+`examples/common` holds what they share and is not R4nkine: an SDL2
+window with its OpenGL context, and a few meshes made in code.
+
+### A model in a window
 
 ```cpp
 #include "r4/assets/model.h"
@@ -148,7 +163,7 @@ camera.perspective(45, 16.0f / 9, 0.1f, 100);
 renderer.render(*root, camera, 0, 0, width, height);
 ```
 
-## Planting a forest
+### Planting a forest
 
 ```cpp
 auto tree = renderer.upload(*r4::assets::loadModel("tree.glb"));
@@ -159,6 +174,37 @@ forest->addLevel(r4::scene::collectParts(*far), 2000);  // then up to 2 km
 for (const r4::Mat4 &m : placements)
     forest->addInstance(m);
 root->addChild(forest);
+```
+
+### Missiles under a wing
+
+```cpp
+auto pylon = r4::scene::make<r4::scene::Group>();
+pylon->setMatrix(r4::translate({2.4f, 0.3f, -0.35f}));  // under the right wing
+plane->addChild(pylon);
+pylon->addChild(missile);                              // follows the plane
+
+// fired: it leaves the pylon for the world, where it was
+r4::Mat4 world = plane->matrix() * pylon->matrix() * missile->matrix();
+pylon->removeChild(missile.get());
+missile->setMatrix(world);
+root->addChild(missile);
+```
+
+### A panel of perfly
+
+```cpp
+r4::ui::Context gui(*device);
+gui.beginFrame(width, height, input);
+gui.beginPanel("settings", {0, 0, 260, (float)height}, "My program");
+if (gui.button("Reset")) reset();
+gui.toggle("Spin", spin);
+gui.slider("Speed", speed, 0, 360, "%.0f deg/s");
+gui.menu("Style", style, {"Filled", "Lines"});
+gui.endPanel();
+gui.endFrame();
+renderer.render(*root, camera, 0, 0, width, height);
+gui.render();  // over the scene
 ```
 
 ## License

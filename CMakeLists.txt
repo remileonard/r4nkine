@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(R4_BUILD_APPS "Build r4fly (needs SDL2)" ON)
+option(R4_BUILD_EXAMPLES "Build the examples (with R4_BUILD_APPS)" ON)
 option(R4_BUILD_TESTS "Build the tests" ON)
 
 # the library: the GL functions are loaded at run time; glm (the math), stb
@@ -67,6 +68,16 @@ if(R4_BUILD_APPS)
     target_link_libraries(r4fly PRIVATE r4nkine
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+    # the examples of the README, built with the viewer (SDL2)
+    if(R4_BUILD_EXAMPLES)
+        foreach(example hello_model forest hierarchy ui_panel)
+            add_executable(${example} examples/${example}.cpp)
+            target_link_libraries(${example} PRIVATE r4nkine
+                $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
+                $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+            install(TARGETS ${example} RUNTIME DESTINATION bin)
+        endforeach()
+    endif()
     # the viewer and the DLLs it needs (SDL2 on Windows), side by side
     install(TARGETS r4fly RUNTIME DESTINATION bin)
     if(WIN32)
