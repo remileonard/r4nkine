@@ -1,6 +1,11 @@
 #include "r4/assets/model.h"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <map>
+#include <utility>
+#include <vector>
 #include <cctype>
 #include <cstdio>
 #include <cstring>
@@ -13,19 +18,58 @@ void Mesh::computeBounds() {
         bounds.extend(v.position);
 }
 
-void Mesh::computeNormals() {
-    for (Vertex &v : vertices)
-        v.normal = {0, 0, 0};
-    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
-        Vertex &a = vertices[indices[i]], &b = vertices[indices[i + 1]], &c = vertices[indices[i + 2]];
-        // weighted by the area: the cross product is not normalized
-        Vec3 n = cross(b.position - a.position, c.position - a.position);
-        a.normal += n;
-        b.normal += n;
-        c.normal += n;
+void Mesh::computeNormals(float creaseDegrees) {
+    if (primitive != Primitive::Triangles || indices.size() < 3)
+        return;
+    size_t triangles = indices.size() / 3;
+    // the faces: weighted by their area (the cross product not normalized),
+    // compared by their direction
+    std::vector<Vec3> area(triangles), dir(triangles);
+    for (size_t t = 0; t < triangles; t++) {
+        const Vec3 &a = vertices[indices[3 * t]].position, &b = vertices[indices[3 * t + 1]].position,
+                   &c = vertices[indices[3 * t + 2]].position;
+        area[t] = cross(b - a, c - a);
+        float l = length(area[t]);
+        dir[t] = l > 0 ? area[t] / l : Vec3(0);
     }
-    for (Vertex &v : vertices)
-        v.normal = normalize(v.normal);
+    // the faces around each position (not each vertex: the corners split
+    // for their uvs or colors are smoothed together)
+    struct Less {
+        bool operator()(const Vec3 &a, const Vec3 &b) const {
+            return a.x != b.x ? a.x < b.x : a.y != b.y ? a.y < b.y : a.z < b.z;
+        }
+    };
+    std::map<Vec3, std::vector<uint32_t>, Less> around;
+    for (size_t t = 0; t < triangles; t++)
+        for (int k = 0; k < 3; k++)
+            around[vertices[indices[3 * t + k]].position].push_back((uint32_t)t);
+    float minCos = std::cos(radians(std::clamp(creaseDegrees, 0.0f, 180.0f)));
+    // each corner: the faces around it that are within the crease angle of
+    // its own; a vertex whose corners get different normals is split
+    std::vector<Vertex> out;
+    out.reserve(vertices.size());
+    std::map<std::pair<uint32_t, std::array<int32_t, 3>>, uint32_t> made;
+    for (size_t t = 0; t < triangles; t++)
+        for (int k = 0; k < 3; k++) {
+            uint32_t vi = indices[3 * t + k];
+            Vec3 n(0);
+            for (uint32_t u : around[vertices[vi].position])
+                if (u == t || dot(dir[t], dir[u]) >= minCos)
+                    n += area[u];
+            float l = length(n);
+            n = l > 0 ? n / l : (length(dir[t]) > 0 ? dir[t] : Vec3(0, 0, 1));
+            std::array<int32_t, 3> q = {(int32_t)std::lround(n.x * 4096), (int32_t)std::lround(n.y * 4096),
+                                        (int32_t)std::lround(n.z * 4096)};
+            auto it = made.find({vi, q});
+            if (it == made.end()) {
+                Vertex v = vertices[vi];
+                v.normal = n;
+                it = made.emplace(std::make_pair(vi, q), (uint32_t)out.size()).first;
+                out.push_back(v);
+            }
+            indices[3 * t + k] = it->second;
+        }
+    vertices = std::move(out);
 }
 
 Box Model::bounds() const {

@@ -76,14 +76,26 @@ in vec3 vPosition;
 in vec2 vUV;
 in vec4 vColor;
 out vec4 fragColor;
+// the normal of the side of the face that is seen (two-sided lighting,
+// whatever the winding): turned over only when it is on the other side of
+// the face itself, whose normal from the derivatives always faces the eye.
+// Not the interpolated normal against the eye: smooth normals lean away
+// from the eye near the outlines of a surface, and flipping them there
+// lit the faces from the wrong side.
+vec3 seenNormal() {
+    vec3 n = normalize(vNormal);
+    vec3 face = cross(dFdx(vPosition), dFdy(vPosition));
+    if (dot(face, face) > 0.0 && dot(n, face) < 0.0)
+        n = -n;
+    return n;
+}
 void main() {
     vec4 base = diffuse;
     vec2 uv = vUV;
     if (flags2.x > 0.5) {
         // the sphere map of IRIS GL and OpenGL 1.x
         vec3 u = normalize(vPosition);
-        vec3 n = normalize(vNormal);
-        if (dot(n, u) > 0.0) n = -n;
+        vec3 n = seenNormal();
         vec3 r = reflect(u, n);
         float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
         uv = r.xy / m + 0.5;
@@ -92,8 +104,7 @@ void main() {
         // the lighting of the 8-bit games: an intensity from the light, then
         // the shade along the ramp of the palette color (ramp: a table of 256
         // colors x 32 intensities in the texture), or the texture times it
-        vec3 n = normalize(vNormal);
-        if (dot(n, vPosition) > 0.0) n = -n;
+        vec3 n = seenNormal();
         float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w, 0.0, 1.0);
         vec3 c;
         if (flags2.y < 1.5) {
@@ -123,10 +134,8 @@ void main() {
     if (flags.w > 0.5 || options.y < 0.5 || dot(vNormal, vNormal) < 1e-12) {
         color = base.rgb; // unlit, or no normal (lines, points)
     } else {
-        // Blinn-Phong, both faces lit: the normal turned towards the eye
-        // (whatever the winding of the faces, as the two-sided lighting)
-        vec3 n = normalize(vNormal);
-        if (dot(n, vPosition) > 0.0) n = -n;
+        // Blinn-Phong, both faces lit (the two-sided lighting)
+        vec3 n = seenNormal();
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
         float nl = max(dot(n, l), 0.0);

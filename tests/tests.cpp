@@ -95,12 +95,45 @@ static void testLoaders(const std::string &dir) {
     CHECK(near(red.diffuse.x, 1) && near(red.diffuse.y, 0) && near(red.diffuse.w, 0.5f));
     CHECK(red.alpha == assets::AlphaMode::Blend);
     CHECK(near(red.shininess, 32));
-    // the cube: 6 quads in 12 triangles, 8 shared corners, smooth normals made
+    // the cube: 6 quads in 12 triangles; no normals in the file: made, sharp
+    // at its edges of 90 degrees (beyond the crease angle), so each of the 8
+    // corners split in 3, one per face, with the normal of its face
     const assets::Mesh &cube = model->meshes[0];
-    CHECK(cube.indices.size() == 36 && cube.vertices.size() == 8);
-    CHECK(near(length(cube.vertices[0].normal), 1));
-    // the corner (1, 1, 1), vertex 6, points out of the cube
-    CHECK(cube.vertices[6].normal.x > 0.3f && cube.vertices[6].normal.y > 0.3f && cube.vertices[6].normal.z > 0.3f);
+    CHECK(cube.indices.size() == 36 && cube.vertices.size() == 24);
+    bool flat = true;
+    for (size_t i = 0; i < cube.indices.size(); i += 3) {
+        const assets::Vertex &a = cube.vertices[cube.indices[i]], &b = cube.vertices[cube.indices[i + 1]],
+                             &c = cube.vertices[cube.indices[i + 2]];
+        Vec3 face = normalize(cross(b.position - a.position, c.position - a.position));
+        for (const assets::Vertex *v : {&a, &b, &c})
+            flat = flat && near(v->normal, face);
+        // and out of the cube: the face's normal is along its center
+        flat = flat && dot(face, a.position + b.position + c.position) > 0;
+    }
+    CHECK(flat);
+    // a smooth surface stays smooth: a fan of 8 triangles around a pole,
+    // tilted 20 degrees, has one normal at the pole, straight up
+    {
+        assets::Mesh cone;
+        cone.vertices.push_back({});
+        cone.vertices[0].position = {0, 0, 0};
+        for (int i = 0; i < 8; i++) {
+            assets::Vertex v;
+            float a = radians(45.0f * i);
+            v.position = {std::cos(a), std::sin(a), -std::tan(radians(20.0f))};
+            cone.vertices.push_back(v);
+        }
+        for (uint32_t i = 0; i < 8; i++)
+            cone.indices.insert(cone.indices.end(), {0, 1 + i, 1 + (i + 1) % 8});
+        cone.computeNormals();
+        int poles = 0;
+        for (const assets::Vertex &v : cone.vertices)
+            if (near(v.position, {0, 0, 0})) {
+                poles++;
+                CHECK(near(v.normal, {0, 0, 1}));
+            }
+        CHECK(poles == 1);
+    }
     CHECK(near(cube.bounds.min, {-1, -1, -1}) && near(cube.bounds.max, {1, 1, 1}));
     // the quad by negative indices, with uvs
     const assets::Mesh &quad = model->meshes[1];

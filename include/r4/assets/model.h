@@ -87,8 +87,11 @@ struct Mesh {
     int material = -1;             // an index in Model::materials, -1: the default
     Box bounds;
     void computeBounds();
-    // smooth normals from the triangles, for the meshes that have none
-    void computeNormals();
+    // normals from the triangles, for the meshes that have none: smooth
+    // across the edges where the faces meet at less than creaseDegrees
+    // (a sphere, a fuselage), sharp beyond (the edges of a box), the
+    // vertices of a sharp edge split. The "crease angle" of the Performer tools.
+    void computeNormals(float creaseDegrees = 60);
 };
 
 enum class NodeKind { Group, Switch, LOD, Billboard };
