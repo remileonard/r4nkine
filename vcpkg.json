@@ -12,16 +12,9 @@
   ],
   "features": {
     "viewer": {
-      "description": "r4fly, the model viewer (SDL2, Dear ImGui)",
+      "description": "r4fly, the model viewer (SDL2)",
       "dependencies": [
-        "sdl2",
-        {
-          "name": "imgui",
-          "features": [
-            "sdl2-binding",
-            "opengl3-binding"
-          ]
-        }
+        "sdl2"
       ]
     }
   }

@@ -15,9 +15,10 @@
 //
 // The files are loaded side by side under one root. The mouse: the left
 // button turns, the wheel zooms, the right button moves. Keys: F1 the GUI,
-// w wireframe, r reset, s statistics, Esc quit. The GUI (Dear ImGui) holds
-// the settings of the camera, the light, the environment, the rendering, the
-// culling and the optimisations, the scene graph and the performances.
+// w wireframe, r reset, s statistics, Esc quit. The GUI (r4::ui, in the look
+// of perfly) holds the settings of the camera, the light, the environment,
+// the rendering, the culling and the optimisations, the scene graph and the
+// performances.
 #include "app.h"
 
 #include <chrono>
@@ -240,37 +241,55 @@ int main(int argc, char **argv) {
     app.top->addChild(app.boundsMarker);
 
     app.resetView();
-    guiInit(app, context);
+    app.ui = std::make_unique<ui::Context>(*app.device);
 
     bool running = true;
     int frame = 0;
     double lastStats = now(), frameStart = now();
     int framesSinceStats = 0;
     std::vector<uint8_t> pixels;
-    while (running) {
+    while (running && !app.quit) {
+        int w, h, ww, wh;
+        SDL_GL_GetDrawableSize(app.window, &w, &h);
+        SDL_GetWindowSize(app.window, &ww, &wh);
+        // the mouse in the pixels of the drawable (high density screens)
+        float sx = ww > 0 ? (float)w / ww : 1, sy = wh > 0 ? (float)h / wh : 1;
+        app.input.wheel = 0;
+        app.input.pressed = app.input.released = false;
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
-            guiEvent(e);
-            bool mouse = !(app.showGui && guiWantsMouse());
-            bool keys = !(app.showGui && guiWantsKeyboard());
+            bool gui = guiWantsMouse(app) && !app.sceneDrag;
             switch (e.type) {
             case SDL_QUIT: running = false; break;
             case SDL_KEYDOWN:
-                if (e.key.keysym.sym == SDLK_F1) {
-                    app.showGui = !app.showGui;
-                    break;
-                }
-                if (!keys)
-                    break;
                 switch (e.key.keysym.sym) {
+                case SDLK_F1: app.showGui = !app.showGui; break;
                 case SDLK_ESCAPE: running = false; break;
                 case SDLK_w: renderer.setWireframe(!renderer.wireframe()); break;
                 case SDLK_r: app.resetView(); break;
                 case SDLK_s: app.printStats = !app.printStats; break;
                 }
                 break;
+            case SDL_MOUSEBUTTONDOWN:
+            case SDL_MOUSEBUTTONUP: {
+                bool down = e.type == SDL_MOUSEBUTTONDOWN;
+                app.input.mouseX = e.button.x * sx;
+                app.input.mouseY = e.button.y * sy;
+                // a press in the view belongs to the view until released
+                if (down && !gui && (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT))
+                    app.sceneDrag = true;
+                if (!app.sceneDrag && (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT)) {
+                    (e.button.button == SDL_BUTTON_LEFT ? app.input.left : app.input.right) = down;
+                    (down ? app.input.pressed : app.input.released) = true;
+                }
+                if (!down && !(SDL_GetMouseState(nullptr, nullptr) & (SDL_BUTTON_LMASK | SDL_BUTTON_RMASK)))
+                    app.sceneDrag = false;
+                break;
+            }
             case SDL_MOUSEMOTION:
-                if (!mouse)
+                app.input.mouseX = e.motion.x * sx;
+                app.input.mouseY = e.motion.y * sy;
+                if (!app.sceneDrag)
                     break;
                 if (e.motion.state & SDL_BUTTON_LMASK) {
                     // the left button turns about the center
@@ -282,20 +301,24 @@ int main(int argc, char **argv) {
                     app.ball.pitch = std::min(89.0f, std::max(-89.0f, app.ball.pitch + e.motion.yrel * 0.4f));
                 } else if (e.motion.state & SDL_BUTTON_RMASK) {
                     // the right button moves the center with the mouse
-                    int ww, wh;
-                    SDL_GetWindowSize(app.window, &ww, &wh);
                     app.ball.move((float)e.motion.xrel, (float)e.motion.yrel, wh);
                 }
                 break;
             case SDL_MOUSEWHEEL:
-                if (mouse)
+                if (gui)
+                    app.input.wheel += (float)e.wheel.y; // scrolls the panel under the mouse
+                else
                     app.ball.distance *= std::exp(-e.wheel.y * 0.12f);
+                break;
+            case SDL_WINDOWEVENT:
+                if (e.window.event == SDL_WINDOWEVENT_LEAVE)
+                    app.input.mouseX = app.input.mouseY = -1;
                 break;
             }
         }
-        int w, h;
-        SDL_GL_GetDrawableSize(app.window, &w, &h);
-        app.ball.apply(app.camera, h > 0 ? (float)w / h : 1);
+        ui::Rect view = sceneViewport(app, w, h);
+        int vx = (int)view.x, vw = (int)view.w;
+        app.ball.apply(app.camera, h > 0 ? (float)vw / h : 1);
         if (app.headlight) {
             // a light over the shoulder of the viewer, as the eye light of perfly
             Vec3 toTarget = normalize(app.ball.target() - app.ball.eye());
@@ -306,9 +329,9 @@ int main(int argc, char **argv) {
                 -Vec3{std::cos(el) * std::sin(az), std::cos(el) * std::cos(az), std::sin(el)};
         }
 
-        // the marker on the selection: its world matrix comes from the graph
-        // window of the last frame
-        if (app.selected && app.showSelectedBounds && app.showGui) {
+        // the marker on the selection: its world matrix comes from the tree
+        // of the last frame
+        if (app.selected && app.showSelectedBounds && app.showGui && app.showGraph) {
             Sphere s = app.selected->bounds(); // in the space of its parent
             Mat4 parentWorld = app.selectedWorld * inverse(app.selected->matrix());
             float r = std::max(s.radius, 1e-6f);
@@ -318,16 +341,17 @@ int main(int argc, char **argv) {
             app.boundsMarker->setMask(0);
         }
 
-        guiFrame(app);
-        renderer.render(*app.top, app.camera, 0, 0, w, h);
+        guiFrame(app, w, h);
+        renderer.render(*app.top, app.camera, vx, 0, vw, h);
         if (!app.snapRequest.empty()) {
             // the scene alone, without the GUI
-            pixels.resize((size_t)w * h * 4);
-            if (app.device->readPixels(0, 0, w, h, pixels.data()) && savePPM(app.snapRequest.c_str(), w, h, pixels))
+            pixels.resize((size_t)vw * h * 4);
+            if (app.device->readPixels(vx, 0, vw, h, pixels.data()) && savePPM(app.snapRequest.c_str(), vw, h, pixels))
                 std::printf("r4fly: %s saved\n", app.snapRequest.c_str());
             app.snapRequest.clear();
         }
-        guiRender(app);
+        app.ui->render();
+        app.device->takeStats(); // the draws of the GUI are not those of the scene
 
         frame++;
         framesSinceStats++;
@@ -360,7 +384,7 @@ int main(int argc, char **argv) {
         if (last)
             running = false;
     }
-    guiShutdown();
+    app.ui.reset();
     app.selected = nullptr;
     app.boundsMarker.reset();
     app.files.clear();

@@ -361,6 +361,7 @@ public:
 
     void beginPass(int x, int y, int width, int height, const ClearValues &c) override {
         gl.Viewport(x, y, width, height);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
         GLbitfield mask = 0;
         if (c.color) {
             gl.ClearColor(c.r, c.g, c.b, c.a);
@@ -379,7 +380,13 @@ public:
             gl.Clear(mask);
     }
 
-    void endPass() override {}
+    void endPass() override { setCap(SCISSOR_TEST, false, scissorEnabled); }
+
+    void setScissor(int x, int y, int width, int height) override {
+        setCap(SCISSOR_TEST, true, scissorEnabled);
+        gl.Scissor(x, y, width < 0 ? 0 : width, height < 0 ? 0 : height);
+    }
+    void clearScissor() override { setCap(SCISSOR_TEST, false, scissorEnabled); }
 
     void setCap(GLenum cap, bool on, int &cache) {
         if (cache != (int)on) {
@@ -578,6 +585,7 @@ public:
         host.depth = gl.IsEnabled(DEPTH_TEST);
         host.blend = gl.IsEnabled(BLEND);
         host.offset = gl.IsEnabled(POLYGON_OFFSET_FILL);
+        host.scissor = gl.IsEnabled(SCISSOR_TEST);
         gl.GetIntegerv(CULL_FACE_MODE, &v);
         host.cullMode = v;
         gl.GetIntegerv(FRONT_FACE, &v);
@@ -610,6 +618,7 @@ public:
         host.depth ? gl.Enable(DEPTH_TEST) : gl.Disable(DEPTH_TEST);
         host.blend ? gl.Enable(BLEND) : gl.Disable(BLEND);
         host.offset ? gl.Enable(POLYGON_OFFSET_FILL) : gl.Disable(POLYGON_OFFSET_FILL);
+        host.scissor ? gl.Enable(SCISSOR_TEST) : gl.Disable(SCISSOR_TEST);
         gl.CullFace(host.cullMode);
         gl.FrontFace(host.frontFace);
         gl.DepthMask(host.depthMask ? TRUE_ : FALSE_);
@@ -632,7 +641,7 @@ private:
         current = 0;
         currentProgram = (GLuint)-1;
         currentVAO = (GLuint)-1;
-        cullEnabled = depthEnabled = blendEnabled = offsetEnabled = -1;
+        cullEnabled = depthEnabled = blendEnabled = offsetEnabled = scissorEnabled = -1;
         cullMode = frontFace = depthFunc = blendSrc = blendDst = polygonMode = 0;
         depthWrite = true;
         for (auto &t : textureBound)
@@ -662,7 +671,7 @@ private:
     // the cached state
     uint32_t current = 0;
     GLuint currentProgram = 0, currentVAO = 0;
-    int cullEnabled = -1, depthEnabled = -1, blendEnabled = -1, offsetEnabled = -1;
+    int cullEnabled = -1, depthEnabled = -1, blendEnabled = -1, offsetEnabled = -1, scissorEnabled = -1;
     GLenum cullMode = 0, frontFace = 0, depthFunc = 0, blendSrc = 0, blendDst = 0, polygonMode = 0;
     bool depthWrite = true;
     uint32_t textureBound[kMaxTextures] = {};
@@ -680,7 +689,7 @@ private:
     struct HostState {
         GLint program = 0, vao = 0, arrayBuffer = 0, activeTexture = TEXTURE0;
         GLint textures[kMaxTextures] = {};
-        bool cull = false, depth = false, blend = false, offset = false;
+        bool cull = false, depth = false, blend = false, offset = false, scissor = false;
         GLint cullMode = BACK, frontFace = CCW, depthMask = 1, depthFunc = LESS;
         GLint blendSrc = ONE, blendDst = ZERO, polygonMode = FILL;
         GLint viewport[4] = {};

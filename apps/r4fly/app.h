@@ -6,6 +6,7 @@
 #include "r4/gpu/device.h"
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
+#include "r4/ui/ui.h"
 
 #include <SDL.h>
 
@@ -86,7 +87,15 @@ struct App {
     float lightAzimuth = 45, lightElevation = 50;
 
     // the GUI
+    std::unique_ptr<ui::Context> ui;
+    ui::Input input;          // the mouse of the frame
+    bool sceneDrag = false;   // a drag that started in the view
+    bool quit = false;
     bool showGui = true, showGraph = true, showPerf = true;
+    // the open sections of the panel, the open nodes of the tree
+    bool openCamera = true, openLight = false, openEnv = false, openRender = false, openCull = false,
+         openOptim = false;
+    std::map<scene::Node *, bool> openNodes;
     bool vsync = true;
     bool printStats = false;
     scene::Node *selected = nullptr;
@@ -103,14 +112,11 @@ struct App {
     void resetView() { ball.reset(models->bounds(), viewH, viewP, viewZ); }
 };
 
-// gui.cpp
-void guiInit(App &app, SDL_GLContext ctx);
-void guiShutdown();
-bool guiEvent(const SDL_Event &e); // true: the GUI takes the event
-bool guiWantsMouse();
-bool guiWantsKeyboard();
-void guiFrame(App &app);           // builds the windows
-void guiRender(App &app);          // draws them, over the scene
+// gui.cpp: the panels, in the look of perfly (r4::ui)
+void guiFrame(App &app, int width, int height); // builds the panels
+bool guiWantsMouse(const App &app);
+// the part of the window left to the scene, beside the panels
+ui::Rect sceneViewport(const App &app, int width, int height);
 // the marker of the bounds of the selection, made with the renderer
 std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer);
 

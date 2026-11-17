@@ -27,6 +27,7 @@ demos.
 
 ```
 apps      r4fly (the viewer, heir of perfly), demos
+ui        the panels of Performer: buttons, switches, sliders, menus, trees
 render    cull → draw list → sort → batch/instance → passes; materials
 scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
 terrain   (to come) blocks, LOD, seams, placement rules
@@ -45,7 +46,10 @@ baseline in `vcpkg-configuration.json`, the same as libRealSpace):
 
 - **stb**: the common image formats.
 - **cgltf**: glTF 2.0.
-- **SDL2** and **Dear ImGui**: only for r4fly, the `viewer` feature.
+- **SDL2**: only for r4fly, the `viewer` feature.
+
+The GUI (`r4::ui`) is part of the library and draws through `r4::gpu`; its
+font is baked into `src/ui/font_data.inc` by `tools/bake_font.cpp`.
 
 The library itself needs no graphics header and no GL loader, because the
 OpenGL functions are loaded at run time.
@@ -126,6 +130,18 @@ drawables) marks it and its ancestors dirty, and the next `bounds()` call
 recomputes only what was marked. The world can therefore change at run
 time, nodes added or removed, without full updates.
 
+## The GUI (`r4::ui`)
+
+The look is that of the GUI of IRIS Performer (libpfutil), as ported for
+perfly in legacy_opengl_demo: the same colors and reliefs, the yellow
+lights of the switches, the blue bars of the sliders, the lists of the
+menu buttons. The model is immediate: the program calls the widgets each
+frame with its own variables, and they report the changes. A frame is
+built on the CPU into one vertex buffer (rectangles, triangles and glyphs,
+all with one texture: the font atlas and a white texel), then drawn with
+one pipeline and a few draws, clipped by the scissor to the panels. The
+panels scroll with the wheel when their widgets are taller.
+
 ## Render options and measures
 
 `Renderer::options()` turns the stages on and off at run time, to see what
@@ -188,7 +204,7 @@ behaviors are kept, translated into the neutral format:
 | 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
 | 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |
-| 3b | r4fly with a GUI (Dear ImGui): settings, scene graph, performances; render options in the renderer (culling, freeze, sorting, instancing, textures, lighting, LOD scale) and CPU timings | **done** |
+| 3b | `r4::ui`, the GUI of perfly redrawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performances; render options in the renderer (culling, freeze, sorting, instancing, textures, lighting, LOD scale) and CPU timings | **done** |
 | later | threaded culling (APP/CULL/DRAW as in Performer), shadows | |
 
 ## Integration in libRealSpace

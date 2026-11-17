@@ -1,12 +1,8 @@
-// gui.cpp - the windows of r4fly (Dear ImGui), as the panel of perfly: the
-// settings of the camera, the light, the environment, the rendering, the
-// culling and the optimisations; the scene graph with the properties of the
-// selected node; the performances.
+// gui.cpp - the panels of r4fly, in the look of the GUI of perfly (r4::ui):
+// on the left the settings (camera, light, environment, rendering, culling,
+// optimisations), on the right the scene graph, the selected node and the
+// performances.
 #include "app.h"
-
-#include <imgui.h>
-#include <imgui_impl_opengl3.h>
-#include <imgui_impl_sdl2.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -14,6 +10,8 @@
 namespace r4fly {
 
 namespace {
+
+constexpr float kLeftW = 290, kRightW = 360, kPerfH = 400;
 
 const char *typeName(scene::NodeType t) {
     switch (t) {
@@ -27,33 +25,33 @@ const char *typeName(scene::NodeType t) {
     return "?";
 }
 
-ImVec4 typeColor(scene::NodeType t) {
+const char *typeTag(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Geode: return {0.55f, 0.85f, 0.55f, 1};
-    case scene::NodeType::Switch: return {0.95f, 0.75f, 0.35f, 1};
-    case scene::NodeType::LOD: return {0.45f, 0.75f, 1.0f, 1};
-    case scene::NodeType::Billboard: return {0.9f, 0.55f, 0.9f, 1};
-    case scene::NodeType::Instancer: return {1.0f, 0.5f, 0.45f, 1};
-    default: return {0.85f, 0.85f, 0.85f, 1};
+    case scene::NodeType::Group: return "GRP";
+    case scene::NodeType::Geode: return "GEO";
+    case scene::NodeType::Switch: return "SW";
+    case scene::NodeType::LOD: return "LOD";
+    case scene::NodeType::Billboard: return "BB";
+    case scene::NodeType::Instancer: return "INST";
+    }
+    return "?";
+}
+
+ui::Color typeColor(scene::NodeType t) {
+    switch (t) {
+    case scene::NodeType::Geode: return ui::Color::rgb(0.55f, 0.85f, 0.55f);
+    case scene::NodeType::Switch: return ui::Color::rgb(0.95f, 0.75f, 0.35f);
+    case scene::NodeType::LOD: return ui::Color::rgb(0.5f, 0.75f, 1.0f);
+    case scene::NodeType::Billboard: return ui::Color::rgb(0.9f, 0.6f, 0.9f);
+    case scene::NodeType::Instancer: return ui::Color::rgb(1.0f, 0.55f, 0.5f);
+    default: return ui::Color::rgb(0.85f, 0.85f, 0.88f);
     }
 }
 
-const char *primitiveName(assets::Primitive p) {
-    switch (p) {
-    case assets::Primitive::Lines: return "lines";
-    case assets::Primitive::Points: return "points";
-    default: return "triangles";
-    }
-}
-
-void colorEdit(const char *label, Vec3 &c) { ImGui::ColorEdit3(label, &c.x); }
-
-void plot(const char *label, const std::deque<float> &v, float scaleMax, const char *overlay) {
-    float buf[512];
-    int n = (int)std::min<size_t>(v.size(), 512);
-    for (int i = 0; i < n; i++)
-        buf[i] = v[v.size() - n + i];
-    ImGui::PlotLines(label, buf, n, 0, overlay, 0, scaleMax, ImVec2(-1, 60));
+std::string fmt(const char *f, double a, double b = 0, double c = 0) {
+    char buf[128];
+    std::snprintf(buf, sizeof buf, f, a, b, c);
+    return buf;
 }
 
 float average(const std::deque<float> &v, size_t last) {
@@ -66,153 +64,150 @@ float average(const std::deque<float> &v, size_t last) {
     return s / n;
 }
 
-// --- the settings -----------------------------------------------------------
-
-void scenePanel(App &app) {
-    if (!ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
-        return;
-    for (const LoadedFile &f : app.files) {
-        ImGui::BulletText("%s", f.path.c_str());
-        ImGui::TextDisabled("    %zu meshes, %zu tris, %zu lines, %zu points, %zu materials, %zu images",
-                            f.model->meshes.size(), f.triangles, f.lines, f.points, f.model->materials.size(),
-                            f.model->images.size());
-    }
-    if (app.forest)
-        ImGui::BulletText("forest: %zu instances, %zu levels", app.forest->instances().size(),
-                          app.forest->levels().size());
-    if (ImGui::Button("Frame all (R)"))
-        app.resetView();
-    ImGui::SameLine();
-    if (ImGui::Button("Capture"))
-        app.snapRequest = "r4fly.ppm";
-    ImGui::SameLine();
-    ImGui::Checkbox("Graph", &app.showGraph);
-    ImGui::SameLine();
-    ImGui::Checkbox("Perf", &app.showPerf);
+std::string baseName(const std::string &p) {
+    size_t s = p.find_last_of("/\\");
+    return s == std::string::npos ? p : p.substr(s + 1);
 }
 
-void cameraPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
-        return;
+// --- the settings -----------------------------------------------------------------
+
+void settingsPanel(App &app, ui::Context &g, float height) {
+    g.beginPanel("settings", {0, 0, kLeftW, height}, "r4fly");
     Trackball &b = app.ball;
-    ImGui::SliderFloat("Field of view", &b.fov, 10, 120, "%.0f deg");
-    ImGui::SliderFloat("Heading", &b.heading, -180, 180, "%.0f deg");
-    ImGui::SliderFloat("Pitch", &b.pitch, -89, 89, "%.0f deg");
-    ImGui::SliderFloat("Distance", &b.distance, b.radius * 0.01f, b.radius * 50, "%.3g",
-                       ImGuiSliderFlags_Logarithmic);
-    ImGui::Checkbox("Automatic clip planes", &b.autoClip);
-    if (!b.autoClip) {
-        ImGui::SliderFloat("Near", &b.znear, b.radius * 1e-4f, b.radius * 10, "%.4g", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Far", &b.zfar, b.radius * 0.1f, b.radius * 1000, "%.4g", ImGuiSliderFlags_Logarithmic);
-    } else {
-        ImGui::TextDisabled("near %.4g, far %.4g", b.znear, b.zfar);
-    }
-    if (ImGui::Button("Front")) { b.heading = 0; b.pitch = 0; }
-    ImGui::SameLine();
-    if (ImGui::Button("Side")) { b.heading = 90; b.pitch = 0; }
-    ImGui::SameLine();
-    if (ImGui::Button("Top")) { b.heading = 0; b.pitch = 89; }
-    ImGui::SameLine();
-    if (ImGui::Button("3/4")) { b.heading = 30; b.pitch = 25; }
-    ImGui::SameLine();
-    if (ImGui::Button("Recenter")) b.pan = {};
+    render::RenderOptions &o = app.renderer->options();
+    render::Environment &env = app.renderer->environment();
     Vec3 e = b.eye();
-    ImGui::TextDisabled("eye %.3g %.3g %.3g", e.x, e.y, e.z);
-}
+    g.message(fmt("X%.1f Y%.1f Z%.1f", e.x, e.y, e.z).append(fmt("  H %.0f P %.0f", b.heading, b.pitch)).c_str());
 
-void lightPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Lighting"))
-        return;
-    render::Environment &env = app.renderer->environment();
-    ImGui::Checkbox("Lighting", &app.renderer->options().lighting);
-    ImGui::Checkbox("Headlight (follows the eye)", &app.headlight);
-    if (!app.headlight) {
-        ImGui::SliderFloat("Azimuth", &app.lightAzimuth, -180, 180, "%.0f deg");
-        ImGui::SliderFloat("Elevation", &app.lightElevation, -89, 89, "%.0f deg");
+    g.columns(2);
+    if (g.button("Quit"))
+        app.quit = true;
+    if (g.button("GUI Off (F1)"))
+        app.showGui = false;
+    if (g.button("Frame All (R)"))
+        app.resetView();
+    if (g.button("Snap Screen"))
+        app.snapRequest = "r4fly.ppm";
+    g.toggle("Scene Graph", app.showGraph);
+    g.toggle("Stats", app.showPerf);
+    g.columns(1);
+
+    if (g.section("Camera", app.openCamera)) {
+        g.slider("Field of View", b.fov, 10, 120, "%.1f");
+        g.slider("Heading", b.heading, -180, 180, "%.1f");
+        g.slider("Pitch", b.pitch, -89, 89, "%.1f");
+        g.slider("Distance", b.distance, b.radius * 0.01f, b.radius * 50, "%.3g", true);
+        g.toggle("Automatic Clip Planes", b.autoClip);
+        g.slider("Near Clip", b.znear, b.radius * 1e-4f, b.radius * 10, "%.4g", true, !b.autoClip);
+        g.slider("Far Clip", b.zfar, b.radius * 0.1f, b.radius * 1000, "%.4g", true, !b.autoClip);
+        g.columns(4);
+        if (g.button("Front")) { b.heading = 0; b.pitch = 0; }
+        if (g.button("Side")) { b.heading = 90; b.pitch = 0; }
+        if (g.button("Top")) { b.heading = 0; b.pitch = 89; }
+        if (g.button("3/4")) { b.heading = 30; b.pitch = 25; }
+        g.columns(1);
+        if (g.button("Recenter"))
+            b.pan = {};
     }
-    colorEdit("Light color", env.lightColor);
-    colorEdit("Ambient", env.ambient);
-}
-
-void environmentPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Environment"))
-        return;
-    render::Environment &env = app.renderer->environment();
-    ImGui::ColorEdit3("Background", &env.clearColor.x);
-    ImGui::Checkbox("Fog", &env.fog);
-    if (env.fog) {
-        colorEdit("Fog color", env.fogColor);
-        float r = app.ball.radius;
-        ImGui::SliderFloat("Fog start", &env.fogStart, 0, r * 50, "%.3g", ImGuiSliderFlags_Logarithmic);
-        ImGui::SliderFloat("Fog end", &env.fogEnd, 0, r * 100, "%.3g", ImGuiSliderFlags_Logarithmic);
-        if (ImGui::Button("Fog color = background"))
-            env.fogColor = {env.clearColor.x, env.clearColor.y, env.clearColor.z};
+    if (g.section("Lighting", app.openLight)) {
+        g.columns(2);
+        g.toggle("Lighting", o.lighting);
+        g.toggle("Headlight", app.headlight);
+        g.columns(1);
+        g.slider("Sun Azimuth", app.lightAzimuth, -180, 180, "%.0f", false, !app.headlight);
+        g.slider("Sun Elevation", app.lightElevation, -89, 89, "%.0f", false, !app.headlight);
+        g.color("Light Color", env.lightColor);
+        g.color("Ambient", env.ambient);
     }
-}
-
-void renderPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Rendering"))
-        return;
-    render::RenderOptions &o = app.renderer->options();
-    bool wire = app.renderer->wireframe();
-    if (ImGui::Checkbox("Wireframe (W)", &wire))
-        app.renderer->setWireframe(wire);
-    ImGui::Checkbox("Textures", &o.textures);
-    // the state of the camera: the bits the nodes must meet (flight: 0x1 body,
-    // 0x2 gear, 0x4 far, 0x8 shadow, 0xff00 weapons)
-    ImGui::InputScalar("State mask", ImGuiDataType_U32, &app.camera.mask, nullptr, nullptr, "%08X",
-                       ImGuiInputTextFlags_CharsHexadecimal);
-    for (int bit = 0; bit < 16; bit++) {
-        bool on = (app.camera.mask >> bit) & 1;
-        char label[8];
-        std::snprintf(label, sizeof label, "%X##b%d", bit, bit);
-        if (bit % 8)
-            ImGui::SameLine();
-        if (ImGui::Checkbox(label, &on))
-            app.camera.mask = on ? app.camera.mask | 1u << bit : app.camera.mask & ~(1u << bit);
+    if (g.section("Environment", app.openEnv)) {
+        Vec3 bg{env.clearColor.x, env.clearColor.y, env.clearColor.z};
+        if (g.color("Background", bg))
+            env.clearColor = {bg.x, bg.y, bg.z, 1};
+        int fog = env.fog ? 1 : 0;
+        if (g.menu("Fog", fog, {"Off", "Linear"}))
+            env.fog = fog != 0;
+        if (env.fog) {
+            float r = app.ball.radius;
+            g.slider("Near Fog", env.fogStart, r * 0.01f, r * 50, "%.3g", true);
+            g.slider("Far Fog", env.fogEnd, r * 0.01f, r * 100, "%.3g", true);
+            g.color("Fog Color", env.fogColor);
+            if (g.button("Fog Color = Background"))
+                env.fogColor = bg;
+        }
     }
+    if (g.section("Rendering", app.openRender)) {
+        int style = app.renderer->wireframe() ? 1 : 0;
+        if (g.menu("Style", style, {"Filled", "Lines"}))
+            app.renderer->setWireframe(style == 1);
+        g.toggle("Textures", o.textures);
+        // the state bits of the camera (flight: 1 body, 2 gear, 4 far,
+        // 8 shadow, the high byte the weapons)
+        g.bits("State Mask", app.camera.mask, 16);
+        g.columns(2);
+        if (g.button("All States"))
+            app.camera.mask = ~0u;
+        if (g.button("No State"))
+            app.camera.mask = 0;
+        g.columns(1);
+    }
+    if (g.section("Culling", app.openCull)) {
+        int mode = o.frustumCulling ? 1 : 0;
+        if (g.menu("Cull Mode", mode, {"None", "View Frustum"}))
+            o.frustumCulling = mode == 1;
+        g.toggle("Freeze Culling", o.freezeCulling);
+        g.slider("LOD Scale", o.lodScale, 0.05f, 20, "%.2f", true);
+    }
+    if (g.section("Optimisations", app.openOptim)) {
+        g.toggle("Sort by State", o.sortByState);
+        g.toggle("Instancing", o.instancing);
+        bool vs = app.vsync;
+        if (g.toggle("Vertical Sync", vs)) {
+            app.vsync = vs;
+            SDL_GL_SetSwapInterval(vs ? 1 : 0);
+        }
+    }
+    g.space(4);
+    for (const LoadedFile &f : app.files)
+        g.message(fmt("%.0f tris, %.0f lines, %.0f points", (double)f.triangles, (double)f.lines, (double)f.points)
+                      .insert(0, baseName(f.path) + ": ")
+                      .c_str());
+    if (app.forest)
+        g.message(fmt("forest: %.0f instances, %.0f levels", (double)app.forest->instances().size(),
+                      (double)app.forest->levels().size())
+                      .c_str());
+    g.endPanel();
 }
 
-void cullingPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Culling and levels of detail"))
-        return;
-    render::RenderOptions &o = app.renderer->options();
-    ImGui::Checkbox("View frustum culling", &o.frustumCulling);
-    ImGui::Checkbox("Freeze the culling (move to see it)", &o.freezeCulling);
-    ImGui::SliderFloat("LOD scale", &o.lodScale, 0.05f, 20, "%.2f", ImGuiSliderFlags_Logarithmic);
-    ImGui::TextDisabled("> 1: the coarser levels come nearer");
-}
+// --- the scene graph ------------------------------------------------------------
 
-void optimPanel(App &app) {
-    if (!ImGui::CollapsingHeader("Optimisations"))
-        return;
-    render::RenderOptions &o = app.renderer->options();
-    ImGui::Checkbox("Sort by state (pipeline, material, mesh)", &o.sortByState);
-    ImGui::Checkbox("Instancing (equal items in one draw)", &o.instancing);
-    if (ImGui::Checkbox("Vertical sync", &app.vsync))
-        SDL_GL_SetSwapInterval(app.vsync ? 1 : 0);
-}
-
-// --- the scene graph --------------------------------------------------------
-
-void nodeTree(App &app, scene::Node &n, const Mat4 &parent, int depth) {
+void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int depth) {
     Mat4 world = parent * n.matrix();
-    const auto &kids = n.children();
-    bool hasContent = n.type() == scene::NodeType::Geode || n.type() == scene::NodeType::Billboard;
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
-    if (kids.empty())
-        flags |= ImGuiTreeNodeFlags_Leaf;
-    if (app.selected == &n) {
-        flags |= ImGuiTreeNodeFlags_Selected;
+    if (app.selected == &n)
         app.selectedWorld = world;
-    }
-    if (depth < 2)
-        flags |= ImGuiTreeNodeFlags_DefaultOpen;
-    ImGui::PushID(&n);
-    // the eye: shown or hidden (its mask set to 0)
-    bool hidden = app.hiddenMasks.count(&n) > 0;
-    bool visible = !hidden;
-    if (ImGui::Checkbox("##vis", &visible)) {
+    auto it = app.openNodes.find(&n);
+    if (it == app.openNodes.end())
+        it = app.openNodes.emplace(&n, depth < 2).first;
+    bool open = it->second;
+    bool visible = app.hiddenMasks.count(&n) == 0;
+    std::string label = n.name().empty() ? std::string("(") + typeName(n.type()) + ")" : n.name();
+    if (n.type() == scene::NodeType::Instancer)
+        label += fmt("  [%.0f]", (double)static_cast<scene::Instancer &>(n).instances().size());
+    else if (n.type() == scene::NodeType::Geode || n.type() == scene::NodeType::Billboard)
+        label += fmt("  [%.0f]", (double)static_cast<scene::Geode &>(n).drawables().size());
+    ui::Context::TreeRow row;
+    row.id = &n;
+    row.depth = depth;
+    row.label = label.c_str();
+    row.tag = typeColor(n.type());
+    row.tagText = typeTag(n.type());
+    row.hasChildren = !n.children().empty();
+    row.selected = app.selected == &n;
+    bool wasVisible = visible;
+    if (g.treeRow(row, open, visible))
+        app.selected = app.selected == &n ? nullptr : &n;
+    it->second = open;
+    if (visible != wasVisible) {
+        // hidden: the mask of the node set to 0, the old one kept
         if (!visible) {
             app.hiddenMasks[&n] = n.mask();
             n.setMask(0);
@@ -221,250 +216,180 @@ void nodeTree(App &app, scene::Node &n, const Mat4 &parent, int depth) {
             app.hiddenMasks.erase(&n);
         }
     }
-    ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Text, typeColor(n.type()));
-    char label[256];
-    size_t drawables = hasContent ? static_cast<scene::Geode &>(n).drawables().size() : 0;
-    if (n.type() == scene::NodeType::Instancer)
-        std::snprintf(label, sizeof label, "%s %s  [%zu instances]", typeName(n.type()), n.name().c_str(),
-                      static_cast<scene::Instancer &>(n).instances().size());
-    else if (drawables)
-        std::snprintf(label, sizeof label, "%s %s  [%zu drawables]", typeName(n.type()), n.name().c_str(), drawables);
-    else
-        std::snprintf(label, sizeof label, "%s %s", typeName(n.type()), n.name().c_str());
-    bool open = ImGui::TreeNodeEx("node", flags, "%s", label);
-    ImGui::PopStyleColor();
-    if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-        app.selected = &n;
-    if (open) {
-        for (size_t i = 0; i < kids.size(); i++)
-            nodeTree(app, *kids[i], world, depth + 1);
-        ImGui::TreePop();
-    }
-    ImGui::PopID();
+    if (open)
+        for (const auto &c : n.children())
+            nodeTree(app, g, *c, world, depth + 1);
 }
 
-void nodeDetails(App &app) {
+void nodePanel(App &app, ui::Context &g, ui::Rect r) {
+    g.beginPanel("node", r, "Selected Node");
     scene::Node *n = app.selected;
     if (!n) {
-        ImGui::TextDisabled("Select a node in the tree.");
+        g.message("Click a node in the tree.");
+        g.endPanel();
         return;
     }
-    ImGui::Text("%s  %s", typeName(n->type()), n->name().c_str());
-    ImGui::Checkbox("Show its bounds", &app.showSelectedBounds);
+    g.message((std::string(typeName(n->type())) + "  " + n->name()).c_str());
+    g.toggle("Show Bounds", app.showSelectedBounds);
     uint32_t mask = n->mask(), filter = n->stateFilter();
-    if (ImGui::InputScalar("Mask", ImGuiDataType_U32, &mask, nullptr, nullptr, "%08X",
-                           ImGuiInputTextFlags_CharsHexadecimal))
+    if (g.bits("Mask", mask, 16))
         n->setMask(mask);
-    if (ImGui::InputScalar("State filter", ImGuiDataType_U32, &filter, nullptr, nullptr, "%08X",
-                           ImGuiInputTextFlags_CharsHexadecimal))
+    if (g.bits("State Filter", filter, 16))
         n->setStateFilter(filter);
     const Mat4 &m = n->matrix();
     Vec3 t = m.translation();
-    ImGui::Text("Translation %.4g %.4g %.4g, scale %.4g", t.x, t.y, t.z, m.maxScale());
-    Sphere wb = n->bounds();
-    ImGui::Text("Bounds (parent space): center %.4g %.4g %.4g, radius %.4g", wb.center.x, wb.center.y, wb.center.z,
-                wb.radius);
+    Sphere bs = n->bounds();
+    std::vector<std::pair<std::string, std::string>> rows = {
+        {"Translation", fmt("%.4g %.4g %.4g", t.x, t.y, t.z)},
+        {"Scale", fmt("%.4g", m.maxScale())},
+        {"Bounds center", fmt("%.4g %.4g %.4g", bs.center.x, bs.center.y, bs.center.z)},
+        {"Bounds radius", fmt("%.4g", bs.radius)},
+        {"Children", fmt("%.0f", (double)n->children().size())},
+    };
     switch (n->type()) {
-    case scene::NodeType::Switch: {
-        auto &sw = static_cast<scene::Switch &>(*n);
-        int v = sw.value();
-        if (ImGui::InputInt("Switch value (-1 all, -2 none)", &v))
-            sw.setValue(std::max(-2, std::min(v, (int)n->children().size() - 1)));
-        break;
-    }
     case scene::NodeType::LOD: {
-        auto &lod = static_cast<scene::LOD &>(*n);
-        ImGui::Text("Ranges:");
-        for (float r : lod.ranges()) {
-            ImGui::SameLine();
-            ImGui::Text("%.4g", r);
-        }
-        break;
-    }
-    case scene::NodeType::Billboard: {
-        auto &bb = static_cast<scene::Billboard &>(*n);
-        int mode = bb.mode() == scene::Billboard::Mode::Point;
-        if (ImGui::Combo("Mode", &mode, "Axis\0Point\0"))
-            bb.setMode(mode ? scene::Billboard::Mode::Point : scene::Billboard::Mode::Axis);
+        std::string s;
+        for (float v : static_cast<scene::LOD &>(*n).ranges())
+            s += fmt("%.4g ", v);
+        rows.push_back({"Ranges", s});
         break;
     }
     case scene::NodeType::Instancer: {
         auto &in = static_cast<scene::Instancer &>(*n);
-        ImGui::Text("%zu instances", in.instances().size());
+        rows.push_back({"Instances", fmt("%.0f", (double)in.instances().size())});
         for (size_t i = 0; i < in.levels().size(); i++)
-            ImGui::BulletText("level %zu: %zu parts, up to %.4g", i, in.levels()[i].parts.size(),
-                              in.levels()[i].maxDistance);
+            rows.push_back({fmt("Level %.0f", (double)i),
+                            fmt("%.0f parts, to %.4g", (double)in.levels()[i].parts.size(),
+                                in.levels()[i].maxDistance)});
         break;
     }
     default:
         break;
     }
+    g.table(rows);
+    if (n->type() == scene::NodeType::Switch) {
+        auto &sw = static_cast<scene::Switch &>(*n);
+        float v = (float)sw.value();
+        if (g.slider("Switch Value (-1 all, -2 none)", v, -2, (float)n->children().size() - 1, "%.0f"))
+            sw.setValue((int)std::lround(v));
+    }
+    if (n->type() == scene::NodeType::Billboard) {
+        auto &bb = static_cast<scene::Billboard &>(*n);
+        int mode = bb.mode() == scene::Billboard::Mode::Point;
+        if (g.radio("Mode", mode, {"Axis", "Point"}))
+            bb.setMode(mode ? scene::Billboard::Mode::Point : scene::Billboard::Mode::Axis);
+    }
     if (n->type() == scene::NodeType::Geode || n->type() == scene::NodeType::Billboard) {
-        auto &g = static_cast<scene::Geode &>(*n);
-        if (ImGui::BeginTable("drawables", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
-                              ImVec2(0, 160))) {
-            ImGui::TableSetupColumn("Mesh");
-            ImGui::TableSetupColumn("Primitives");
-            ImGui::TableSetupColumn("Material");
-            ImGui::TableSetupColumn("Flags");
-            ImGui::TableHeadersRow();
-            for (const scene::Drawable &d : g.drawables()) {
-                ImGui::TableNextRow();
-                ImGui::TableNextColumn();
-                ImGui::TextUnformatted(d.mesh ? d.mesh->name.c_str() : "-");
-                ImGui::TableNextColumn();
-                if (d.mesh) {
-                    uint32_t per = d.mesh->primitive == assets::Primitive::Triangles ? 3
-                                   : d.mesh->primitive == assets::Primitive::Lines ? 2 : 1;
-                    ImGui::Text("%u %s", d.mesh->indexCount / per, primitiveName(d.mesh->primitive));
-                }
-                ImGui::TableNextColumn();
-                if (d.material) {
-                    const assets::Material &p = d.material->params;
-                    ImGui::ColorButton("##c", ImVec4(p.diffuse.x, p.diffuse.y, p.diffuse.z, p.diffuse.w),
-                                       ImGuiColorEditFlags_NoTooltip, ImVec2(12, 12));
-                    ImGui::SameLine();
-                    ImGui::TextUnformatted(p.name.c_str());
-                }
-                ImGui::TableNextColumn();
-                if (d.material) {
-                    const assets::Material &p = d.material->params;
-                    ImGui::Text("%s%s%s%s%s%s", p.shading == assets::Shading::Unlit ? "unlit " : "",
-                                d.material->texture ? "tex " : "", p.alpha == assets::AlphaMode::Blend ? "blend "
-                                : p.alpha == assets::AlphaMode::Mask ? "mask " : "",
-                                p.doubleSided ? "2-sided " : "", p.decal ? "decal " : "",
-                                p.vertexColors ? "vcolors" : "");
-                }
+        std::vector<std::pair<std::string, std::string>> d;
+        for (const scene::Drawable &dr : static_cast<scene::Geode &>(*n).drawables()) {
+            std::string what;
+            if (dr.mesh) {
+                uint32_t per = dr.mesh->primitive == assets::Primitive::Triangles ? 3
+                               : dr.mesh->primitive == assets::Primitive::Lines ? 2 : 1;
+                const char *kind = per == 3 ? " tris" : per == 2 ? " lines" : " points";
+                what = fmt("%.0f", (double)(dr.mesh->indexCount / per)) + kind;
             }
-            ImGui::EndTable();
+            if (dr.material) {
+                const assets::Material &p = dr.material->params;
+                if (dr.material->texture)
+                    what += " tex";
+                if (p.alpha == assets::AlphaMode::Blend)
+                    what += " blend";
+                if (p.decal)
+                    what += " decal";
+                if (p.shading == assets::Shading::Unlit)
+                    what += " unlit";
+            }
+            std::string name = dr.mesh && !dr.mesh->name.empty() ? dr.mesh->name : "mesh";
+            if (dr.material && !dr.material->params.name.empty())
+                name += " / " + dr.material->params.name;
+            d.push_back({name, what});
+            if (d.size() >= 40) {
+                d.push_back({"...", ""});
+                break;
+            }
         }
+        g.label("Drawables", ui::Font::Bold);
+        g.table(d);
     }
+    g.endPanel();
 }
 
-void graphWindow(App &app) {
-    // on the right, above the performances
-    ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowSize(ImVec2(460, std::max(240.0f, display.y - 470)), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(display.x - 470, 10), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Scene graph", &app.showGraph)) {
-        ImGui::End();
-        return;
-    }
-    ImGui::BeginChild("tree", ImVec2(0, ImGui::GetContentRegionAvail().y * 0.55f), ImGuiChildFlags_Border);
-    nodeTree(app, *app.models, Mat4(), 0);
-    ImGui::EndChild();
-    ImGui::SeparatorText("Selected node");
-    ImGui::BeginChild("details");
-    nodeDetails(app);
-    ImGui::EndChild();
-    ImGui::End();
-}
+// --- the performances -------------------------------------------------------------
 
-// --- the performances -------------------------------------------------------
-
-void perfWindow(App &app) {
-    ImVec2 display = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowSize(ImVec2(460, 440), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(display.x - 470, display.y - 450), ImGuiCond_FirstUseEver);
-    if (!ImGui::Begin("Performances", &app.showPerf)) {
-        ImGui::End();
-        return;
-    }
+void perfPanel(App &app, ui::Context &g, ui::Rect r) {
+    g.beginPanel("perf", r, "Stats");
     const render::RenderStats &st = app.renderer->stats();
     float fms = average(app.frameMs, 60);
-    ImGui::Text("%.1f fps, %.2f ms per frame", fms > 0 ? 1000 / fms : 0, fms);
-    char overlay[64];
-    std::snprintf(overlay, sizeof overlay, "frame %.2f ms", fms);
-    plot("##frame", app.frameMs, std::max(33.3f, fms * 2), overlay);
-    std::snprintf(overlay, sizeof overlay, "cull %.3f ms", average(app.cullMs, 60));
-    plot("##cull", app.cullMs, std::max(2.0f, average(app.cullMs, 60) * 3), overlay);
-    std::snprintf(overlay, sizeof overlay, "draw (CPU) %.3f ms", average(app.drawMs, 60));
-    plot("##draw", app.drawMs, std::max(2.0f, average(app.drawMs, 60) * 3), overlay);
-    if (ImGui::BeginTable("counters", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-        auto row = [](const char *name, const char *fmt, auto... v) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            ImGui::TextUnformatted(name);
-            ImGui::TableNextColumn();
-            ImGui::Text(fmt, v...);
-        };
-        row("Draw calls", "%u", st.gpu.drawCalls);
-        row("Triangles", "%u", st.gpu.triangles);
-        row("Pipeline / texture changes", "%u / %u", st.gpu.pipelineChanges, st.gpu.textureChanges);
-        row("Items opaque / transparent", "%u / %u", st.opaqueItems, st.transparentItems);
-        row("Items per draw", "%.1f",
-            st.gpu.drawCalls ? (double)(st.opaqueItems + st.transparentItems) / st.gpu.drawCalls : 0.0);
-        row("Nodes visited / culled", "%u / %u", st.nodesVisited, st.nodesCulled);
-        row("Instances visited / culled", "%u / %u", st.instancesVisited, st.instancesCulled);
-        row("CPU cull / sort", "%.3f / %.3f ms", st.cullMs, st.sortMs);
-        row("CPU upload / draw", "%.3f / %.3f ms", st.uploadMs, st.drawMs);
-        ImGui::EndTable();
-    }
-    ImGui::Checkbox("Print once a second", &app.printStats);
-    ImGui::End();
+    g.message(fmt("%.1f fps   %.2f ms per frame", fms > 0 ? 1000 / fms : 0, fms).c_str());
+    auto plot = [&](const std::deque<float> &v, float minScale, ui::Color c, const char *name) {
+        // the last 240 frames, the newest on the right
+        float buf[240] = {};
+        int n = (int)std::min<size_t>(v.size(), 240);
+        for (int i = 0; i < n; i++)
+            buf[240 - n + i] = v[v.size() - n + i];
+        float avg = average(v, 60), peak = 0;
+        for (int i = 0; i < 240; i++)
+            peak = std::max(peak, buf[i]);
+        float scale = minScale;
+        while (scale < peak * 1.1f)
+            scale *= 2;
+        char overlay[64];
+        std::snprintf(overlay, sizeof overlay, "%s %.3f ms", name, avg);
+        g.plot(buf, 240, scale, c, overlay);
+    };
+    plot(app.frameMs, 16.667f, ui::Color::rgb(0.4f, 1, 0.4f), "frame");
+    plot(app.cullMs, 0.5f, ui::Color::rgb(0.4f, 0.8f, 1), "cull");
+    plot(app.drawMs, 1.0f, ui::Color::rgb(1, 0.6f, 0.3f), "draw");
+    double items = st.opaqueItems + st.transparentItems;
+    g.table({
+        {"Draw calls", fmt("%.0f", st.gpu.drawCalls)},
+        {"Triangles", fmt("%.0f", st.gpu.triangles)},
+        {"Pipeline / texture changes", fmt("%.0f / %.0f", st.gpu.pipelineChanges, st.gpu.textureChanges)},
+        {"Items opaque / transparent", fmt("%.0f / %.0f", st.opaqueItems, st.transparentItems)},
+        {"Items per draw", fmt("%.1f", st.gpu.drawCalls ? items / st.gpu.drawCalls : 0.0)},
+        {"Nodes visited / culled", fmt("%.0f / %.0f", st.nodesVisited, st.nodesCulled)},
+        {"Instances visited / culled", fmt("%.0f / %.0f", st.instancesVisited, st.instancesCulled)},
+        {"CPU cull / sort", fmt("%.3f / %.3f ms", st.cullMs, st.sortMs)},
+        {"CPU upload / draw", fmt("%.3f / %.3f ms", st.uploadMs, st.drawMs)},
+    });
+    g.toggle("Print Once a Second", app.printStats);
+    g.endPanel();
 }
 
 } // namespace
 
-void guiInit(App &app, SDL_GLContext ctx) {
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO &io = ImGui::GetIO();
-    io.IniFilename = "r4fly.ini";
-    ImGui::StyleColorsDark();
-    ImGuiStyle &s = ImGui::GetStyle();
-    s.WindowRounding = 4;
-    s.FrameRounding = 3;
-    s.Colors[ImGuiCol_WindowBg].w = 0.88f;
-    ImGui_ImplSDL2_InitForOpenGL(app.window, ctx);
-    ImGui_ImplOpenGL3_Init("#version 330");
+void guiFrame(App &app, int width, int height) {
+    ui::Context &g = *app.ui;
+    g.beginFrame(width, height, app.input);
+    if (app.showGui) {
+        float h = (float)height;
+        settingsPanel(app, g, h);
+        float x = width - kRightW;
+        float perfH = app.showPerf ? std::min(kPerfH, h * 0.5f) : 0;
+        if (app.showGraph) {
+            float gh = h - perfH;
+            float treeH = std::floor(gh * 0.55f);
+            g.beginPanel("graph", {x, 0, kRightW, treeH}, "Scene Graph");
+            nodeTree(app, g, *app.models, Mat4(), 0);
+            g.endPanel();
+            nodePanel(app, g, {x, treeH, kRightW, gh - treeH});
+        }
+        if (app.showPerf)
+            perfPanel(app, g, {x, h - perfH, kRightW, perfH});
+    }
+    g.endFrame();
 }
 
-void guiShutdown() {
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL2_Shutdown();
-    ImGui::DestroyContext();
+ui::Rect sceneViewport(const App &app, int width, int height) {
+    float left = app.showGui ? kLeftW : 0;
+    float right = app.showGui && (app.showGraph || app.showPerf) ? kRightW : 0;
+    if (left + right > width * 0.7f)
+        left = right = 0; // a small window: the scene under the panels
+    return {left, 0, std::max(1.0f, width - left - right), (float)height};
 }
 
-bool guiEvent(const SDL_Event &e) { return ImGui_ImplSDL2_ProcessEvent(&e); }
-bool guiWantsMouse() { return ImGui::GetIO().WantCaptureMouse; }
-bool guiWantsKeyboard() { return ImGui::GetIO().WantCaptureKeyboard; }
-
-void guiFrame(App &app) {
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL2_NewFrame();
-    ImGui::NewFrame();
-    if (!app.showGui)
-        return;
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(380, ImGui::GetIO().DisplaySize.y - 20), ImGuiCond_FirstUseEver);
-    ImGui::Begin("r4fly");
-    ImGui::TextDisabled("%s", app.device->name());
-    ImGui::TextDisabled("left: turn, wheel: zoom, right: move, F1: GUI");
-    scenePanel(app);
-    cameraPanel(app);
-    lightPanel(app);
-    environmentPanel(app);
-    renderPanel(app);
-    cullingPanel(app);
-    optimPanel(app);
-    ImGui::End();
-    if (app.showGraph)
-        graphWindow(app);
-    if (app.showPerf)
-        perfWindow(app);
-}
-
-void guiRender(App &app) {
-    ImGui::Render();
-    if (!app.showGui)
-        return;
-    // the GUI draws with its own GL state: the device saves its own around
-    app.device->beginHostInterop();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    app.device->endHostInterop();
-}
+bool guiWantsMouse(const App &app) { return app.showGui && app.ui->wantsMouse(); }
 
 std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     // three circles of radius 1, about X, Y and Z
@@ -474,28 +399,19 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     const int n = 64;
     for (int axis = 0; axis < 3; axis++)
         for (int i = 0; i < n; i++) {
-            float a = 2 * kPi * i / n;
-            Vec3 p;
-            float c = std::cos(a), s = std::sin(a);
-            if (axis == 0)
-                p = {0, c, s};
-            else if (axis == 1)
-                p = {c, 0, s};
-            else
-                p = {c, s, 0};
+            float a = 2 * kPi * i / n, c = std::cos(a), s = std::sin(a);
             assets::Vertex v;
-            v.position = p;
+            v.position = axis == 0 ? Vec3{0, c, s} : axis == 1 ? Vec3{c, 0, s} : Vec3{c, s, 0};
             v.color = 0xff20e0ffu; // yellow
-            uint32_t base = (uint32_t)m.vertices.size();
             m.vertices.push_back(v);
-            m.indices.insert(m.indices.end(), {base, axis * n + (uint32_t)((i + 1) % n)});
+            m.indices.push_back(axis * n + i);
+            m.indices.push_back(axis * n + (i + 1) % n);
         }
     m.computeBounds();
     assets::Material mat;
     mat.name = "bounds";
     mat.shading = assets::Shading::Unlit;
     mat.vertexColors = true;
-    mat.diffuse = {1, 1, 1, 1};
     auto g = scene::make<scene::Geode>();
     g->setName("bounds marker");
     g->addDrawable({renderer.uploadMesh(m), renderer.createMaterial(mat)});

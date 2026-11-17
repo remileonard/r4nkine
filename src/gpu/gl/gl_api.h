@@ -125,6 +125,7 @@ enum : GLenum {
     X(GLenum, GetError, (void))                                                                     \
     X(GLboolean, IsEnabled, (GLenum cap))                                                           \
     X(void, Viewport, (GLint x, GLint y, GLsizei w, GLsizei h))                                    \
+    X(void, Scissor, (GLint x, GLint y, GLsizei w, GLsizei h))                                     \
     X(void, Enable, (GLenum cap))                                                                   \
     X(void, Disable, (GLenum cap))                                                                  \
     X(void, ClearColor, (GLfloat r, GLfloat g, GLfloat b, GLfloat a))                               \

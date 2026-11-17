@@ -45,24 +45,32 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   stream, and consecutive items with the same mesh, material and pipeline
   are one draw call. Shading is per-pixel Blinn-Phong with fog. Triangles,
   lines and points are drawn; decals and sphere maps are supported.
-- `r4fly`: the viewer, with a GUI (Dear ImGui):
+- `r4::ui`: a small GUI in the look of the panels of IRIS Performer (the
+  GUI of perfly): grey buttons in relief, switches with yellow lights, blue
+  sliders, menu buttons, radio buttons, messages in yellow on dark boxes,
+  plus folding sections, trees, tables and curves. It is immediate (each
+  frame calls the widgets with its own variables) and draws through
+  `r4::gpu`, so it needs no other library. Its text uses glyphs baked from
+  Liberation Sans (SIL Open Font License, `src/ui/OFL.txt`).
+- `r4fly`: the viewer, with its panels in `r4::ui`:
   - **mouse**: the left button turns about the center, the wheel zooms,
-    the right button moves the center with the mouse;
-  - **settings panel**: the camera (field of view, angles, distance, clip
-    planes, front/side/top views), the lighting (headlight or a fixed sun,
-    colors), the environment (background, fog), the rendering (wireframe,
-    textures, the state mask bit by bit), the culling (frustum culling,
+    the right button moves the center with the mouse; over a panel, the
+    wheel scrolls it;
+  - **left panel**: the camera (field of view, angles, distance, clip
+    planes, front/side/top views), the lighting (headlight or a sun,
+    colors), the environment (background, fog), the rendering (filled or
+    lines, textures, the state mask bit by bit), the culling (view frustum,
     freezing it to look at it from outside, LOD scale) and the
     optimisations (sorting by state, instancing, vertical sync);
-  - **scene graph window**: the tree of the nodes with their types, a box
-    to hide each node, and the selected node's mask, state filter, matrix,
-    bounds (drawn in the view), drawables and materials, switch value,
-    LOD ranges, billboard mode and instancer levels;
-  - **performance window**: frame rate, curves of the frame, cull and draw
-    times over the last 240 frames, and the counters of the renderer (draw
-    calls, triangles, state changes, items per draw, nodes and instances
-    culled).
+  - **scene graph**: the tree of the nodes with their types, a light to
+    hide each node, and the selected node's mask, state filter, matrix,
+    bounds (drawn in the view), drawables, switch value, LOD ranges,
+    billboard mode and instancer levels;
+  - **stats**: the frame rate, the curves of the frame, cull and draw times
+    over the last 240 frames, and the counters of the renderer (draw calls,
+    triangles, state changes, items per draw, nodes and instances culled).
 
+  The scene is drawn between the panels, as the channel of perfly.
   Keys: F1 shows or hides the GUI, `w` wireframe, `r` reset, `s` statistics.
   `-snap` saves a frame, `-nogui` starts without the GUI, `-view` places
   the eye, `-state` chooses the state bits of the models, `-F` gives the
@@ -92,7 +100,6 @@ mode (`vcpkg.json`):
 | stb | the PNG, JPEG, BMP, TGA and GIF images | always |
 | cgltf | glTF 2.0 | always |
 | SDL2 | r4fly, the viewer | `viewer` (default) |
-| imgui (SDL2 and OpenGL 3 bindings) | the GUI of r4fly | `viewer` (default) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:
@@ -103,7 +110,7 @@ cmake --build --preset linux
 ctest --preset linux
 ```
 
-Without the viewer (and without SDL2 and ImGui), add `-DR4_BUILD_APPS=OFF`: the
+Without the viewer (and without SDL2), add `-DR4_BUILD_APPS=OFF`: the
 `viewer` feature of the manifest is then left out.
 
 ```

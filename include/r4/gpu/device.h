@@ -142,6 +142,10 @@ public:
     // a pass on the default framebuffer
     virtual void beginPass(int x, int y, int width, int height, const ClearValues &clear) = 0;
     virtual void endPass() = 0;
+    // the draws of the pass are clipped to a rectangle (from the bottom left),
+    // until clearScissor() or the end of the pass
+    virtual void setScissor(int x, int y, int width, int height) = 0;
+    virtual void clearScissor() = 0;
 
     virtual void bindPipeline(PipelineHandle p) = 0;
     virtual void bindVertexBuffer(uint32_t slot, BufferHandle b, size_t offset = 0) = 0;

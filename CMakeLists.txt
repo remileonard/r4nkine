@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(R4_BUILD_APPS "Build r4fly (needs SDL2 and Dear ImGui)" ON)
+option(R4_BUILD_APPS "Build r4fly (needs SDL2)" ON)
 option(R4_BUILD_TESTS "Build the tests" ON)
 
 # the library: the GL functions are loaded at run time; stb (the images) and
@@ -44,6 +44,7 @@ add_library(r4nkine
     src/assets/gltf_loader.cpp
     src/scene/node.cpp
     src/render/renderer.cpp
+    src/ui/ui.cpp
 )
 add_library(r4nkine::r4nkine ALIAS r4nkine)
 target_include_directories(r4nkine PUBLIC
@@ -58,9 +59,8 @@ endif()
 
 if(R4_BUILD_APPS)
     find_package(SDL2 CONFIG REQUIRED)
-    find_package(imgui CONFIG REQUIRED)
     add_executable(r4fly apps/r4fly/main.cpp apps/r4fly/gui.cpp)
-    target_link_libraries(r4fly PRIVATE r4nkine imgui::imgui
+    target_link_libraries(r4fly PRIVATE r4nkine
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
     # the viewer and the DLLs it needs (SDL2 on Windows), side by side
