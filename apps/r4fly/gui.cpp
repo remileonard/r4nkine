@@ -321,6 +321,8 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
                     what += " tex";
                 if (p.alpha == assets::AlphaMode::Blend)
                     what += " blend";
+                if (p.alpha == assets::AlphaMode::Additive)
+                    what += " additive";
                 if (p.decal)
                     what += " decal";
                 if (p.shading == assets::Shading::Unlit)

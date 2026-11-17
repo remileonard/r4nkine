@@ -39,7 +39,10 @@ enum class Shading {
     PaletteRamp,
 };
 
-enum class AlphaMode { Opaque, Mask, Blend };
+// Opaque; Mask: cut where alpha < alphaCutoff; Blend: mixed by alpha over
+// what is behind; Additive: added to what is behind (glows, the glass of the
+// 8-bit games). Blend and Additive are drawn after the opaque, far to near.
+enum class AlphaMode { Opaque, Mask, Blend, Additive };
 
 struct Material {
     std::string name;

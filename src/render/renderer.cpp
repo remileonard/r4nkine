@@ -212,7 +212,8 @@ bool Renderer::createShaders() {
 
 gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
     bool blend = m.alpha == assets::AlphaMode::Blend;
-    uint32_t key = (blend ? 1u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) |
+    bool additive = m.alpha == assets::AlphaMode::Additive;
+    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) |
                    (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8;
     auto it = pipelines_.find(key);
     if (it != pipelines_.end())
@@ -225,7 +226,7 @@ gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Pri
                                                            : gpu::Primitive::Triangles;
     bool tris = primitive == assets::Primitive::Triangles;
     d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::None : gpu::CullMode::Back;
-    d.blend = blend ? gpu::BlendMode::Alpha : gpu::BlendMode::Opaque;
+    d.blend = blend ? gpu::BlendMode::Alpha : additive ? gpu::BlendMode::Additive : gpu::BlendMode::Opaque;
     d.depthWrite = !blend && m.depthWrite;
     d.wireframe = wireframe_ && tris;
     if (m.decal) {
@@ -397,7 +398,8 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 |
                (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
-    (mat->params.alpha == assets::AlphaMode::Blend ? transparent_ : opaque_).push_back(item);
+    bool behind = mat->params.alpha == assets::AlphaMode::Blend || mat->params.alpha == assets::AlphaMode::Additive;
+    (behind ? transparent_ : opaque_).push_back(item);
     stats_.drawables++;
 }
 
