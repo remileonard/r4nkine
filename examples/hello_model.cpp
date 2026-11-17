@@ -52,7 +52,7 @@ int main(int argc, char **argv) {
         gui.message(what.c_str());
         win.cameraControls(bounds.radius * 20);
         if (gui.button("Reset View")) {
-            win.heading = 30, win.pitch = 25, win.roll = 0;
+            win.orbit.setAngles(30, 25, 0);
             win.distance = bounds.radius * 3;
         }
         gui.columns(2);

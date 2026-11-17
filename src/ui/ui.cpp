@@ -539,6 +539,39 @@ void Context::space(float pixels) {
 float Context::remainingHeight() const { return d->clip.y + d->clip.h - d->cursorY - kMargin; }
 
 Rect Context::next(float height) { return d->next(height); }
+
+void Context::beginCanvas(const char *id, Rect r) {
+    Impl &s = *d;
+    s.panelId = hashOf(id, 2166136261u);
+    s.clip = r;
+    s.setClip(true, r);
+    s.inPanel = true;
+}
+
+void Context::endCanvas() {
+    d->inPanel = false;
+    d->setClip(false, {});
+}
+
+bool Context::clickable(const void *id, Rect r) {
+    Impl &s = *d;
+    uint32_t h = hashOf("click", (uint32_t)(uintptr_t)id * 2654435761u ^ s.panelId);
+    if (s.hover(r))
+        s.panelRects.push_back(r); // the mouse is the GUI's there
+    return s.behave(h, r, true);
+}
+
+bool Context::hovered(Rect r) const { return d->hover(r); }
+
+void Context::line(float x0, float y0, float x1, float y1, Color c, float width) {
+    Impl &s = *d;
+    float dx = x1 - x0, dy = y1 - y0, l = std::sqrt(dx * dx + dy * dy);
+    if (l <= 0)
+        return;
+    float nx = -dy / l * width * 0.5f, ny = dx / l * width * 0.5f;
+    s.triangle(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c);
+    s.triangle(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c);
+}
 void Context::fill(Rect r, Color c) { d->fill(r, c); }
 void Context::bevel(Rect r, bool sunken) { d->bevel(r, sunken); }
 float Context::text(float x, float y, const char *s, Color c, Font font, float maxWidth) {

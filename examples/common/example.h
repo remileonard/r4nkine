@@ -7,6 +7,7 @@
 #pragma once
 
 #include "r4/gpu/device.h"
+#include "r4/render/orbit.h"
 #include "r4/render/renderer.h"
 #include "r4/ui/ui.h"
 
@@ -28,10 +29,11 @@ struct Window {
     r4::ui::Input input; // the mouse for the GUI, in points
     int width = 0, height = 0;          // the framebuffer, in pixels
     int pointWidth = 0, pointHeight = 0; // the window, in points (the mouse)
-    // the camera: about the target, at a distance; yaw (heading), pitch and
-    // roll in degrees
+    // the camera: about the target, at a distance; the mouse turns it in the
+    // axes of the screen (r4::render::Orbit)
     r4::Vec3 target{0, 0, 0};
-    float distance = 10, heading = 30, pitch = 25, roll = 0;
+    float distance = 10;
+    r4::render::Orbit orbit;
     bool quit = false;
     int frames = -1; // -frames N: quit after N frames (the tests)
 
@@ -109,11 +111,8 @@ struct Window {
                 continue;
             if (mouseTaken && e.type == SDL_MOUSEWHEEL)
                 continue;
-            if (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_LMASK)) {
-                heading -= e.motion.xrel * 0.4f;
-                heading -= 360 * std::floor((heading + 180) / 360); // in [-180, 180)
-                pitch = std::min(89.0f, std::max(-89.0f, pitch + e.motion.yrel * 0.4f));
-            }
+            if (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_LMASK))
+                orbit.turn(e.motion.xrel * 0.4f, e.motion.yrel * 0.4f); // across: yaw, up and down: pitch
             if (e.type == SDL_MOUSEWHEEL)
                 distance *= std::exp(-e.wheel.y * 0.12f);
         }
@@ -141,21 +140,20 @@ struct Window {
     }
     // the sliders of the camera, in the panel being built
     void cameraControls(float maxDistance) {
-        gui->slider("Yaw (Heading)", heading, -180, 180, "%.0f");
-        gui->slider("Pitch", pitch, -89, 89, "%.0f");
-        gui->slider("Roll", roll, -180, 180, "%.0f");
+        float heading, pitch, roll;
+        orbit.angles(heading, pitch, roll);
+        bool turned = gui->slider("Yaw (Heading)", heading, -180, 180, "%.0f");
+        turned |= gui->slider("Pitch", pitch, -89, 89, "%.0f");
+        turned |= gui->slider("Roll", roll, -180, 180, "%.0f");
+        if (turned)
+            orbit.setAngles(heading, pitch, roll);
         gui->slider("Distance", distance, maxDistance * 0.01f, maxDistance, "%.1f", true);
     }
 
-    // the eye of the camera
-    r4::Vec3 eye() const {
-        float h = r4::radians(heading), p = r4::radians(pitch);
-        return target + r4::Vec3{std::cos(p) * std::sin(h), -std::cos(p) * std::cos(h), std::sin(p)} * distance;
-    }
-    void apply(r4::render::Camera &camera, float znear, float zfar) const {
-        r4::Vec3 forward = r4::normalize(target - eye());
-        camera.lookAt(eye(), target, r4::transformVector(r4::rotate(r4::radians(roll), forward), {0, 0, 1}));
-        camera.perspective(45, height > 0 ? (float)width / height : 1, znear, zfar);
+    void apply(r4::render::Camera &camera, float znear, float zfar) {
+        orbit.target = target;
+        orbit.distance = distance;
+        orbit.apply(camera, 45, height > 0 ? (float)width / height : 1, znear, zfar);
     }
 
     void swap() { SDL_GL_SwapWindow(window); }

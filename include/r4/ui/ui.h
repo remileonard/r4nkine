@@ -122,6 +122,14 @@ public:
     bool treeRow(const TreeRow &row, bool &open, bool &visible);
 
     // --- drawing, for custom widgets --------------------------------------------
+    // a canvas: a rectangle of the window to draw in freely, clipped, without
+    // a background; the mouse is the GUI's only over its clickable parts
+    void beginCanvas(const char *id, Rect r);
+    void endCanvas();
+    // true when r is clicked (in a panel or a canvas); id: anything unique
+    bool clickable(const void *id, Rect r);
+    bool hovered(Rect r) const;
+    void line(float x0, float y0, float x1, float y1, Color c, float width = 1);
     Rect next(float height); // the rectangle of the next widget
     void fill(Rect r, Color c);
     void bevel(Rect r, bool sunken);

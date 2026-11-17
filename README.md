@@ -54,15 +54,20 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   `r4::gpu`, so it needs no other library. Its text uses glyphs baked from
   Liberation Sans (SIL Open Font License, `src/ui/OFL.txt`).
 - `r4fly`: the viewer, with its panels in `r4::ui`:
-  - **mouse**: the left button turns about the center, the wheel zooms,
-    the right button moves the center with the mouse; over a panel, the
-    wheel scrolls it;
+  - **mouse**: the left button turns the view as the trackball of perfly
+    (across: yaw, up and down: pitch, in the axes of the screen; or a
+    turntable about the vertical, never rolling), the wheel zooms, the
+    right button moves the center with the mouse; over a panel, the wheel
+    scrolls it;
   - **left panel**: the camera (field of view, yaw, pitch and roll,
     distance, clip planes, front/side/top views), the lighting (headlight or a sun,
     colors), the environment (background, fog), the rendering (filled or
     lines, textures, the state mask bit by bit), the culling (view frustum,
     freezing it to look at it from outside, LOD scale) and the
     optimisations (sorting by state, instancing, vertical sync);
+  - **show tree**: the graph drawn over the view as perfly did, boxes
+    and links level by level, with its pans, scale and depth; a click
+    selects a node;
   - **scene graph**: the tree of the nodes with their types, a light to
     hide each node, and the selected node's mask, state filter, matrix,
     bounds (drawn in the view), drawables, switch value, LOD ranges,

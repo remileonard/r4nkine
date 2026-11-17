@@ -325,13 +325,9 @@ int main(int argc, char **argv) {
                 if (!app.sceneDrag)
                     break;
                 if (e.motion.state & SDL_BUTTON_LMASK) {
-                    // the left button turns about the center
-                    app.ball.heading -= e.motion.xrel * 0.4f;
-                    if (app.ball.heading > 180)
-                        app.ball.heading -= 360;
-                    if (app.ball.heading < -180)
-                        app.ball.heading += 360;
-                    app.ball.pitch = std::min(89.0f, std::max(-89.0f, app.ball.pitch + e.motion.yrel * 0.4f));
+                    // the left button turns the view in the axes of the screen: across, the
+                    // yaw; up and down, the pitch
+                    app.ball.turn(e.motion.xrel * 0.4f, e.motion.yrel * 0.4f);
                 } else if (e.motion.state & SDL_BUTTON_RMASK) {
                     // the right button moves the center with the mouse
                     app.ball.move((float)e.motion.xrel, (float)e.motion.yrel, wh);

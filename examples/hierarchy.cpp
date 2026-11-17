@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
     };
 
     win.distance = 28;
-    win.pitch = 20;
+    win.orbit.setAngles(30, 20, 0);
     render::Camera camera;
     float t = 0, speed = 0.4f, bank = 25, lodFar = 120;
     bool follow = true;

@@ -4,6 +4,7 @@
 
 #include "r4/assets/model.h"
 #include "r4/gpu/device.h"
+#include "r4/render/orbit.h"
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 #include "r4/ui/ui.h"
@@ -25,48 +26,59 @@ using namespace r4;
 // the right button moves the center in the plane of the view
 struct Trackball {
     Vec3 center;
-    // heading: the yaw about Z; pitch: up and down; roll: about the line of sight
-    float radius = 1, distance = 3, heading = 30, pitch = 25, roll = 0;
+    float radius = 1, distance = 3;
+    // the sliders: heading (yaw about Z), pitch (the eye above), roll (about
+    // the line of sight), read from the orbit and written back when moved
+    float heading = 30, pitch = 25, roll = 0;
     Vec3 pan;
     float fov = 45;
     bool autoClip = true;
     float znear = 0.1f, zfar = 1000;
+    render::Orbit orbit; // the orientation
+    // the mouse: in the axes of the screen (trackball, as perfly), or about
+    // the vertical of the world (turntable: never a roll)
+    bool turntable = false;
 
     void reset(const Sphere &s, float h, float p, float zoom) {
         center = s.empty() ? Vec3{} : s.center;
         radius = s.empty() || s.radius <= 0 ? 1 : s.radius;
         distance = radius * 2.6f / (zoom > 0 ? zoom : 1);
-        heading = h;
-        pitch = p;
-        roll = 0;
+        setAngles(h, p, 0);
         pan = {};
     }
-    Vec3 target() const { return center + pan; }
-    Vec3 eye() const {
-        float h = radians(heading), p = radians(pitch);
-        return target() + Vec3{std::cos(p) * std::sin(h), -std::cos(p) * std::cos(h), std::sin(p)} * distance;
+    void setAngles(float h, float p, float r) {
+        orbit.setAngles(h, p, r);
+        readAngles();
     }
+    void readAngles() { orbit.angles(heading, pitch, roll); }
+    void writeAngles() { orbit.setAngles(heading, pitch, roll); }
+    // the left button: dx turns about the up of the screen, dy about its right
+    void turn(float dx, float dy) {
+        if (turntable) {
+            heading -= dx;
+            heading -= 360 * std::floor((heading + 180) / 360);
+            pitch = std::min(89.9f, std::max(-89.9f, pitch + dy));
+            writeAngles();
+        } else {
+            orbit.turn(dx, dy);
+            readAngles();
+        }
+    }
+    Vec3 target() const { return center + pan; }
+    Vec3 eye() const { return target() - orbit.forward() * distance; }
     void apply(render::Camera &cam, float aspect) {
-        // the roll turns the up of the camera about the line of sight
-        Vec3 forward = normalize(target() - eye());
-        Vec3 up = transformVector(rotate(radians(roll), forward), {0, 0, 1});
-        cam.lookAt(eye(), target(), up);
+        orbit.target = target();
+        orbit.distance = distance;
         if (autoClip) {
             znear = std::max(distance - radius * 2, distance * 0.01f);
             zfar = distance + radius * 4;
         }
-        cam.perspective(fov, aspect, znear, zfar);
+        orbit.apply(cam, fov, aspect, znear, zfar);
     }
     // the right button: the center moves with the mouse, in the plane of the view
     void move(float dx, float dy, int viewHeight) {
-        float h = radians(heading), p = radians(pitch);
-        Vec3 right0{std::cos(h), std::sin(h), 0};
-        Vec3 up0{-std::sin(p) * std::sin(h), std::sin(p) * std::cos(h), std::cos(p)};
-        // the axes of the screen, turned by the roll
-        float r = radians(roll), cr = std::cos(r), sr = std::sin(r);
-        Vec3 right = right0 * cr + up0 * sr, up = up0 * cr - right0 * sr;
         float k = 2 * distance * std::tan(radians(fov) * 0.5f) / std::max(viewHeight, 1);
-        pan = pan - right * (dx * k) + up * (dy * k);
+        pan = pan - orbit.right() * (dx * k) + orbit.up() * (dy * k);
     }
 };
 
@@ -100,6 +112,10 @@ struct App {
     bool sceneDrag = false;   // a drag that started in the view
     bool quit = false;
     bool showGui = true, showGraph = true, showPerf = true;
+    // the tree drawn over the view, as the "Show Tree" of perfly
+    bool showTree = false, openTree = false;
+    float treePanX = 0, treePanY = 0, treeScale = -1; // < 0: fitted to the view
+    float treeDepth = 6;                              // the levels drawn
     // the open sections of the panel, the open nodes of the tree
     bool openCamera = true, openLight = false, openEnv = false, openRender = false, openCull = false,
          openOptim = false;

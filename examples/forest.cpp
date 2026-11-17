@@ -60,7 +60,7 @@ int main(int argc, char **argv) {
     root->addChild(forest);
 
     win.distance = 60;
-    win.pitch = 12;
+    win.orbit.setAngles(30, 12, 0);
     render::Camera camera;
     render::RenderOptions &o = renderer.options();
     render::Environment &env = renderer.environment();

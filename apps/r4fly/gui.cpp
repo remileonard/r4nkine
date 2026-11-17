@@ -91,24 +91,45 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     g.toggle("Scene Graph", app.showGraph);
     g.toggle("Stats", app.showPerf);
     g.columns(1);
+    if (g.section("Show Tree", app.openTree)) {
+        g.toggle("Show Tree", app.showTree);
+        g.slider("Show Tree X Pan", app.treePanX, -1, 1, "%.3f");
+        g.slider("Show Tree Y Pan", app.treePanY, -1, 1, "%.3f");
+        if (app.treeScale > 0)
+            g.slider("Show Tree Scale", app.treeScale, 0.02f, 4, "%.2f", true);
+        if (g.slider("Show Tree Depth", app.treeDepth, 1, 20, "%.0f"))
+            app.treeScale = -1;
+        if (g.button("Fit the Tree")) {
+            app.treePanX = app.treePanY = 0;
+            app.treeScale = -1; // fitted at the next drawing
+        }
+    }
 
     if (g.section("Camera", app.openCamera)) {
         g.slider("Field of View", b.fov, 10, 120, "%.1f");
-        g.slider("Yaw (Heading)", b.heading, -180, 180, "%.1f");
-        g.slider("Pitch", b.pitch, -89, 89, "%.1f");
-        g.slider("Roll", b.roll, -180, 180, "%.1f");
+        bool turned = g.slider("Yaw (Heading)", b.heading, -180, 180, "%.1f");
+        turned |= g.slider("Pitch", b.pitch, -89, 89, "%.1f");
+        turned |= g.slider("Roll", b.roll, -180, 180, "%.1f");
+        if (turned)
+            b.writeAngles();
+        int mode = b.turntable ? 1 : 0;
+        if (g.menu("Mouse", mode, {"Trackball (screen axes)", "Turntable (no roll)"}))
+            b.turntable = mode == 1;
         g.slider("Distance", b.distance, b.radius * 0.01f, b.radius * 50, "%.3g", true);
         g.toggle("Automatic Clip Planes", b.autoClip);
         g.slider("Near Clip", b.znear, b.radius * 1e-4f, b.radius * 10, "%.4g", true, !b.autoClip);
         g.slider("Far Clip", b.zfar, b.radius * 0.1f, b.radius * 1000, "%.4g", true, !b.autoClip);
         g.columns(4);
-        if (g.button("Front")) { b.heading = 0; b.pitch = 0; b.roll = 0; }
-        if (g.button("Side")) { b.heading = 90; b.pitch = 0; b.roll = 0; }
-        if (g.button("Top")) { b.heading = 0; b.pitch = 89; b.roll = 0; }
-        if (g.button("3/4")) { b.heading = 30; b.pitch = 25; b.roll = 0; }
-        g.columns(1);
+        if (g.button("Front")) b.setAngles(0, 0, 0);
+        if (g.button("Side")) b.setAngles(90, 0, 0);
+        if (g.button("Top")) b.setAngles(0, 89.9f, 0);
+        if (g.button("3/4")) b.setAngles(30, 25, 0);
+        g.columns(2);
+        if (g.button("Level (No Roll)"))
+            b.setAngles(b.heading, b.pitch, 0);
         if (g.button("Recenter"))
             b.pan = {};
+        g.columns(1);
     }
     if (g.section("Lighting", app.openLight)) {
         g.columns(2);
@@ -316,6 +337,97 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
     g.endPanel();
 }
 
+// --- the tree drawn over the view, as perfly ---------------------------------------
+
+// the nodes of the tree as they are drawn, down to the depth asked: the
+// leaves side by side, each parent over its children
+struct TreeBox {
+    scene::Node *node;
+    int depth;
+    float x; // in slots
+    int parent; // index, -1 for the root
+};
+
+float layoutTree(App &app, scene::Node &n, int depth, int parent, float &nextLeaf, std::vector<TreeBox> &out) {
+    int me = (int)out.size();
+    out.push_back({&n, depth, 0, parent});
+    if (depth + 1 >= (int)app.treeDepth || n.children().empty() || out.size() > 20000) {
+        out[me].x = nextLeaf++;
+        return out[me].x;
+    }
+    float first = 0, last = 0;
+    for (size_t i = 0; i < n.children().size(); i++) {
+        float x = layoutTree(app, *n.children()[i], depth + 1, me, nextLeaf, out);
+        if (i == 0)
+            first = x;
+        last = x;
+    }
+    out[me].x = (first + last) * 0.5f;
+    return out[me].x;
+}
+
+void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
+    std::vector<TreeBox> boxes;
+    float leaves = 0;
+    layoutTree(app, *app.models, 0, -1, leaves, boxes);
+    int depth = 0;
+    for (const TreeBox &b : boxes)
+        depth = std::max(depth, b.depth);
+    // the sizes at scale 1, in points; a scale < 0 asks to fit the area
+    const float bw = 112, bh = 30, sx = 124, sy = 62;
+    if (app.treeScale < 0) {
+        float fit = std::min(area.w / (leaves * sx + 20), area.h / ((depth + 1) * sy + 20));
+        app.treeScale = std::max(0.1f, std::min(fit, 2.0f));
+    }
+    float k = app.treeScale;
+    float width = leaves * sx * k, height = (depth + 1) * sy * k;
+    // the pans move the tree by its own size
+    float ox = area.x + (area.w - width) * 0.5f - app.treePanX * width;
+    float oy = area.y + 16 - app.treePanY * height;
+    g.beginCanvas("tree", area);
+    g.fill(area, ui::Color{0, 0, 0, 120});
+    auto boxRect = [&](const TreeBox &b) {
+        return ui::Rect{ox + (b.x * sx + (sx - bw) * 0.5f) * k, oy + b.depth * sy * k, bw * k, bh * k};
+    };
+    // the links, then the boxes over them
+    for (const TreeBox &b : boxes)
+        if (b.parent >= 0) {
+            ui::Rect p = boxRect(boxes[b.parent]), c = boxRect(b);
+            g.line(p.x + p.w * 0.5f, p.y + p.h, c.x + c.w * 0.5f, c.y, ui::Color::rgb(0.85f, 0.85f, 0.6f),
+                   std::max(1.0f, k));
+        }
+    for (const TreeBox &b : boxes) {
+        ui::Rect r = boxRect(b);
+        if (r.x > area.x + area.w || r.x + r.w < area.x || r.y > area.y + area.h || r.y + r.h < area.y)
+            continue;
+        bool selected = app.selected == b.node;
+        bool hidden = app.hiddenMasks.count(b.node) > 0;
+        if (g.clickable(b.node, r))
+            app.selected = selected ? nullptr : b.node;
+        ui::Color face = selected ? ui::Color::rgb(0.35f, 0.45f, 0.85f) : typeColor(b.node->type());
+        if (hidden)
+            face = ui::Color::rgb(0.45f, 0.45f, 0.48f);
+        g.fill(r, face);
+        g.bevel(r, selected);
+        if (k >= 0.45f) {
+            ui::Color ink = selected ? ui::Color::rgb(1, 1, 1) : ui::Color::rgb(0, 0, 0.1f);
+            ui::Font small = k >= 0.8f ? ui::Font::Regular : ui::Font::Small;
+            std::string name = b.node->name().empty() ? "-" : b.node->name();
+            if (r.h >= 26) {
+                // the type over the name
+                g.text(r.x + 4, r.y + 1, typeName(b.node->type()), ink, ui::Font::Small, r.w - 8);
+                g.text(r.x + 4, r.y + r.h * 0.45f, name.c_str(), ink, small, r.w - 8);
+            } else {
+                g.text(r.x + 3, r.y + (r.h - 12) * 0.5f, name.c_str(), ink, ui::Font::Small, r.w - 6);
+            }
+        }
+    }
+    char info[96];
+    std::snprintf(info, sizeof info, "%zu nodes on %d levels: click one to select it", boxes.size(), depth + 1);
+    g.text(area.x + 6, area.y + 2, info, ui::Color::rgb(1, 1, 0.5f), ui::Font::Small);
+    g.endCanvas();
+}
+
 // --- the performances -------------------------------------------------------------
 
 void perfPanel(App &app, ui::Context &g, ui::Rect r) {
@@ -378,6 +490,8 @@ void guiFrame(App &app, int width, int height, float pixelScale) {
         }
         if (app.showPerf)
             perfPanel(app, g, {x, h - perfH, kRightW, perfH});
+        if (app.showTree)
+            treeDiagram(app, g, sceneViewport(app, width, height));
     }
     g.endFrame();
 }
