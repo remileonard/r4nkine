@@ -8,7 +8,8 @@ jobs:
   # the library and the tests; the viewer needs the X11/Wayland development
   # packages for the SDL2 of vcpkg, it is built on Windows
   linux:
-    runs-on: ubuntu-latest
+    # the GCC 11 of the archives: the oldest compiler the project builds with
+    runs-on: ubuntu-22.04
     env:
       VCPKG_ROOT: ${{ github.workspace }}/vcpkg
     steps:
