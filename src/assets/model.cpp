@@ -1,5 +1,7 @@
 #include "r4/assets/model.h"
 
+#include "r4/axes.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -57,7 +59,7 @@ void Mesh::computeNormals(float creaseDegrees) {
                 if (u == t || dot(dir[t], dir[u]) >= minCos)
                     n += area[u];
             float l = length(n);
-            n = l > 0 ? n / l : (length(dir[t]) > 0 ? dir[t] : Vec3(0, 0, 1));
+            n = l > 0 ? n / l : (length(dir[t]) > 0 ? dir[t] : axes::kUp);
             std::array<int32_t, 3> q = {(int32_t)std::lround(n.x * 4096), (int32_t)std::lround(n.y * 4096),
                                         (int32_t)std::lround(n.z * 4096)};
             auto it = made.find({vi, q});

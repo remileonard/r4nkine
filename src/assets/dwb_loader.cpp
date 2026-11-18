@@ -17,6 +17,7 @@
 // The textures of the demo were encrypted (SGI images with 4 at 0x6c): their
 // pixels are xor'ed with a table of 1633 seeds, decrypted here (when the
 // image is not already in clear).
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #include <cstdio>
@@ -483,7 +484,7 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     }
     model->nodes[0].children = {content};
     if (yUp)
-        model->nodes[0].local = rotate(radians(90), {1, 0, 0});
+        model->nodes[0].local = axes::fromYUpMatrix();
     return model;
 }
 

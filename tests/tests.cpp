@@ -1,6 +1,8 @@
 // tests.cpp - the tests of R4nkine that need no GPU: math, culling, scene
 // graph bounds, loaders. Usage: r4_tests <the tests/data folder>
 #include "r4/assets/model.h"
+#include "r4/axes.h"
+#include "r4/render/orbit.h"
 #include "r4/math.h"
 #include "r4/raster/raster.h"
 #include "r4/render/renderer.h"
@@ -383,9 +385,39 @@ static void testRaster() {
     CHECK(out[0] == 255 && out[3] == 255 && out[7] == 0);
 }
 
+// the axes of R4nkine and their conversions (r4/axes.h)
+static void testAxes() {
+    using namespace r4::axes;
+    // Y-up: the up becomes kUp, the forward (-Z) kForward, the right stays
+    CHECK(near(fromYUp({0, 1, 0}), kUp));
+    CHECK(near(fromYUp({0, 0, -1}), kForward));
+    CHECK(near(fromYUp({1, 0, 0}), kRight));
+    Vec3 p{1.5f, -2.0f, 3.25f};
+    CHECK(near(toYUp(fromYUp(p)), p));
+    // the matrix and the function agree, and keep the handedness
+    CHECK(near(transformPoint(fromYUpMatrix(), p), fromYUp(p)));
+    CHECK(near(transformPoint(toYUpMatrix(), fromYUp(p)), p));
+    CHECK(near(dot(cross(kRight, kForward), kUp), 1));
+    // a Y-up transform, in R4nkine's axes: a turn about the Y-up up is a
+    // turn about kUp
+    Mat4 yUpTurn = rotate(radians(30.0f), {0, 1, 0});
+    CHECK(near(transformPoint(transformFromYUp(yUpTurn), kForward),
+               transformPoint(rotate(radians(30.0f), kUp), kForward)));
+    // the angles
+    CHECK(near(headingOf(kForward), 0) && near(headingOf(-kRight), 90) && near(headingOf(kRight), -90));
+    CHECK(near(pitchOf(kUp), 90) && near(pitchOf(kForward), 0) && near(heightOf({4, 5, 6}), 6));
+    // the orbit gives back its angles
+    render::Orbit orbit;
+    orbit.setAngles(-140, 20, 10);
+    float h, pi, r;
+    orbit.angles(h, pi, r);
+    CHECK(near(h, -140, 1e-3f) && near(pi, 20, 1e-3f) && near(r, 10, 1e-3f));
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
+    testAxes();
     testBounds();
     testScene();
     testLoaders(dir);

@@ -6,6 +6,8 @@
 //
 #include "R4Bridge.h"
 
+#include "r4/axes.h"
+
 #include "../realspace/RSEntity.h"
 #include "../realspace/RSImage.h"
 #include "../engine/Texture.h"
@@ -57,7 +59,8 @@ uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &range
 // 90 degrees about X that keeps the handedness (and the faces' winding),
 // or libRealSpace's own (Y up), for a world turned once at its root
 r4::Vec3 toAxes(const Vector3D &v, Axes axes) {
-    return axes == Axes::R4 ? r4::Vec3{v.x, -v.z, v.y} : r4::Vec3{v.x, v.y, v.z};
+    // libRealSpace is Y-up as OpenGL: r4::axes::fromYUp, (x, y, z) -> (x, -z, y)
+    return axes == Axes::R4 ? r4::axes::fromYUp({v.x, v.y, v.z}) : r4::Vec3{v.x, v.y, v.z};
 }
 
 } // namespace
@@ -117,7 +120,7 @@ void bleedClearTexels(r4::assets::Image &img) {
     }
 }
 
-r4::Mat4 realSpaceToR4() { return r4::rotate(r4::radians(90.0f), {1, 0, 0}); }
+r4::Mat4 realSpaceToR4() { return r4::axes::fromYUpMatrix(); }
 
 std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palette,
                                            const std::vector<PaletteRange> &ranges, Lighting lighting, Axes axes) {

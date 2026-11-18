@@ -2,6 +2,7 @@
 // SGI demos): a header of big-endian ints (magic 0x5423, the number of
 // points, a colors field), then for each point its normal and its position
 // (3 big-endian floats each). Every 4 points make a quadrilateral. Y-up.
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #include <cstdio>
@@ -67,7 +68,7 @@ std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error) 
     model->meshes.push_back(std::move(mesh));
     Node root;
     root.name = path;
-    root.local = rotate(radians(90), {1, 0, 0});
+    root.local = axes::fromYUpMatrix();
     root.meshes.push_back(0);
     model->nodes.push_back(root);
     return model;

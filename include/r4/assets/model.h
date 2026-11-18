@@ -1,8 +1,9 @@
 // r4/assets/model.h - the neutral format every loader produces.
 //
 // The space of R4nkine is Z-up, as Performer and the flight simulators: X
-// to the right, Y forward, Z up, in meters. The loaders of Y-up formats (OBJ,
-// glTF) turn their root node; the meshes keep the coordinates of the file.
+// to the right, Y forward, Z up, in meters (r4/axes.h). The loaders of Y-up
+// formats (OBJ, glTF) turn their root node by axes::fromYUpMatrix(); the
+// meshes keep the coordinates of the file.
 //
 // A model is a tree of nodes holding meshes; meshes reference materials,
 // materials reference images. Nothing here touches the GPU: r4::scene builds

@@ -7,6 +7,7 @@
 // along its +Y, with +X to the right and +Z up, as everything in R4nkine.
 #pragma once
 
+#include "r4/axes.h"
 #include "r4/math.h"
 #include "r4/render/renderer.h"
 
@@ -23,35 +24,35 @@ public:
 
     Orbit() { setAngles(30, 25, 0); }
 
-    // heading: degrees about Z; pitch: degrees of the eye above the target;
+    // heading: degrees about the up (axes::kUp); pitch: degrees of the eye above the target;
     // roll: degrees about the line of sight
     void setAngles(float heading, float pitch, float roll) {
-        q_ = glm::angleAxis(radians(heading), Vec3{0, 0, 1}) * glm::angleAxis(radians(-pitch), Vec3{1, 0, 0}) *
-             glm::angleAxis(radians(roll), Vec3{0, 1, 0});
+        q_ = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight) *
+             glm::angleAxis(radians(roll), axes::kForward);
     }
     void angles(float &heading, float &pitch, float &roll) const {
         Vec3 f = forward(), u = up();
-        pitch = degrees(std::asin(std::max(-1.0f, std::min(1.0f, -f.z))));
-        heading = degrees(std::atan2(-f.x, f.y));
+        pitch = -axes::pitchOf(f); // the eye above the target: the sight goes down
+        heading = axes::headingOf(f);
         // the up and the right without roll, for that heading and pitch
         glm::quat base =
-            glm::angleAxis(radians(heading), Vec3{0, 0, 1}) * glm::angleAxis(radians(-pitch), Vec3{1, 0, 0});
-        Vec3 u0 = base * Vec3{0, 0, 1}, r0 = base * Vec3{1, 0, 0};
+            glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight);
+        Vec3 u0 = base * axes::kUp, r0 = base * axes::kRight;
         roll = degrees(std::atan2(dot(u, r0), dot(u, u0)));
     }
 
     // the mouse: dx turns about the up of the screen (yaw), dy about its
     // right (pitch); degrees
     void turn(float dx, float dy) {
-        q_ = glm::normalize(q_ * glm::angleAxis(radians(-dx), Vec3{0, 0, 1}) *
-                            glm::angleAxis(radians(-dy), Vec3{1, 0, 0}));
+        q_ = glm::normalize(q_ * glm::angleAxis(radians(-dx), axes::kUp) *
+                            glm::angleAxis(radians(-dy), axes::kRight));
     }
     // the target moved in the plane of the screen, by world units
     void pan(float right, float up) { target += this->right() * right + this->up() * up; }
 
-    Vec3 forward() const { return q_ * Vec3{0, 1, 0}; }
-    Vec3 right() const { return q_ * Vec3{1, 0, 0}; }
-    Vec3 up() const { return q_ * Vec3{0, 0, 1}; }
+    Vec3 forward() const { return q_ * axes::kForward; }
+    Vec3 right() const { return q_ * axes::kRight; }
+    Vec3 up() const { return q_ * axes::kUp; }
     Vec3 eye() const { return target - forward() * distance; }
 
     void apply(Camera &camera, float fovyDeg, float aspect, float znear, float zfar) const {

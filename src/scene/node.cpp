@@ -1,5 +1,7 @@
 #include "r4/scene/node.h"
 
+#include "r4/axes.h"
+
 #include "r4/render/renderer.h"
 
 #include <algorithm>
@@ -78,14 +80,15 @@ Sphere Geode::contentBounds() const {
 }
 
 Mat4 Billboard::rotationFor(Vec3 eye) const {
-    // -Y turned towards the eye: about Z by atan2(x, -y), then for a point
-    // billboard about X by the elevation
-    float h = std::atan2(eye.x, -eye.y);
-    Mat4 r = rotate(h, {0, 0, 1});
+    // -forward turned towards the eye: about the up by its heading, then for
+    // a point billboard about the right by its elevation
+    float x = dot(eye, axes::kRight), y = dot(eye, axes::kForward), z = axes::heightOf(eye);
+    float h = std::atan2(x, -y);
+    Mat4 r = rotate(h, axes::kUp);
     if (mode_ == Mode::Point) {
-        float flat = std::sqrt(eye.x * eye.x + eye.y * eye.y);
-        float e = std::atan2(eye.z, flat);
-        r = r * rotate(-e, {1, 0, 0});
+        float flat = std::sqrt(x * x + y * y);
+        float e = std::atan2(z, flat);
+        r = r * rotate(-e, axes::kRight);
     }
     return r;
 }

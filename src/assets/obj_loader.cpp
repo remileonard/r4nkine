@@ -4,6 +4,7 @@
 // groups and usemtl. One mesh per material: the vertices with the same
 // position/uv/normal triple are shared. The old OBJ of the SGI demos often
 // have no normals: smooth ones are made.
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #include <cstdio>
@@ -260,7 +261,7 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
     Node root;
     root.name = path;
     // OBJ is Y-up, R4nkine is Z-up: the root turns +Y into +Z
-    root.local = rotate(radians(90), {1, 0, 0});
+    root.local = axes::fromYUpMatrix();
     for (int m : order) {
         Builder &b = builders[m];
         if (b.mesh.indices.empty())

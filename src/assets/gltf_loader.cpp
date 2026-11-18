@@ -8,6 +8,7 @@
 // metallic-roughness model is approximated by Blinn-Phong until the PBR
 // shading comes. The images may be files, data URIs or buffer views. glTF
 // is Y-up: the root turns +Y into +Z.
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #define CGLTF_IMPLEMENTATION
@@ -281,7 +282,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     // the nodes: node 0 the root (Y-up turned to Z-up), glTF node i at 1 + i
     model->nodes.resize(1 + data->nodes_count);
     model->nodes[0].name = path;
-    model->nodes[0].local = rotate(radians(90), {1, 0, 0});
+    model->nodes[0].local = axes::fromYUpMatrix();
     for (size_t i = 0; i < data->nodes_count; i++) {
         const cgltf_node &gn = data->nodes[i];
         Node &n = model->nodes[1 + i];

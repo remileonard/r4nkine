@@ -17,6 +17,7 @@
 // default state of the model is body, gear and weapons. The modebits: 0x1
 // back faces culled (two-sided otherwise), 0x2 transparent, 0x4 no depth
 // writes. The objects of flight are Y-up.
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #include <cmath>
@@ -625,7 +626,7 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
     // node 0: the root turning Y-up into Z-up; branch i: node 1 + i
     model->nodes.resize(1 + L.branches.size());
     model->nodes[0].name = path;
-    model->nodes[0].local = rotate(radians(90), {1, 0, 0});
+    model->nodes[0].local = axes::fromYUpMatrix();
     model->nodes[0].children.push_back(1);
     for (size_t i = 0; i < L.branches.size(); i++) {
         const Branch &b = L.branches[i];

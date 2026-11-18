@@ -9,6 +9,7 @@
 // in one instanced draw (a forest of one tree model is a few draw calls).
 #pragma once
 
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 #include "r4/gpu/device.h"
 #include "r4/math.h"
@@ -43,7 +44,7 @@ struct Camera {
     Mat4 view, projection;
     uint32_t mask = 0xffffffffu;
     float znear = 0.1f, zfar = 1000.0f;
-    void lookAt(Vec3 eye, Vec3 center, Vec3 up = {0, 0, 1}) {
+    void lookAt(Vec3 eye, Vec3 center, Vec3 up = axes::kUp) {
         position = eye;
         view = glm::lookAt(eye, center, up);
     }

@@ -21,6 +21,7 @@
 // loaded from the folder of the model; NURBS surfaces are tessellated
 // (their trimming curves are ignored); the texture generation (contours,
 // sphere maps) is not reproduced. The objects are Y-up.
+#include "r4/axes.h"
 #include "r4/assets/model.h"
 
 #include <cctype>
@@ -1054,7 +1055,7 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     // ambient and diffuse as lmcolor(LMC_AD), the faces are two-sided
     Node root;
     root.name = path;
-    root.local = rotate(radians(90), {1, 0, 0});
+    root.local = axes::fromYUpMatrix();
     std::map<std::tuple<int, bool, bool>, int> materials;
     for (auto &[key, mesh] : rec.meshes) {
         auto [texture, lit, prim, sphere] = key;

@@ -33,8 +33,9 @@ struct Lighting {
 // turned at once by realSpaceToR4() at its root.
 enum class Axes { R4, RealSpace };
 
-// libRealSpace's axes (Y up) to R4nkine's (Z up): (x, y, z) -> (x, -z, y),
-// a turn of 90 degrees about X. The only place the two meet.
+// libRealSpace's axes (Y up, as OpenGL) to R4nkine's (Z up):
+// r4::axes::fromYUpMatrix(), (x, y, z) -> (x, -z, y), a turn of 90 degrees
+// about X. The only place the two meet.
 r4::Mat4 realSpaceToR4();
 
 // The table of the shades of the palette, as SCRenderer::shadeAlongRamp

@@ -62,9 +62,19 @@ OpenGL functions are loaded at run time.
 
 ## Conventions
 
-- **Space**: Z-up, as in Performer and flight simulators. X is right, Y is
-  forward, Z is up, and units are meters. The loaders for Y-up formats (OBJ,
-  glTF) rotate their root node.
+- **Space**: right-handed and Z-up, as in Performer, OpenFlight, Vega,
+  OpenSceneGraph, VulkanSceneGraph and the flight simulators. X is right, Y
+  is forward, Z is up, and units are meters. The axes are named in one place,
+  `r4/axes.h` (`axes::kRight`, `kForward`, `kUp`, `headingOf`, `pitchOf`,
+  `heightOf`). The code names them instead of writing `{0, 0, 1}`, so the
+  places that depend on the convention are exactly the users of that header.
+- **One convention inside, a conversion at each border**: a Y-up source (OBJ,
+  glTF, the gobj and YAODL of the SGI demos, a game whose code is Y-up such as
+  libRealSpace, the tracking space of OpenXR) is turned once by
+  `axes::fromYUpMatrix()`, at the root of what it brings (`transformFromYUp`
+  for a single transform). Nothing else converts. Both conventions are
+  right-handed: the turn keeps the winding of the faces, and it costs nothing
+  at run time (one matrix, or once per vertex at loading).
 - **Matrices**: column-major, `p' = M * p`, with OpenGL clip space for the
   GL backend.
 - **Images**: rows start at the bottom (OpenGL order), 8 bits per channel.
