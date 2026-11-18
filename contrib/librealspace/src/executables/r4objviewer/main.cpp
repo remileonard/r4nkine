@@ -496,6 +496,7 @@ int main(int argc, char **argv) {
         r4::ui::Input input;
         bool quit = false, sceneDrag = false, wireframe = false;
         bool openRender = false, openPost = false, openPerf = true, openObject = true;
+        bool vsync = true; // SDL_GL_SetSwapInterval(1) à l'ouverture de la fenêtre
         bool openWorld = true, openParts = false, openMapObjects = false, openScenes = true;
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
@@ -677,6 +678,8 @@ int main(int argc, char **argv) {
             if (gui.section("Post Process", openPost))
                 r4::ui::postProcessControls(gui, post.settings);
             if (gui.section("Performance", openPerf)) {
+                if (gui.toggle("Vertical Sync", vsync))
+                    SDL_GL_SetSwapInterval(vsync ? 1 : 0);
                 float avg = 0;
                 for (float v : frameMs)
                     avg += v;
