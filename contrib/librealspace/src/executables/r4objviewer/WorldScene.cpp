@@ -123,7 +123,7 @@ void WorldScene::clear() {
     overlays_->removeAllChildren();
     forests_->removeAllChildren();
     forestNodes_.clear();
-    forestTrees = forestChunks = forestChunksPlanted = 0;
+    forestTrees = forestChunks = 0;
     mapLayer_->removeAllChildren();
     partsLayer_->removeAllChildren();
     sceneLayers_.clear();
@@ -412,7 +412,7 @@ void WorldScene::buildTerrain() {
 void WorldScene::buildForests() {
     forests_->removeAllChildren();
     forestNodes_.clear();
-    forestTrees = forestChunks = forestChunksPlanted = 0;
+    forestTrees = forestChunks = 0;
     if (!area_ || forestDensity_ <= 0)
         return;
     forestSettings_ = {};
@@ -449,45 +449,18 @@ void WorldScene::buildForests() {
             f.trees[sp]->addLevel(parts[sp][1], kTreeFar);
             group->addChild(f.trees[sp]);
         }
-        lod->addChild(group);
-        forests_->addChild(lod);
-    }
-    forestChunks = forestNodes_.size();
-}
-
-void WorldScene::updateForests(r4::Vec3 eye) {
-    if (forestNodes_.empty())
-        return;
-    // the eye in libRealSpace's axes
-    r4::Vec3 e{eye.x, eye.z, -eye.y};
-    const float plant = kTreeFar + 1000, drop = kTreeFar + 4000;
-    std::vector<std::pair<float, size_t>> wanted;
-    for (size_t i = 0; i < forestNodes_.size(); i++) {
-        ForestNode &f = forestNodes_[i];
-        float d = r4::length(f.chunk.center - e) - f.chunk.radius;
-        if (!f.planted && d < plant)
-            wanted.push_back({d, i});
-        else if (f.planted && d > drop) {
-            for (auto &t : f.trees) {
-                forestTrees -= t->instances().size();
-                t->clearInstances();
-            }
-            f.planted = false;
-            forestChunksPlanted--;
-        }
-    }
-    std::sort(wanted.begin(), wanted.end());
-    for (size_t k = 0; k < wanted.size() && k < 8; k++) {
-        ForestNode &f = forestNodes_[wanted[k].second];
+        // its trees, all planted at the load (about 2 million on TURKEY,
+        // 140 MB of matrices)
         r4bridge::plantForest(area_.get(), forestSettings_, f.chunk);
         for (int sp = 0; sp < 2; sp++) {
             forestTrees += f.chunk.trees[sp].size();
             f.trees[sp]->setInstances(std::move(f.chunk.trees[sp]));
             f.chunk.trees[sp].clear();
         }
-        f.planted = true;
-        forestChunksPlanted++;
+        lod->addChild(group);
+        forests_->addChild(lod);
     }
+    forestChunks = forestNodes_.size();
 }
 
 void WorldScene::setForestDensity(float density) {

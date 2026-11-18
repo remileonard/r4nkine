@@ -199,7 +199,7 @@ Le terrain (`WorldScene` et `R4World`) :
     - un feuillu.
     Chacune a une version détaillée jusqu'à 1 500 et une version simple (pyramide, octaèdre) jusqu'à 6 000.
   - **Le graphe** : la carte est découpée en carrés de 5 km, chacun un nœud `LOD` coupé au-delà de 6 000 avec un `Instancer` par essence. Le renderer cule chaque arbre et choisit son niveau ; les arbres projettent leur ombre.
-  - **À la demande** : la carte entière ferait environ 2 millions d'arbres, soit environ 140 Mo de matrices. Les carrés sont donc plantés quand la caméra s'en approche (8 par image, les plus proches d'abord) et vidés quand elle s'en éloigne.
+  - **Tout au chargement** : environ 2,1 millions d'arbres sur TURKEY, soit environ 140 Mo de matrices, plantés en environ 1 s. Pendant le vol, les carrés hors du champ ou au-delà de 6 km sont écartés d'un bloc par leur nœud `LOD`.
 - **Pas encore fait** : le ciel, les nuages et le brouillard.
 
 Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :

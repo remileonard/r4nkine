@@ -954,7 +954,7 @@ int main(int argc, char **argv) {
                                {"Terrain triangles (fine + skirts)", fmt("%zu", world.terrainTriangles)},
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
                                {"Runway triangles", fmt("%zu", world.overlayTriangles)},
-                               {"Trees planted (chunks)", fmt("%zu (%zu of %zu)", world.forestTrees, world.forestChunksPlanted, world.forestChunks)},
+                               {"Trees (chunks of 5 km)", fmt("%zu (%zu)", world.forestTrees, world.forestChunks)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},
                                {"Mission parts", fmt("%zu", world.parts().size())},
                                {"Objects not in the TRE", fmt("%zu", missing)},
@@ -1053,8 +1053,6 @@ int main(int argc, char **argv) {
             renderer.options().shadows = shadows;
             renderer.options().shadowDistance = shadowRange > 0 ? kShadowRanges[shadowRange] : std::max(distance * 3, 100.0f);
             renderer.options().shadowCasterReach = showWorld ? 8000.0f : std::max(distance * 2, bounds.radius * 4);
-            if (showWorld)
-                world.updateForests(camera.position); // les arbres autour de l'œil
             renderer.setWireframe(wireframe);
             r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
             renderer.setTarget(rt);

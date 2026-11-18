@@ -68,10 +68,7 @@ public:
     // at this density (0: none)
     void setForestDensity(float density);
     float forestDensity() const { return forestDensity_; }
-    // the trees of the chunks near the eye planted, those of the far ones
-    // dropped (R4nkine's axes); a few chunks a call, the nearest first
-    void updateForests(r4::Vec3 eye);
-    size_t forestTrees = 0, forestChunks = 0, forestChunksPlanted = 0;
+    size_t forestTrees = 0, forestChunks = 0;
     // the trees: the detailed ones up to the first, the simple ones up to the second
     const float kTreeNear = 1500, kTreeFar = 6000;
     // the parts of a scene of the mission (or, scene -1, those of no scene)
@@ -138,7 +135,6 @@ private:
     struct ForestNode {
         r4bridge::ForestChunk chunk;
         std::shared_ptr<r4::scene::Instancer> trees[2];
-        bool planted = false;
     };
     std::vector<ForestNode> forestNodes_;
     r4bridge::ForestSettings forestSettings_;
