@@ -3,6 +3,7 @@
 //   r4fly [options] file ...
 //     -size WxH        the window size (default 1280x800)
 //     -wire            start in wireframe
+//     -shadows         the shadows of the light on
 //     -nogui           start without the GUI (F1 shows it)
 //     -core            an OpenGL core context (always on macOS)
 //     -post LIST       effects on the frame, as msaa4,fxaa,crt,pixel3,ega
@@ -62,7 +63,7 @@ constexpr int kCoreMajor = 3, kCoreMinor = 3;
 #endif
 
 void usage() {
-    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
+    std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-shadows] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
                          "[-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
     std::exit(1);
 }
@@ -131,7 +132,7 @@ void push(std::deque<float> &d, float v) {
 int main(int argc, char **argv) {
     App app;
     int width = 1280, height = 800, frames = -1;
-    bool wire = false;
+    bool wire = false, shadows = false;
     float uiScale = 1;
     std::string postList;
 #ifdef __APPLE__
@@ -151,6 +152,8 @@ int main(int argc, char **argv) {
                 usage();
         } else if (a == "-wire") {
             wire = true;
+        } else if (a == "-shadows") {
+            shadows = true;
         } else if (a == "-scale" && i + 1 < argc) {
             uiScale = std::max(0.5f, (float)std::atof(argv[++i]));
         } else if (a == "-post" && i + 1 < argc) {
@@ -242,6 +245,7 @@ int main(int argc, char **argv) {
     }
     render::Renderer &renderer = *app.renderer;
     renderer.setWireframe(wire);
+    renderer.options().shadows = shadows;
 
     // the files side by side along X, each centered on the ground
     app.top = scene::make<scene::Group>();

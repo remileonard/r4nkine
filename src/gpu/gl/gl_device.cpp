@@ -276,6 +276,8 @@ public:
             return {};
         GLRenderTarget r;
         r.desc = d;
+        if (d.shadow)
+            return createShadowTarget(r);
         r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
         // the texture of its color
         TextureDesc td;
@@ -318,6 +320,44 @@ public:
         uint32_t id = targets.add(r);
         if (!ok) {
             error = "render target incomplete";
+            destroyRenderTarget({id});
+            return {};
+        }
+        return {id};
+    }
+
+    // a depth texture, compared at sampling, and nothing else
+    RenderTargetHandle createShadowTarget(GLRenderTarget &r) {
+        r.desc.samples = 1;
+        GLTexture t;
+        gl.GenTextures(1, &t.name);
+        gl.ActiveTexture(TEXTURE0);
+        gl.BindTexture(TEXTURE_2D, t.name);
+        textureBound[0] = 0;
+        gl.TexImage2D(TEXTURE_2D, 0, DEPTH_COMPONENT24, r.desc.width, r.desc.height, 0, DEPTH_COMPONENT,
+                      UNSIGNED_INT, nullptr);
+        GLint f = r.desc.filter == Filter::Linear ? LINEAR : NEAREST;
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, f);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, f);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, CLAMP_TO_EDGE);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_COMPARE_MODE, COMPARE_REF_TO_TEXTURE);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_COMPARE_FUNC, LEQUAL);
+        gl.BindTexture(TEXTURE_2D, 0);
+        t.format = DEPTH_COMPONENT;
+        t.owned = false;
+        r.texture = textures.add(t);
+        gl.GenFramebuffers(1, &r.fbo);
+        gl.BindFramebuffer(FRAMEBUFFER, r.fbo);
+        gl.FramebufferTexture2D(FRAMEBUFFER, DEPTH_ATTACHMENT, TEXTURE_2D, t.name, 0);
+        gl.DrawBuffer(NONE_);
+        gl.ReadBuffer(NONE_);
+        bool ok = gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
+        gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
+        boundFbo = windowFbo;
+        uint32_t id = targets.add(r);
+        if (!ok) {
+            error = "shadow target incomplete";
             destroyRenderTarget({id});
             return {};
         }

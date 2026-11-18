@@ -135,7 +135,14 @@ struct App {
     double lastFrameTime = 0;
     std::string snapRequest; // a capture without the GUI at the next frame
 
-    void resetView() { ball.reset(models->bounds(), viewH, viewP, viewZ); }
+    // the trackball about the models, the reach of the shadows about their size
+    void resetView() {
+        ball.reset(models->bounds(), viewH, viewP, viewZ);
+        if (renderer) {
+            renderer->options().shadowDistance = ball.radius * 4;
+            renderer->options().shadowCasterReach = ball.radius * 2;
+        }
+    }
 };
 
 // gui.cpp: the panels, in the look of perfly (r4::ui)

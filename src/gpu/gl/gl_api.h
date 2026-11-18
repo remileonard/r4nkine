@@ -126,6 +126,13 @@ enum : GLenum {
     RENDERBUFFER = 0x8D41,
     FRAMEBUFFER_COMPLETE = 0x8CD5,
     DEPTH24_STENCIL8 = 0x88F0,
+    NONE_ = 0,
+    DEPTH_COMPONENT = 0x1902,
+    DEPTH_COMPONENT24 = 0x81A6,
+    DEPTH_ATTACHMENT = 0x8D00,
+    TEXTURE_COMPARE_MODE = 0x884C,
+    TEXTURE_COMPARE_FUNC = 0x884D,
+    COMPARE_REF_TO_TEXTURE = 0x884E,
     MAX_SAMPLES = 0x8D57,
     STENCIL_BUFFER_BIT = 0x00000400,
 };
@@ -171,6 +178,8 @@ enum : GLenum {
     X(void, BindFramebuffer, (GLenum target, GLuint f))                                             \
     X(void, FramebufferTexture2D, (GLenum target, GLenum att, GLenum textarget, GLuint t, GLint level)) \
     X(GLenum, CheckFramebufferStatus, (GLenum target))                                              \
+    X(void, DrawBuffer, (GLenum mode))                                                              \
+    X(void, ReadBuffer, (GLenum mode))                                                              \
     X(void, GenRenderbuffers, (GLsizei n, GLuint * r))                                              \
     X(void, DeleteRenderbuffers, (GLsizei n, const GLuint *r))                                      \
     X(void, BindRenderbuffer, (GLenum target, GLuint r))                                            \

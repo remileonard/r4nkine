@@ -26,6 +26,7 @@
 //  -gouraud  l'éclairage des objets calculé aux sommets, comme le jeu
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
+//  -shadows  les ombres portées du soleil
 //
 //  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
 //  statistiques.
@@ -259,7 +260,7 @@ int main(int argc, char **argv) {
     int frames = -1;
     bool openTextures = false, graphAtStart = false;
     float startDistance = 0;
-    bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false;
+    bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false, shadowsAtStart = false;
     int reliefAtStart = 2;
     float sunAtStart[2] = {1000, 1000}; // -sun cap élévation
     for (int i = 1; i < argc; i++) {
@@ -293,6 +294,8 @@ int main(int argc, char **argv) {
             flatAtStart = true;
         else if (a == "-gouraud") // l'éclairage des objets par sommet, comme le jeu
             gouraudAtStart = true;
+        else if (a == "-shadows") // les ombres portées du soleil
+            shadowsAtStart = true;
         else if (a == "-distance" && i + 1 < argc)
             startDistance = (float)std::atof(argv[++i]);
     }
@@ -561,6 +564,11 @@ int main(int argc, char **argv) {
         renderer.options().flatShading = flat;
         bool openWorld = true, openParts = false, openMapObjects = false, openScenes = true;
         bool openSun = false, openNav = true;
+        // les ombres portées : une shadow map du soleil sur la vue jusqu'à
+        // leur distance (Auto : celle de la caméra x 3)
+        bool shadows = shadowsAtStart;
+        int shadowRange = 0;
+        const float kShadowRanges[] = {0, 500, 2000, 10000, 50000};
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
         const float leftWidth = 230, rightWidth = 310;
@@ -837,6 +845,7 @@ int main(int argc, char **argv) {
                            {"Pipeline / texture changes",
                             fmt("%u / %u", st.gpu.pipelineChanges, st.gpu.textureChanges)},
                            {"Items opaque / transparent", fmt("%u / %u", st.opaqueItems, st.transparentItems)},
+                           {"Shadow casters / CPU", fmt("%u / %.2f ms", st.shadowCasters, st.shadowMs)},
                            {"Nodes visited / culled", fmt("%u / %u", st.nodesVisited, st.nodesCulled)}});
             }
             if (gui.section("Sun", openSun)) {
@@ -854,6 +863,13 @@ int main(int argc, char **argv) {
                         world.setTerrainLight(true, reliefOf());
                     gui.label(dynamicTerrainLight ? "terrain: its ramps lit by the sun" : "terrain: the light of the data (RSArea)",
                               r4::ui::Font::Small);
+                }
+                gui.toggle("Cast Shadows", shadows);
+                if (shadows) {
+                    gui.menu("Shadow Distance", shadowRange, {"Auto (the view)", "500", "2 000", "10 000", "50 000"});
+                    // ce qui n'est pas éclairé par le soleil : le terrain de
+                    // la lumière des données, les pistes
+                    gui.slider("Shadow on Unlit", renderer.options().shadowStrength, 0, 1, "%.2f");
                 }
             }
             if (mode == 1 && currentWorld >= 0 && gui.section("Navigation", openNav)) {
@@ -994,6 +1010,11 @@ int main(int argc, char **argv) {
                             distance + bounds.radius * 400);
                 env.lightDirection = -sunTowards(); // le soleil
             }
+            // les ombres : sur la vue jusqu'à leur distance, les objets
+            // jusqu'à 8 km vers le soleil (un avion haut au-dessus du sol)
+            renderer.options().shadows = shadows;
+            renderer.options().shadowDistance = shadowRange > 0 ? kShadowRanges[shadowRange] : std::max(distance * 3, 100.0f);
+            renderer.options().shadowCasterReach = showWorld ? 8000.0f : std::max(distance * 2, bounds.radius * 4);
             renderer.setWireframe(wireframe);
             r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
             renderer.setTarget(rt);

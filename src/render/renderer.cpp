@@ -21,6 +21,9 @@ struct FrameBlock {
     float fogColor[4];
     float fogParams[4]; // start, end, enabled
     float options[4];   // textures, lighting, flat shading, ramp by vertex
+    float lightViewProj[16]; // world to the shadow map
+    float shadowParams[4];   // enabled, normal offset (world), depth bias, strength of the unlit
+    float shadowParams2[4];  // a texel of the map (uv)
 };
 
 struct MaterialBlock {
@@ -30,12 +33,15 @@ struct MaterialBlock {
     float emissive[4];
     float flags[4]; // texture, alpha cutoff (0: none), vertex colors, unlit
     float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
+    float flags3[4]; // receives the shadows
 };
 
 const char *kVertexShader = R"(#version 330
 layout(std140) uniform Frame {
     mat4 view, projection, viewProjection;
     vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams, options;
+    mat4 lightViewProj;
+    vec4 shadowParams, shadowParams2;
 };
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -47,18 +53,29 @@ layout(location = 5) in vec4 inModel1;
 layout(location = 6) in vec4 inModel2;
 layout(location = 7) in vec4 inModel3;
 layout(std140) uniform Material {
-    vec4 diffuse, ambient, specular, emissive, flags, flags2;
+    vec4 diffuse, ambient, specular, emissive, flags, flags2, flags3;
 };
 out vec3 vNormal;
 out vec3 vPosition;
 out vec2 vUV;
 out vec4 vColor;
 out float vRampIntensity; // PaletteRamp lit at the vertex (options.w)
+out vec4 vShadow;         // in the shadow map
 // the same vertices give the same depth in every draw (the GL_EQUAL decals)
 invariant gl_Position;
 void main() {
-    mat4 modelView = view * mat4(inModel0, inModel1, inModel2, inModel3);
+    mat4 model = mat4(inModel0, inModel1, inModel2, inModel3);
+    mat4 modelView = view * model;
     vec4 p = modelView * vec4(inPosition, 1.0);
+    vShadow = vec4(0.0);
+    if (shadowParams.x > 0.5) {
+        // pushed along its normal against the acne (normal offset)
+        vec3 w = (model * vec4(inPosition, 1.0)).xyz;
+        vec3 n = mat3(model) * inNormal;
+        if (dot(n, n) > 1e-12)
+            w += normalize(n) * shadowParams.y;
+        vShadow = lightViewProj * vec4(w, 1.0);
+    }
     vPosition = p.xyz;
     // the normals: the inverse transpose, right for non-uniform scales
     vNormal = transpose(inverse(mat3(modelView))) * inNormal;
@@ -75,11 +92,15 @@ const char *kFragmentShader = R"(#version 330
 layout(std140) uniform Frame {
     mat4 view, projection, viewProjection;
     vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams, options;
+    mat4 lightViewProj;
+    vec4 shadowParams, shadowParams2;
 };
 layout(std140) uniform Material {
-    vec4 diffuse, ambient, specular, emissive, flags, flags2;
+    vec4 diffuse, ambient, specular, emissive, flags, flags2, flags3;
 };
 uniform sampler2D diffuseMap;
+uniform sampler2DShadow shadowMap;
+in vec4 vShadow;
 in vec3 vNormal;
 in vec3 vPosition;
 in vec2 vUV;
@@ -102,9 +123,26 @@ vec3 seenNormal() {
         n = -n;
     return n;
 }
+// the light of the sun that reaches the fragment, 0..1: 3 x 3 compared
+// texels of the shadow map (each a 2 x 2 PCF), faded out at its edges
+float shadowFactor() {
+    if (shadowParams.x < 0.5 || flags3.x < 0.5 || vShadow.w <= 0.0)
+        return 1.0;
+    vec3 p = vShadow.xyz / vShadow.w * 0.5 + 0.5;
+    if (any(lessThan(p, vec3(0.0))) || any(greaterThan(p, vec3(1.0))))
+        return 1.0;
+    float s = 0.0;
+    for (int y = -1; y <= 1; y++)
+        for (int x = -1; x <= 1; x++)
+            s += textureLod(shadowMap, vec3(p.xy + vec2(x, y) * shadowParams2.x, p.z - shadowParams.z), 0.0);
+    s /= 9.0;
+    vec2 e = abs(p.xy * 2.0 - 1.0);
+    return mix(s, 1.0, smoothstep(0.85, 1.0, max(e.x, e.y)));
+}
 void main() {
     // the derivatives, out of any branch
     faceDirection = cross(dFdx(vPosition), dFdy(vPosition));
+    float shadow = shadowFactor();
     vec4 base = diffuse;
     vec2 uv = vUV;
     if (flags2.x > 0.5) {
@@ -120,12 +158,12 @@ void main() {
         // the shade along the ramp of the palette color (ramp: a table of 256
         // colors x 32 intensities in the texture), or the texture times it
         vec3 n = seenNormal();
-        float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w, 0.0, 1.0);
+        float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w * shadow, 0.0, 1.0);
         // by vertex (options.w), as RealSpace: the intensity of the vertices,
         // interpolated; the back of a face by its face normal
         bool back = dot(faceDirection, faceDirection) > 0.0 && dot(vNormal, faceDirection) < 0.0;
         if (options.w > 0.5 && options.z < 0.5 && !back)
-            intensity = vRampIntensity;
+            intensity = flags2.z + (vRampIntensity - flags2.z) * shadow;
         vec3 c;
         if (flags2.y < 1.5) {
             int index = int(vColor.r * 255.0 + 0.5);
@@ -153,12 +191,14 @@ void main() {
     vec3 color;
     if (flags.w > 0.5 || options.y < 0.5 || dot(vNormal, vNormal) < 1e-12) {
         color = base.rgb; // unlit, or no normal (lines, points)
+        if (flags.w > 0.5 && options.y > 0.5)
+            color *= mix(1.0, shadow, shadowParams.w);
     } else {
         // Blinn-Phong, both faces lit (the two-sided lighting)
         vec3 n = seenNormal();
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
-        float nl = max(dot(n, l), 0.0);
+        float nl = max(dot(n, l), 0.0) * shadow;
         float spec = 0.0;
         if (nl > 0.0 && specular.w > 0.0)
             spec = pow(max(dot(n, normalize(l + v)), 0.0), specular.w);
@@ -171,6 +211,27 @@ void main() {
     }
     fragColor = vec4(color, base.a);
 }
+)";
+
+// the shadow map: the depth from the light, nothing else
+const char *kShadowVertex = R"(#version 330
+layout(std140) uniform Frame {
+    mat4 view, projection, viewProjection;
+    vec4 lightDirection, lightColor, ambientLight, fogColor, fogParams, options;
+    mat4 lightViewProj;
+    vec4 shadowParams, shadowParams2;
+};
+layout(location = 0) in vec3 inPosition;
+layout(location = 4) in vec4 inModel0;
+layout(location = 5) in vec4 inModel1;
+layout(location = 6) in vec4 inModel2;
+layout(location = 7) in vec4 inModel3;
+void main() {
+    gl_Position = lightViewProj * mat4(inModel0, inModel1, inModel2, inModel3) * vec4(inPosition, 1.0);
+}
+)";
+const char *kShadowFragment = R"(#version 330
+void main() {}
 )";
 
 void copyMat(float *dst, const Mat4 &m) { std::memcpy(dst, dataOf(m), 64); }
@@ -224,6 +285,9 @@ Renderer::~Renderer() {
     device_.destroyBuffer(frameUniforms_);
     device_.destroyBuffer(instanceBuffer_);
     device_.destroyShader(shader_);
+    device_.destroyPipeline(shadowPipeline_);
+    device_.destroyShader(shadowShader_);
+    device_.destroyRenderTarget(shadowMap_);
 }
 
 bool Renderer::createShaders() {
@@ -231,12 +295,31 @@ bool Renderer::createShaders() {
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
     d.uniformBlocks = {{"Frame", kFrameSlot}, {"Material", kMaterialSlot}};
-    d.samplers = {{"diffuseMap", 0}};
+    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
-    if (!shader_)
+    if (!shader_) {
         error_ = device_.lastError();
-    return (bool)shader_;
+        return false;
+    }
+    gpu::ShaderDesc sd;
+    sd.vertex = kShadowVertex;
+    sd.fragment = kShadowFragment;
+    sd.uniformBlocks = {{"Frame", kFrameSlot}};
+    sd.debugName = "shadow";
+    shadowShader_ = device_.createShader(sd);
+    if (shadowShader_) {
+        gpu::PipelineDesc pd;
+        pd.shader = shadowShader_;
+        pd.layout = vertexLayout();
+        pd.cull = gpu::CullMode::None; // the thin and the open models cast too
+        pd.polygonOffsetFactor = 2;
+        pd.polygonOffsetUnits = 4;
+        shadowPipeline_ = device_.createPipeline(pd);
+    }
+    if (!shadowPipeline_)
+        error_ = device_.lastError();
+    return true;
 }
 
 gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
@@ -352,6 +435,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
         b.flags2[2] = p.rampAmbient;
         b.flags2[3] = p.rampLight;
     }
+    b.flags3[0] = p.receiveShadows ? 1.0f : 0.0f;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::Uniform, &b, sizeof b, false);
     return m;
 }
@@ -550,6 +634,47 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     stats_.opaqueItems = (uint32_t)opaque_.size();
     stats_.transparentItems = (uint32_t)transparent_.size();
 
+    // the casters: the graph culled again from the light (an object out of
+    // the view shades the ground in it), the levels chosen from the eye
+    Mat4 lightViewProj(1.0f);
+    float texel = 0;
+    casters_.clear();
+    bool shadows = options_.shadows && options_.lighting && shadowPipeline_ && shadowView(cam, lightViewProj, texel);
+    if (shadows) {
+        size_t o = opaque_.size(), t = transparent_.size();
+        RenderStats keep = stats_;
+        cull(root, Mat4(1.0f), Frustum::fromMatrix(lightViewProj), false, cam.mask, cullEye_);
+        stats_ = keep;
+        auto casts = [](const DrawItem &it) {
+            const assets::Material &m = it.material->params;
+            bool solid = m.alpha == assets::AlphaMode::Opaque || m.alpha == assets::AlphaMode::Mask ||
+                         (m.alpha == assets::AlphaMode::Blend && m.blendDepthWrite);
+            return m.castShadows && solid && m.depthWrite && !m.depthEqual &&
+                   it.mesh->primitive == assets::Primitive::Triangles;
+        };
+        for (size_t i = o; i < opaque_.size(); i++)
+            if (casts(opaque_[i]))
+                casters_.push_back(opaque_[i]);
+        for (size_t i = t; i < transparent_.size(); i++)
+            if (casts(transparent_[i]))
+                casters_.push_back(transparent_[i]);
+        opaque_.resize(o);
+        transparent_.resize(t);
+        std::sort(casters_.begin(), casters_.end(), [](const DrawItem &a, const DrawItem &b) { return a.mesh < b.mesh; });
+        stats_.shadowCasters = (uint32_t)casters_.size();
+        int size = std::max(64, options_.shadowMapSize);
+        if (!shadowMap_ || shadowMapSize_ != size) {
+            device_.destroyRenderTarget(shadowMap_);
+            gpu::RenderTargetDesc rd;
+            rd.width = rd.height = size;
+            rd.shadow = true;
+            shadowMap_ = device_.createRenderTarget(rd);
+            shadowMapSize_ = size;
+        }
+        shadows = (bool)shadowMap_;
+    }
+    auto t2s = clock::now();
+
     // the frame
     FrameBlock fb{};
     copyMat(fb.view, cam.view);
@@ -567,13 +692,19 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.options[1] = options_.lighting ? 1.0f : 0.0f;
     fb.options[2] = options_.flatShading ? 1.0f : 0.0f;
     fb.options[3] = options_.rampGouraud ? 1.0f : 0.0f;
+    copyMat(fb.lightViewProj, lightViewProj);
+    fb.shadowParams[0] = shadows ? 1.0f : 0.0f;
+    fb.shadowParams[1] = options_.shadowNormalOffset * texel;
+    fb.shadowParams[2] = options_.shadowBias;
+    fb.shadowParams[3] = options_.shadowStrength;
+    fb.shadowParams2[0] = 1.0f / (float)std::max(1, shadowMapSize_);
     device_.updateBuffer(frameUniforms_, 0, &fb, sizeof fb);
 
     // the matrices of the items, in the order of the draws
-    size_t count = opaque_.size() + transparent_.size();
+    size_t count = opaque_.size() + transparent_.size() + casters_.size();
     instanceData_.resize(std::max<size_t>(count, 1) * 16);
     size_t k = 0;
-    for (auto *list : {&opaque_, &transparent_})
+    for (auto *list : {&opaque_, &transparent_, &casters_})
         for (const DrawItem &it : *list)
             std::memcpy(&instanceData_[16 * k++], dataOf(it.world), 64);
     size_t bytes = instanceData_.size() * sizeof(float);
@@ -585,6 +716,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     device_.updateBuffer(instanceBuffer_, 0, instanceData_.data(), bytes);
     auto t3 = clock::now();
 
+    if (shadows)
+        drawShadows(opaque_.size() + transparent_.size());
     gpu::ClearValues clear;
     clear.r = env_.clearColor.x;
     clear.g = env_.clearColor.y;
@@ -592,6 +725,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     clear.a = env_.clearColor.w;
     device_.beginPass(target_, x, y, width, height, clear);
     device_.bindUniformBuffer(kFrameSlot, frameUniforms_, 0, sizeof(FrameBlock));
+    if (shadowMap_)
+        device_.bindTexture(1, device_.renderTargetTexture(shadowMap_));
     const GpuMesh *lastMesh = nullptr;
     const MaterialInstance *lastMaterial = nullptr;
     size_t base = 0;
@@ -626,8 +761,73 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     auto t4 = clock::now();
     stats_.cullMs = ms(t0, t1);
     stats_.sortMs = ms(t1, t2);
+    stats_.shadowMs = ms(t2, t2s);
     stats_.uploadMs = ms(t2, t3);
     stats_.drawMs = ms(t3, t4);
+}
+
+// a sphere about the part of the view up to shadowDistance, seen from the
+// light along its direction: its size steady and its center on the texels
+// of the map, so that the shadows do not shimmer when the camera moves
+bool Renderer::shadowView(const Camera &cam, Mat4 &lightViewProj, float &texel) {
+    if (length(env_.lightDirection) < 1e-6f)
+        return false;
+    Vec3 dir = normalize(env_.lightDirection);
+    float d = std::min(options_.shadowDistance, cam.zfar);
+    if (d <= cam.znear)
+        return false;
+    Vec4 c = cam.projection * Vec4(0, 0, -d, 1);
+    float zFar = c.z / c.w;
+    Mat4 inv = inverse(cam.projection * cam.view);
+    Vec3 corners[8], center(0.0f);
+    int k = 0;
+    for (float x : {-1.0f, 1.0f})
+        for (float y : {-1.0f, 1.0f})
+            for (float z : {-1.0f, zFar}) {
+                Vec4 p = inv * Vec4(x, y, z, 1);
+                corners[k] = Vec3(p) / p.w;
+                center += corners[k++];
+            }
+    center /= 8.0f;
+    float r = 0;
+    for (Vec3 p : corners)
+        r = std::max(r, length(p - center));
+    r = std::ceil(r);
+    int size = std::max(64, options_.shadowMapSize);
+    texel = 2 * r / (float)size;
+    Vec3 up = std::abs(dot(dir, axes::kUp)) > 0.99f ? axes::kForward : axes::kUp;
+    Mat4 view = glm::lookAt(Vec3(0.0f), dir, up);
+    Vec3 lc = transformPoint(view, center);
+    lc.x = std::floor(lc.x / texel) * texel;
+    lc.y = std::floor(lc.y / texel) * texel;
+    float reach = std::max(0.0f, options_.shadowCasterReach);
+    Mat4 proj = glm::ortho(lc.x - r, lc.x + r, lc.y - r, lc.y + r, -lc.z - r - reach, -lc.z + r);
+    lightViewProj = proj * view;
+    return true;
+}
+
+void Renderer::drawShadows(size_t base) {
+    gpu::ClearValues clear;
+    clear.color = false;
+    device_.beginPass(shadowMap_, 0, 0, shadowMapSize_, shadowMapSize_, clear);
+    device_.bindUniformBuffer(kFrameSlot, frameUniforms_, 0, sizeof(FrameBlock));
+    device_.bindPipeline(shadowPipeline_);
+    const GpuMesh *lastMesh = nullptr;
+    for (size_t i = 0; i < casters_.size();) {
+        const DrawItem &it = casters_[i];
+        size_t j = i + 1;
+        while (options_.instancing && j < casters_.size() && casters_[j].mesh == it.mesh)
+            j++;
+        if (it.mesh != lastMesh) {
+            device_.bindVertexBuffer(0, it.mesh->vertices);
+            device_.bindIndexBuffer(it.mesh->indices, gpu::IndexType::U32);
+            lastMesh = it.mesh;
+        }
+        device_.bindVertexBuffer(1, instanceBuffer_, (base + i) * kInstanceStride);
+        device_.drawIndexed(it.mesh->indexCount, 0, 0, (uint32_t)(j - i));
+        i = j;
+    }
+    device_.endPass();
 }
 
 } // namespace r4::render

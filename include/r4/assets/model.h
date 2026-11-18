@@ -78,6 +78,9 @@ struct Material {
     // drawn without depth after the ground it lies on, the runways after
     // the terrain)
     int drawOrder = 0;
+    // the shadows of the sun (RenderOptions::shadows): it casts one (drawn in
+    // the shadow map: the opaque faces that write the depth), it receives them
+    bool castShadows = true, receiveShadows = true;
     // PaletteRamp: the intensity is rampAmbient + rampLight * max(N.L, 0)
     float rampAmbient = 0.375f, rampLight = 0.625f;
     bool rampTextured = false;

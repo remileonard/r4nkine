@@ -165,6 +165,17 @@ void settingsPanel(App &app, ui::Context &g, float height) {
             app.renderer->setWireframe(style == 1);
         g.toggle("Textures", o.textures);
         g.toggle("Flat Shading", o.flatShading);
+        // the shadows of the light: their reach about the size of the scene
+        g.toggle("Shadows", o.shadows);
+        if (o.shadows) {
+            float r = app.ball.radius;
+            g.slider("Shadow Distance", o.shadowDistance, r * 0.1f, r * 50, "%.3g", true);
+            g.slider("Shadow Strength", o.shadowStrength, 0, 1, "%.2f");
+            int sizes[] = {1024, 2048, 4096};
+            int sel = o.shadowMapSize <= 1024 ? 0 : o.shadowMapSize <= 2048 ? 1 : 2;
+            if (g.menu("Shadow Map", sel, {"1024", "2048", "4096"}))
+                o.shadowMapSize = sizes[sel];
+        }
         // the state bits of the camera (flight: 1 body, 2 gear, 4 far,
         // 8 shadow, the high byte the weapons)
         g.bits("State Mask", app.camera.mask, 16);
@@ -471,6 +482,7 @@ void perfPanel(App &app, ui::Context &g, ui::Rect r) {
         {"Nodes visited / culled", fmt("%.0f / %.0f", st.nodesVisited, st.nodesCulled)},
         {"Instances visited / culled", fmt("%.0f / %.0f", st.instancesVisited, st.instancesCulled)},
         {"CPU cull / sort", fmt("%.3f / %.3f ms", st.cullMs, st.sortMs)},
+        {"Shadow casters / CPU", fmt("%.0f / %.3f ms", st.shadowCasters, st.shadowMs)},
         {"CPU upload / draw", fmt("%.3f / %.3f ms", st.uploadMs, st.drawMs)},
     });
     g.toggle("Print Once a Second", app.printStats);

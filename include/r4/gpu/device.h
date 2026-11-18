@@ -111,6 +111,9 @@ struct RenderTargetDesc {
     int samples = 1;    // > 1: multisampled (MSAA), resolved into the texture
     bool depth = true;  // a depth (and stencil) buffer
     Filter filter = Filter::Linear; // how its texture is sampled
+    // a shadow map: depth only (no color, no samples), its texture the depth,
+    // sampled compared (sampler2DShadow, linear filter: 2 x 2 PCF)
+    bool shadow = false;
 };
 
 struct ClearValues {
@@ -151,8 +154,8 @@ public:
 
     virtual RenderTargetHandle createRenderTarget(const RenderTargetDesc &desc) = 0;
     virtual void destroyRenderTarget(RenderTargetHandle r) = 0;
-    // its color as a texture to sample; a multisampled target is resolved into
-    // it by resolveRenderTarget, after its passes
+    // its color as a texture to sample (the depth of a shadow map); a
+    // multisampled target is resolved into it by resolveRenderTarget, after its passes
     virtual TextureHandle renderTargetTexture(RenderTargetHandle r) = 0;
     virtual void resolveRenderTarget(RenderTargetHandle r) = 0;
 

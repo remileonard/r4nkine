@@ -81,12 +81,30 @@ struct RenderOptions {
     // (the Gouraud of the old games), not at each pixel; the back of a
     // two-sided face lit by its face normal, as RealSpace
     bool rampGouraud = false;
+    // the shadows of the sun: one shadow map, an orthographic view from the
+    // light over the part of the view up to shadowDistance from the eye;
+    // they fade out at its end
+    bool shadows = false;
+    int shadowMapSize = 2048;
+    float shadowDistance = 200;
+    // how far towards the light the casters are taken, beyond the view
+    // covered (an aircraft high above the ground it shades)
+    float shadowCasterReach = 2000;
+    // the unlit materials (the baked terrain, the runways) darkened in the
+    // shadow by this part; the lit ones lose their direct light
+    float shadowStrength = 0.5f;
+    // against the acne: the receivers pushed along their normal by this many
+    // texels of the map, the depth compared minus this bias (0..1 of the range)
+    float shadowNormalOffset = 1.5f;
+    float shadowBias = 0.0005f;
 };
 
 struct RenderStats {
     uint32_t nodesVisited = 0, nodesCulled = 0, drawables = 0;
     uint32_t instancesVisited = 0, instancesCulled = 0; // of the instancers
     uint32_t opaqueItems = 0, transparentItems = 0;
+    uint32_t shadowCasters = 0; // the items drawn in the shadow map
+    double shadowMs = 0; // CPU time of the shadow pass (its cull included)
     double cullMs = 0, sortMs = 0, uploadMs = 0, drawMs = 0; // CPU times of the frame
     gpu::FrameStats gpu;
 };
@@ -137,6 +155,9 @@ private:
     void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
     gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
     bool createShaders();
+    // the view of the shadow map over the camera's view; false: no shadow
+    bool shadowView(const Camera &camera, Mat4 &lightViewProj, float &texel);
+    void drawShadows(size_t base);
 
     gpu::Device &device_;
     Environment env_;
@@ -154,7 +175,11 @@ private:
     gpu::BufferHandle frameUniforms_, instanceBuffer_;
     size_t instanceCapacity_ = 0;
     std::vector<float> instanceData_;
-    std::vector<DrawItem> opaque_, transparent_;
+    std::vector<DrawItem> opaque_, transparent_, casters_;
+    gpu::ShaderHandle shadowShader_;
+    gpu::PipelineHandle shadowPipeline_;
+    gpu::RenderTargetHandle shadowMap_;
+    int shadowMapSize_ = 0;
     std::shared_ptr<MaterialInstance> defaultMaterial_;
     gpu::TextureHandle white_;
     uint32_t nextMaterialId_ = 1;
