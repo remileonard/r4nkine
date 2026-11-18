@@ -24,6 +24,8 @@
 //  -distance la distance de la caméra au départ
 //  -flat     le rendu plat, objets et terrain (object_gouraud faux, terrain_flat)
 //  -gouraud  l'éclairage des objets calculé aux sommets, comme le jeu
+//  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
+//  -sun C E  le soleil : son cap et son élévation, en degrés
 //
 //  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
 //  statistiques.
@@ -39,6 +41,7 @@
 #include "../../r4bridge/R4Bridge.h"
 #include "WorldScene.h"
 
+#include "r4/axes.h"
 #include "r4/gpu/device.h"
 #include "r4/render/orbit.h"
 #include "r4/render/postprocess.h"
@@ -256,7 +259,9 @@ int main(int argc, char **argv) {
     int frames = -1;
     bool openTextures = false, graphAtStart = false;
     float startDistance = 0;
-    bool flatAtStart = false, gouraudAtStart = false;
+    bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false;
+    int reliefAtStart = 2;
+    float sunAtStart[2] = {1000, 1000}; // -sun cap élévation
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-data" && i + 1 < argc)
@@ -277,7 +282,14 @@ int main(int argc, char **argv) {
             openTextures = true;
         else if (a == "-graph") // le graphe de la scène ouvert au départ
             graphAtStart = true;
-        else if (a == "-flat") // le rendu plat (objets et terrain)
+        else if (a == "-lit") // le terrain éclairé par le soleil
+            litTerrainAtStart = true;
+        else if (a == "-relief" && i + 1 < argc) // 0..4 : x1..x16
+            reliefAtStart = std::atoi(argv[++i]);
+        else if (a == "-sun" && i + 2 < argc) {
+            sunAtStart[0] = (float)std::atof(argv[++i]);
+            sunAtStart[1] = (float)std::atof(argv[++i]);
+        } else if (a == "-flat") // le rendu plat (objets et terrain)
             flatAtStart = true;
         else if (a == "-gouraud") // l'éclairage des objets par sommet, comme le jeu
             gouraudAtStart = true;
@@ -445,6 +457,22 @@ int main(int argc, char **argv) {
         bool showGraph = graphAtStart;
         std::string worldError;
         const r4::Vec3 objectLight = env.lightDirection;
+        // le soleil : son cap et son élévation (degrés, les axes de R4nkine) ;
+        // env.lightDirection en est l'opposé (là où va la lumière)
+        float sunHeading = r4::axes::headingOf(-objectLight), sunElevation = r4::axes::pitchOf(-objectLight);
+        auto sunTowards = [&]() {
+            float h = r4::radians(sunHeading), el = r4::radians(sunElevation);
+            return r4::axes::kRight * (-std::sin(h) * std::cos(el)) + r4::axes::kForward * (std::cos(h) * std::cos(el)) +
+                   r4::axes::kUp * std::sin(el);
+        };
+        auto sunFrom = [&](r4::Vec3 towards) {
+            sunHeading = r4::axes::headingOf(towards);
+            sunElevation = r4::axes::pitchOf(towards);
+        };
+        bool dynamicTerrainLight = litTerrainAtStart;
+        int reliefChoice = std::clamp(reliefAtStart, 0, 4); // x1, x2, x4, x8, x16
+        auto reliefOf = [&]() { return (float)(1 << reliefChoice); };
+        bool followGround = true; // la navigation : la cible posée sur le sol
         float worldScroll = 0;
         auto loadWorld = [&](int index) {
             currentWorld = index;
@@ -455,6 +483,10 @@ int main(int argc, char **argv) {
             world.showMapObjects(showMapObjects);
             world.showParts(showParts);
             world.showOverlays(showOverlays);
+            if (world.hasLight)
+                sunFrom(world.lightTowards); // la lumière du monde
+            if (world.terrainLightDynamic() != dynamicTerrainLight || world.terrainRelief() != reliefOf())
+                world.setTerrainLight(dynamicTerrainLight, reliefOf());
             showScenes.assign(world.scenes().size() + 1, true);
             showScenes.back() = false; // the parts of no scene: hidden at first
             graph.reset();
@@ -511,6 +543,10 @@ int main(int argc, char **argv) {
         }
         if (startDistance > 0)
             distance = startDistance;
+        if (sunAtStart[0] < 999) {
+            sunHeading = sunAtStart[0];
+            sunElevation = sunAtStart[1];
+        }
         r4::render::Camera camera;
 
         r4::ui::Input input;
@@ -524,9 +560,12 @@ int main(int argc, char **argv) {
         renderer.options().rampGouraud = gouraudByVertex;
         renderer.options().flatShading = flat;
         bool openWorld = true, openParts = false, openMapObjects = false, openScenes = true;
+        bool openSun = false, openNav = true;
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
         const float leftWidth = 230, rightWidth = 310;
+        r4::Vec2 doubleClick{-1, -1}; // un double clic sur la vue, en points
+        int lastVx = 0, lastVw = 1;   // la vue de l'image précédente, en pixels
         while (!quit) {
             // les événements : sur un panneau la souris va à la GUI, sinon à la caméra
             input.pressed = input.released = false;
@@ -536,16 +575,17 @@ int main(int argc, char **argv) {
                 bool guiMouse = gui.wantsMouse() && !sceneDrag;
                 if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
                     quit = true;
-                if (e.type == SDL_KEYDOWN && (e.key.keysym.sym == SDLK_DOWN || e.key.keysym.sym == SDLK_UP)) {
+                // les flèches : l'objet suivant ou précédent ; dans une mission, elles déplacent
+                if (e.type == SDL_KEYDOWN && mode == 0 &&
+                    (e.key.keysym.sym == SDLK_DOWN || e.key.keysym.sym == SDLK_UP)) {
                     int step = e.key.keysym.sym == SDLK_DOWN ? 1 : -1;
-                    if (mode == 0) {
-                        int n = (int)objects.size();
-                        select((current + step + n) % n);
-                    } else if (!worlds.empty()) {
-                        int n = (int)worlds.size();
-                        selectWorld(((currentWorld < 0 ? 0 : currentWorld) + step + n) % n);
-                    }
+                    int n = (int)objects.size();
+                    select((current + step + n) % n);
                 }
+                // dans une mission, un double clic sur le terrain y amène la caméra
+                if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && e.button.clicks == 2 &&
+                    !guiMouse && mode == 1 && currentWorld >= 0)
+                    doubleClick = {(float)e.button.x, (float)e.button.y};
                 if (e.type == SDL_MOUSEMOTION) {
                     input.mouseX = (float)e.motion.x;
                     input.mouseY = (float)e.motion.y;
@@ -575,6 +615,72 @@ int main(int argc, char **argv) {
             win.sizes();
             if (frames >= 0 && frames-- == 0)
                 quit = true;
+            float frameSeconds = frameMs.empty() ? 1.0f / 60 : std::min(0.1f, frameMs.back() / 1000.0f);
+
+            // --- la navigation dans une mission ---------------------------------------
+            if (mode == 1 && currentWorld >= 0) {
+                // le clavier (les touches à leur place : WASD en QWERTY, ZQSD en AZERTY)
+                const Uint8 *keys = SDL_GetKeyboardState(nullptr);
+                float fwd = (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP] ? 1.0f : 0.0f) -
+                            (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
+                float side = (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) -
+                             (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
+                float turn = (keys[SDL_SCANCODE_Q] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_E] ? 1.0f : 0.0f);
+                float zoom = (keys[SDL_SCANCODE_F] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_R] ? 1.0f : 0.0f);
+                bool fast = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
+                if (fwd != 0 || side != 0) {
+                    // dans le plan du sol, à une vitesse qui suit le recul de la caméra
+                    r4::Vec3 f = orbit.forward(), r = orbit.right();
+                    f -= r4::axes::kUp * r4::axes::heightOf(f);
+                    r -= r4::axes::kUp * r4::axes::heightOf(r);
+                    if (r4::length(f) > 1e-4f)
+                        f = r4::normalize(f);
+                    if (r4::length(r) > 1e-4f)
+                        r = r4::normalize(r);
+                    float speed = std::max(50.0f, distance) * (fast ? 3.0f : 0.8f);
+                    target += (f * fwd + r * side) * (speed * frameSeconds);
+                }
+                if (turn != 0) {
+                    float h, p, rl;
+                    orbit.angles(h, p, rl);
+                    orbit.setAngles(h + turn * 60 * frameSeconds, p, rl);
+                }
+                if (zoom != 0)
+                    distance *= std::exp(zoom * frameSeconds * (fast ? 2.5f : 1.2f));
+                // le double clic : le point du terrain sous la souris
+                if (doubleClick.x >= 0) {
+                    float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
+                    float nx = (doubleClick.x * pixel - lastVx) / lastVw * 2 - 1;
+                    float ny = 1 - doubleClick.y * pixel / std::max(1, win.height) * 2;
+                    r4::Mat4 inv = r4::inverse(camera.projection * camera.view);
+                    r4::Vec4 a = inv * r4::Vec4(nx, ny, -1, 1), b = inv * r4::Vec4(nx, ny, 1, 1);
+                    r4::Vec3 from = r4::Vec3(a) / a.w, dir = r4::normalize(r4::Vec3(b) / b.w - r4::Vec3(a) / a.w);
+                    // la marche le long du rayon, puis une dichotomie
+                    float step = std::max(5.0f, distance / 200), t0 = 0, ground = 0;
+                    bool hit = false;
+                    for (float t = 0; t < 600000 && !hit; t += step) {
+                        r4::Vec3 p = from + dir * t;
+                        if (world.groundHeight(p, ground) && r4::axes::heightOf(p) <= ground) {
+                            float lo = t0, hi = t;
+                            for (int k = 0; k < 24; k++) {
+                                float mid = (lo + hi) / 2;
+                                r4::Vec3 q = from + dir * mid;
+                                float g = 0;
+                                (world.groundHeight(q, g) && r4::axes::heightOf(q) <= g ? hi : lo) = mid;
+                            }
+                            target = from + dir * hi;
+                            hit = true;
+                        }
+                        t0 = t;
+                        step *= 1.01f; // plus loin, plus vite
+                    }
+                    doubleClick = {-1, -1};
+                }
+                // la cible sur le sol
+                float ground = 0;
+                if (followGround && world.groundHeight(target, ground))
+                    target = target - r4::axes::kUp * r4::axes::heightOf(target) + r4::axes::kUp * ground;
+            }
 
             // les temps de l'image précédente
             Uint64 now = SDL_GetPerformanceCounter();
@@ -733,6 +839,44 @@ int main(int argc, char **argv) {
                            {"Items opaque / transparent", fmt("%u / %u", st.opaqueItems, st.transparentItems)},
                            {"Nodes visited / culled", fmt("%u / %u", st.nodesVisited, st.nodesCulled)}});
             }
+            if (gui.section("Sun", openSun)) {
+                gui.slider("Sun Heading", sunHeading, -180, 180, "%.0f");
+                gui.slider("Sun Elevation", sunElevation, -10, 90, "%.0f");
+                if (mode == 1 && currentWorld >= 0) {
+                    gui.columns(2);
+                    if (gui.button("World's Light", world.hasLight))
+                        sunFrom(world.lightTowards);
+                    if (gui.toggle("Lit Terrain", dynamicTerrainLight))
+                        world.setTerrainLight(dynamicTerrainLight, reliefOf());
+                    gui.columns(1);
+                    if (dynamicTerrainLight &&
+                        gui.menu("Relief of the Light", reliefChoice, {"x1 (as it is)", "x2", "x4", "x8", "x16"}))
+                        world.setTerrainLight(true, reliefOf());
+                    gui.label(dynamicTerrainLight ? "terrain: its ramps lit by the sun" : "terrain: the light of the data (RSArea)",
+                              r4::ui::Font::Small);
+                }
+            }
+            if (mode == 1 && currentWorld >= 0 && gui.section("Navigation", openNav)) {
+                gui.message("W A S D / Z Q S D, arrows: move\nQ E / A E: turn   R F: in, out\nShift: faster   double click: go there");
+                gui.toggle("Follow the Ground", followGround);
+                gui.columns(2);
+                if (gui.button("Whole Map")) {
+                    r4::Sphere b = world.root()->bounds();
+                    target = b.center;
+                    distance = b.radius * 1.6f;
+                }
+                if (gui.button("Top View")) {
+                    float h, p, rl;
+                    orbit.angles(h, p, rl);
+                    orbit.setAngles(h, 89, 0);
+                }
+                gui.columns(1);
+                for (const WorldScene::Item &a : world.areas())
+                    if (gui.button(a.name.c_str())) {
+                        target = a.position;
+                        distance = std::max(a.radius * 2.5f, 1500.0f);
+                    }
+            }
             if (mode == 1 && currentWorld >= 0) {
                 if (gui.section("World", openWorld)) {
                     gui.columns(2);
@@ -835,6 +979,8 @@ int main(int argc, char **argv) {
             // --- la scène entre les panneaux, puis la GUI par-dessus -------------------------
             float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
             int vx = (int)(leftWidth * pixel), vw = std::max(1, win.width - (int)((leftWidth + rightWidth) * pixel));
+            lastVx = vx;
+            lastVw = vw;
             orbit.target = target;
             orbit.distance = distance;
             bool showWorld = mode == 1 && currentWorld >= 0;
@@ -842,11 +988,11 @@ int main(int argc, char **argv) {
                 // un monde : la carte fait 360 km de côté
                 orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f),
                             distance + 600000.0f);
-                env.lightDirection = -world.lightTowards; // la lumière du monde
+                env.lightDirection = -sunTowards(); // le soleil
             } else {
                 orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f,
                             distance + bounds.radius * 400);
-                env.lightDirection = objectLight;
+                env.lightDirection = -sunTowards(); // le soleil
             }
             renderer.setWireframe(wireframe);
             r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);

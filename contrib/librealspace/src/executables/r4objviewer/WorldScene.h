@@ -47,6 +47,13 @@ public:
     // the levels of the blocks of the terrain: 0 by the distance (the LOD
     // nodes), 1..3 the level 0..2 everywhere (the world_detail of the game)
     void setTerrainLod(int mode);
+    // the light of the terrain: baked (RSArea's colors) or dynamic (the sun,
+    // through normals from the relief); the terrain is made again
+    void setTerrainLight(bool dynamic, float relief = 4);
+    float terrainRelief() const { return terrainRelief_; }
+    bool terrainLightDynamic() const { return terrainDynamic_; }
+    // the height of the ground under a point (R4nkine's axes); false out of the map
+    bool groundHeight(r4::Vec3 p, float &height) const;
 
     r4::scene::NodePtr root() const { return root_; }
     // the layers, shown or hidden
@@ -74,6 +81,8 @@ public:
     size_t partsWithoutScene = 0;
     const std::vector<Item> &parts() const { return parts_; }
     const std::vector<Item> &mapObjects() const { return mapObjects_; }
+    // the areas of the mission (entering one starts its scenes)
+    const std::vector<Item> &areas() const { return areas_; }
     std::string worldName, terrainName;
     size_t terrainTriangles = 0, terrainTextures = 0, overlayTriangles = 0, terrainBlocks = 0;
     // the distances of the levels of the blocks: the finest up to 2 blocks,
@@ -106,7 +115,9 @@ private:
     std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_;
     std::vector<std::shared_ptr<r4::scene::Switch>> sceneLayers_; // the scenes, then "no scene"
     std::vector<Scene> scenes_;
-    std::vector<Item> parts_, mapObjects_;
+    std::vector<Item> parts_, mapObjects_, areas_;
+    bool terrainDynamic_ = false;
+    float terrainRelief_ = 4;
     int terrainLod_ = 0;
     std::vector<r4::scene::LOD *> terrainLods_;
 };

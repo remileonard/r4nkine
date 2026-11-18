@@ -94,6 +94,16 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - **Gouraud by Vertex** (ou `-gouraud`) : l'éclairage des objets est calculé aux sommets puis interpolé, comme le jeu (le dos d'une face double prend la normale de la face). Sinon, il est calculé à chaque pixel.
 
      Les deux se règlent au départ d'après le `config.ini` du jeu s'il est là.
+   - **Sun** (les deux modes) :
+     - **Sun Heading / Sun Elevation** : la direction du soleil (`-sun C E`), qui éclaire les objets ;
+     - **World's Light** : revient à la lumière du monde, `RSWorld::light_direction` ;
+     - **Lit Terrain** (`-lit`) : le terrain éclairé par le soleil plutôt que par la lumière des données. Chaque triangle prend le ton le plus clair de la rampe de son type de terrain (`RSArea::terrainTone`), assombri le long de cette rampe par l'intensité, comme les objets (PaletteRamp : ambiant + lumière × N·L). Les normales sont calculées à partir du relief, sur toute la carte ;
+     - **Relief of the Light** (`-relief 0..4`) : multiplie le relief pour les normales seulement (×1 à ×16, ×4 par défaut). Le relief des cartes est doux, avec un sommet tous les 1 000, alors que la lumière des données l'exagère beaucoup.
+   - **Navigation**, dans une mission :
+     - les touches à leur place sur le clavier (WASD en QWERTY, ZQSD en AZERTY) et les flèches pour avancer et se décaler, Q/E (A/E en AZERTY) pour tourner, R/F pour se rapprocher ou s'éloigner, Maj pour aller plus vite ;
+     - **double clic** sur le terrain : la caméra y va (rayon lancé contre `RSArea::getY`) ;
+     - **Follow the Ground** : la cible reste sur le sol ;
+     - les boutons **Whole Map**, **Top View** et un par zone de la mission.
    - `-frames N -shot image.bmp` fait une capture après N images, utile pour les tests.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine

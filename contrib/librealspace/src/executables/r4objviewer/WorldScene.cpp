@@ -123,6 +123,7 @@ void WorldScene::clear() {
     sceneLayers_.clear();
     scenes_.clear();
     partsWithoutScene = 0;
+    areas_.clear();
     overlayTriangles = 0;
     objects_.clear();
     parts_.clear();
@@ -288,6 +289,13 @@ void WorldScene::placeParts() {
         onGround(part);
     }
 
+    // the areas, to go to them
+    for (size_t a = 0; a < data.areas.size(); a++) {
+        AREA *ar = data.areas[a];
+        r4::Vec3 at = r4::transformPoint(r4bridge::realSpaceToR4(), {ar->position.x, ar->position.y, ar->position.z});
+        float radius = std::max(1000.0f, 0.5f * (float)std::max(ar->AreaWidth, ar->AreaHeight));
+        areas_.push_back({"Area " + std::to_string(a) + ": " + ar->AreaName, at, radius, true});
+    }
     // the graph: a node by area of the mission (entering it starts its
     // scenes), a layer by scene under its area, and one for the parts of no
     // scene
@@ -362,7 +370,12 @@ void WorldScene::buildTerrain() {
     terrainBlocks = 0;
     if (!area_)
         return;
-    auto model = r4bridge::terrainModel(area_.get(), *palette_.GetColorPalette(), kTerrainRanges);
+    r4bridge::TerrainLight light;
+    light.dynamic = terrainDynamic_;
+    light.ranges = &palette_.ranges;
+    light.lighting = lighting;
+    light.relief = terrainRelief_;
+    auto model = r4bridge::terrainModel(area_.get(), *palette_.GetColorPalette(), kTerrainRanges, light);
     if (!model)
         return;
     // the triangles of the finest level (each colored triangle once)
@@ -386,6 +399,24 @@ void WorldScene::buildTerrain() {
     }
     terrainBlocks = terrainLods_.size();
     setTerrainLod(terrainLod_);
+}
+
+void WorldScene::setTerrainLight(bool dynamic, float relief) {
+    terrainDynamic_ = dynamic;
+    terrainRelief_ = relief;
+    if (area_)
+        buildTerrain();
+}
+
+bool WorldScene::groundHeight(r4::Vec3 p, float &height) const {
+    if (!area_)
+        return false;
+    // R4nkine's (x, y) is libRealSpace's (x, -z): r4::axes::toYUp
+    const float half = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE_DIV_2 - 1;
+    if (std::abs(p.x) >= half || std::abs(p.y) >= half)
+        return false;
+    height = area_->getY(p.x, -p.y);
+    return true;
 }
 
 void WorldScene::setTerrainLod(int mode) {

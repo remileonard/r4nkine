@@ -16,6 +16,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace r4bridge {
@@ -30,22 +31,51 @@ uint32_t packColor(const float c[4]) {
 } // namespace
 
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette,
-                                               const std::vector<float> &lodRanges) {
+                                               const std::vector<float> &lodRanges, const TerrainLight &light) {
     using namespace r4::assets;
     if (!area || !area->GetAreaBlockByID(0, 0))
         return nullptr;
+    const bool dynamic = light.dynamic && light.ranges && !light.ranges->empty();
     auto model = std::make_shared<Model>();
     model->source = "terrain";
 
-    // the colors of the triangles: as they are (RSArea lit them), both faces
-    // (the game finds the winding of its terrain at run time)
+    // the colors of the triangles, both faces (the game finds the winding of
+    // its terrain at run time):
+    // - baked: as RSArea made them, with the light of the data (unlit);
+    // - dynamic: the ramp of the terrain type of each triangle (RSArea's
+    //   terrainTone), lit by the sun through the normals (PaletteRamp)
     Material colors;
     colors.name = "terrain colors";
-    colors.shading = Shading::Unlit;
-    colors.vertexColors = true;
-    colors.diffuse = {1, 1, 1, 1};
     colors.doubleSided = true;
+    if (dynamic) {
+        model->images.push_back(rampImage(palette, *light.ranges));
+        colors.shading = Shading::PaletteRamp;
+        colors.diffuseImage = 0;
+        colors.rampAmbient = light.lighting.ambient;
+        colors.rampLight = light.lighting.light;
+    } else {
+        colors.shading = Shading::Unlit;
+        colors.vertexColors = true;
+        colors.diffuse = {1, 1, 1, 1};
+    }
     model->materials.push_back(colors);
+    // dynamic: the brightest tone of the ramp of a terrain type, as
+    // RSArea::terrainTone(type, 255); the ramp of the PaletteRamp gives the
+    // tones under it by the intensity
+    auto topTone = [&](uint8_t type) -> uint32_t {
+        const std::vector<PaletteRange> &r = *light.ranges;
+        const PaletteRange &range = type < r.size() ? r[type] : r[0];
+        return (uint32_t)std::min(255, range.first + range.shades) | 0xff000000u;
+    };
+    // the terrain type of a triangle: the one of its highest vertex (RSArea::highestVertex)
+    auto typeOf = [](const MapVertex *a, const MapVertex *b, const MapVertex *c) {
+        const MapVertex *h = a;
+        if ((uint16_t)b->height >= (uint16_t)h->height)
+            h = b;
+        if ((uint16_t)c->height >= (uint16_t)h->height)
+            h = c;
+        return h->type;
+    };
 
     // a material by texture of the map, made at its first triangle
     std::map<int, int> textureMaterial;
@@ -80,6 +110,12 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             Material m;
             m.name = std::string("terrain ") + src->name;
             m.shading = Shading::Unlit;
+            if (dynamic) { // the texture times the intensity of the sun
+                m.shading = Shading::PaletteRamp;
+                m.rampTextured = true;
+                m.rampAmbient = light.lighting.ambient;
+                m.rampLight = light.lighting.light;
+            }
             m.diffuseImage = (int)model->images.size() - 1;
             // the GL_DECAL of the game: mix(color, texel, alpha of the texel),
             // the colored triangle under it giving the color
@@ -93,13 +129,68 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     };
 
     const float kSkirt = 600; // the depth of the skirts of the blocks
+    const int last = BLOCK_PER_MAP_SIDE - 1;
+    // the cells of a block at a level, then its seams with the blocks on its
+    // right and below at the same level, as SCRenderer::renderBlock
+    auto forEachCell = [&](int level, int i, const auto &fn) {
+        AreaBlock *b = area->GetAreaBlockByID(level, i);
+        if (!b || b->sideSize < 2)
+            return;
+        int side = b->sideSize;
+        for (int x = 0; x < side - 1; x++)
+            for (int y = 0; y < side - 1; y++)
+                fn(b->GetVertice(x, y), b->GetVertice(x + 1, y), b->GetVertice(x + 1, y + 1), b->GetVertice(x, y + 1));
+        AreaBlock *right = i % BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(level, i + 1) : nullptr;
+        AreaBlock *below = i / BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(level, i + BLOCK_PER_MAP_SIDE) : nullptr;
+        if (right)
+            for (int y = 0; y < side - 1; y++)
+                fn(b->GetVertice(side - 1, y), right->GetVertice(0, y), right->GetVertice(0, y + 1),
+                   b->GetVertice(side - 1, y + 1));
+        if (below)
+            for (int x = 0; x < side - 1; x++)
+                fn(b->GetVertice(x, side - 1), b->GetVertice(x + 1, side - 1), below->GetVertice(x + 1, 0),
+                   below->GetVertice(x, 0));
+        AreaBlock *corner = right && below ? area->GetAreaBlockByID(level, i + 1 + BLOCK_PER_MAP_SIDE) : nullptr;
+        if (corner)
+            fn(b->GetVertice(side - 1, side - 1), right->GetVertice(0, side - 1), corner->GetVertice(0, 0),
+               below->GetVertice(side - 1, 0));
+    };
+    // dynamic: the normals of the vertices of each level, from all the cells
+    // around them (across the blocks), pointing up
+    std::vector<std::unordered_map<const MapVertex *, r4::Vec3>> normals(NUM_LODS);
+    if (dynamic)
+        for (int level = 0; level < NUM_LODS; level++) {
+            auto &n = normals[level];
+            auto face = [&](const MapVertex *a, const MapVertex *b, const MapVertex *c) {
+                const float k = light.relief;
+                r4::Vec3 A{a->v.x, a->v.y * k, a->v.z}, B{b->v.x, b->v.y * k, b->v.z}, C{c->v.x, c->v.y * k, c->v.z};
+                r4::Vec3 f = r4::cross(B - A, C - A);
+                if (f.y < 0)
+                    f = -f;
+                n[a] += f, n[b] += f, n[c] += f;
+            };
+            for (int i = 0; i < BLOCKS_PER_MAP; i++)
+                forEachCell(level, i, [&](const MapVertex *cur, const MapVertex *right, const MapVertex *br,
+                                          const MapVertex *bottom) {
+                    face(cur, br, bottom);
+                    face(cur, right, br);
+                });
+            for (auto &[v, nv] : n)
+                nv = r4::length(nv) > 0 ? r4::normalize(nv) : r4::Vec3{0, 1, 0};
+        }
+    int currentLevel = 0;
     // the meshes of a level of a block, by material
     std::map<int, Mesh> meshes;
-    auto add = [&](int material, const MapVertex *v, uint32_t color, r4::Vec2 uv) {
+    auto add = [&](int material, const MapVertex *v, uint32_t color, r4::Vec2 uv, const MapVertex *normalOf = nullptr) {
         Mesh &m = meshes[material];
         Vertex out;
         out.position = {v->v.x, v->v.y, v->v.z};
         out.normal = {0, 1, 0};
+        if (dynamic) {
+            auto it = normals[currentLevel].find(normalOf ? normalOf : v);
+            if (it != normals[currentLevel].end())
+                out.normal = it->second;
+        }
         out.uv = uv;
         out.color = color;
         m.vertices.push_back(out);
@@ -109,8 +200,14 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     auto triangle = [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, const float (*cols)[4],
                         uint16_t imageID, const float (*uv)[2]) {
         const MapVertex *corner[3] = {a, b, c};
-        for (int k = 0; k < 3; k++)
-            add(0, corner[k], packColor(cols[k]), {0, 0});
+        if (dynamic) {
+            uint32_t tone = topTone(typeOf(a, b, c));
+            for (int k = 0; k < 3; k++)
+                add(0, corner[k], tone, {0, 0});
+        } else {
+            for (int k = 0; k < 3; k++)
+                add(0, corner[k], packColor(cols[k]), {0, 0});
+        }
         if (imageID == 0xFF)
             return;
         int material = textured(imageID);
@@ -143,7 +240,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     // the root, a group of the blocks; each block a LOD over its 3 levels
     model->nodes.push_back(Node{});
     model->nodes[0].name = "terrain";
-    const int last = BLOCK_PER_MAP_SIDE - 1;
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
         Node block;
         block.name = "block " + std::to_string(i % BLOCK_PER_MAP_SIDE) + "," + std::to_string(i / BLOCK_PER_MAP_SIDE);
@@ -153,6 +249,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         lod.lodRanges = lodRanges;
         std::vector<Node> levels;
         for (int level = 0; level < NUM_LODS; level++) {
+            currentLevel = level;
             AreaBlock *b = area->GetAreaBlockByID(level, i);
             if (b && b->sideSize >= 2) {
                 // the cells of the block, then its seams with the blocks on its
@@ -198,9 +295,10 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     MapVertex da = *a, dc = *c;
                     da.v.y -= kSkirt;
                     dc.v.y -= kSkirt;
-                    uint32_t ca = packColor(a->color), cc = packColor(c->color);
-                    add(0, a, ca, {0, 0}), add(0, c, cc, {0, 0}), add(0, &dc, cc, {0, 0});
-                    add(0, a, ca, {0, 0}), add(0, &dc, cc, {0, 0}), add(0, &da, ca, {0, 0});
+                    uint32_t ca = dynamic ? topTone(a->type) : packColor(a->color);
+                    uint32_t cc = dynamic ? topTone(c->type) : packColor(c->color);
+                    add(0, a, ca, {0, 0}), add(0, c, cc, {0, 0}), add(0, &dc, cc, {0, 0}, c);
+                    add(0, a, ca, {0, 0}), add(0, &dc, cc, {0, 0}, c), add(0, &da, ca, {0, 0}, a);
                 };
                 for (int x = 0; x < endX; x++) {
                     skirt(at(x, 0), at(x + 1, 0));

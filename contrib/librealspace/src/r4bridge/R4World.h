@@ -38,8 +38,25 @@ namespace r4bridge {
 // The game draws all its blocks at one level (world_detail); the default
 // here: the finest up to 2 blocks (40000), the coarsest beyond 5 (100000).
 // In libRealSpace's axes (Y up). Null when the area has no blocks.
+// The light of the terrain:
+// - baked (the default): the colors of RSArea, lit by the light of the data
+//   (the flag of each vertex along the ramp of its terrain type), unlit;
+// - dynamic: the brightest tone of the ramp of each triangle's terrain type
+//   (RSArea::terrainTone), darkened along that ramp by the sun as the objects
+//   (PaletteRamp: ambient + light * N.L), with normals made from the relief;
+//   the textures times that intensity.
+struct TerrainLight {
+    bool dynamic = false;
+    const std::vector<PaletteRange> *ranges = nullptr; // the ramps of the palette
+    Lighting lighting;
+    // the heights multiplied by it for the normals only (not the geometry):
+    // the relief of the maps is gentle (a vertex every 1000), the light of
+    // the data exaggerates it
+    float relief = 1;
+};
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette,
-                                               const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f});
+                                               const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f},
+                                               const TerrainLight &light = {});
 
 // The overlays of an area: its runways and the ground around them, as
 // SCRenderer::renderMapOverlay draws them over the terrain: a mesh by
