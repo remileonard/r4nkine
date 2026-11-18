@@ -219,20 +219,31 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
         bleedClearTexels(img);
+        // as SCRenderer::createTextureInGPU: GL_LINEAR, no mipmaps, GL_CLAMP_TO_EDGE
+        img.mipmaps = false;
+        img.clampS = img.clampT = true;
         model->images.push_back(std::move(img));
         textureImage[i] = (int)model->images.size() - 1;
     }
-    // property 6 or 9: the texture is the face (GL_LESS); the others: drawn
-    // over the colored face (GL_EQUAL), a decal
+    // as SCRenderer::drawModelTexturePass: blended (GL_SRC_ALPHA,
+    // GL_ONE_MINUS_SRC_ALPHA) with the alpha test of drawModel (GL_GREATER 0.1);
+    // property 6 or 9: the texture is the face (GL_LESS, the depth written);
+    // the others over the colored face, where its depth is (GL_EQUAL, the
+    // depth not written)
     auto textureMaterial = [&](int texture, bool replaces, bool twoSided) {
         Material m;
         m.name = std::string(e->images[texture]->name) + (replaces ? "" : " (decal)") + (twoSided ? ", two-sided" : "");
         m.diffuseImage = textureImage[texture];
         m.rampTextured = true;
-        m.alpha = AlphaMode::Mask;
-        m.alphaCutoff = 0.1f; // glAlphaFunc(GL_GREATER, 0.1f)
+        m.alpha = AlphaMode::Blend;
+        m.alphaTest = 0.1f;
         m.doubleSided = twoSided;
-        m.decal = !replaces;
+        if (replaces) {
+            m.blendDepthWrite = true;
+        } else {
+            m.depthEqual = true;
+            m.depthWrite = false;
+        }
         return material("tex" + std::to_string(texture) + (replaces ? "r" : "d") + (twoSided ? "2" : "1"), m);
     };
 

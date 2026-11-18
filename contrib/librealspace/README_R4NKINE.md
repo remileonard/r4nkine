@@ -89,6 +89,11 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - **Textures** : chaque image de l'objet, avec sa taille et son nombre de frames. `-textures` ouvre cette section au départ.
    - Souris : bouton gauche pour tourner, molette pour le zoom, bouton droit pour déplacer.
    - Clavier : flèches haut et bas pour l'objet précédent ou suivant, Échap pour quitter.
+   - Dans **Render** :
+     - **Flat Shading** (ou `-flat`) : les objets prennent la normale de leur face, comme `object_gouraud = false` dans le jeu, et le terrain est recalculé par `RSArea` avec `terrain_flat` ;
+     - **Gouraud by Vertex** (ou `-gouraud`) : l'éclairage des objets est calculé aux sommets puis interpolé, comme le jeu (le dos d'une face double prend la normale de la face). Sinon, il est calculé à chaque pixel.
+
+     Les deux se règlent au départ d'après le `config.ini` du jeu s'il est là.
    - `-frames N -shot image.bmp` fait une capture après N images, utile pour les tests.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine
@@ -189,4 +194,7 @@ Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spaw
 - 342 objets listés. Rendu vérifié sur F-16DES, A-10 (verrière), 747, CARRIERW et T-72.
 - R4nkine doit être au moins à `6af0d4b` (le mode `AlphaMode::Additive`, ajouté pour les verrières).
 - Les objets sans géométrie (les obus `20MM`…) s'affichent vides, c'est normal.
-- T-72 : les bandes derrière les chenilles sont les faces `TRAX` (propriété 9, `flags[1] = 255`), des traces au sol que `SCRenderer` dessine aussi. Si on veut les cacher, c'est probablement `flags[1] == 255` qui les distingue.
+- T-72 : les bandes derrière les chenilles sont les faces `TRAX` (propriété 9, `flags[1] = 255`), des traces au sol que `SCRenderer` dessine aussi. Si on veut les cacher, c'est probablement `flags[1] == 255` qui les distingue.| Textures (`uvs`, `qmapuvs`, `images`) | Images RGBA à travers la palette, index 255 transparent ; `GL_LINEAR` sans mipmaps et bords bornés (`Image::mipmaps = false`, `clampS/T`), comme `createTextureInGPU` |
+| Passe texture : mélange `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` et test alpha `> 0,1` | `AlphaMode::Blend` avec `alphaTest = 0,1` |
+| Propriété 6 ou 9 : la texture est la face (`GL_LESS`, profondeur écrite) | Matériau `rampTextured`, `blendDepthWrite` |
+| Autres faces texturées : sur la face colorée (`GL_EQUAL`, profondeur non écrite) | `depthEqual`, `depthWrite = false` : la texture n'apparaît que là où la face colorée est dessinée |

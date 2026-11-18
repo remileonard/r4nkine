@@ -20,7 +20,7 @@ struct FrameBlock {
     float ambient[4];
     float fogColor[4];
     float fogParams[4]; // start, end, enabled
-    float options[4];   // textures, lighting
+    float options[4];   // textures, lighting, flat shading, ramp by vertex
 };
 
 struct MaterialBlock {
@@ -46,10 +46,16 @@ layout(location = 4) in vec4 inModel0;
 layout(location = 5) in vec4 inModel1;
 layout(location = 6) in vec4 inModel2;
 layout(location = 7) in vec4 inModel3;
+layout(std140) uniform Material {
+    vec4 diffuse, ambient, specular, emissive, flags, flags2;
+};
 out vec3 vNormal;
 out vec3 vPosition;
 out vec2 vUV;
 out vec4 vColor;
+out float vRampIntensity; // PaletteRamp lit at the vertex (options.w)
+// the same vertices give the same depth in every draw (the GL_EQUAL decals)
+invariant gl_Position;
 void main() {
     mat4 modelView = view * mat4(inModel0, inModel1, inModel2, inModel3);
     vec4 p = modelView * vec4(inPosition, 1.0);
@@ -58,6 +64,9 @@ void main() {
     vNormal = transpose(inverse(mat3(modelView))) * inNormal;
     vUV = inUV;
     vColor = inColor;
+    vRampIntensity = 1.0;
+    if (dot(vNormal, vNormal) > 1e-12)
+        vRampIntensity = clamp(flags2.z + max(dot(normalize(vNormal), lightDirection.xyz), 0.0) * flags2.w, 0.0, 1.0);
     gl_Position = projection * p;
 }
 )";
@@ -75,21 +84,27 @@ in vec3 vNormal;
 in vec3 vPosition;
 in vec2 vUV;
 in vec4 vColor;
+in float vRampIntensity;
 out vec4 fragColor;
+vec3 faceDirection; // the normal of the face seen, towards the eye (set first in main)
 // the normal of the side of the face that is seen (two-sided lighting,
 // whatever the winding): turned over only when it is on the other side of
 // the face itself, whose normal from the derivatives always faces the eye.
 // Not the interpolated normal against the eye: smooth normals lean away
 // from the eye near the outlines of a surface, and flipping them there
 // lit the faces from the wrong side.
+// Flat shading (options.z): the normal of the face itself.
 vec3 seenNormal() {
+    if (options.z > 0.5 && dot(faceDirection, faceDirection) > 0.0)
+        return normalize(faceDirection);
     vec3 n = normalize(vNormal);
-    vec3 face = cross(dFdx(vPosition), dFdy(vPosition));
-    if (dot(face, face) > 0.0 && dot(n, face) < 0.0)
+    if (dot(faceDirection, faceDirection) > 0.0 && dot(n, faceDirection) < 0.0)
         n = -n;
     return n;
 }
 void main() {
+    // the derivatives, out of any branch
+    faceDirection = cross(dFdx(vPosition), dFdy(vPosition));
     vec4 base = diffuse;
     vec2 uv = vUV;
     if (flags2.x > 0.5) {
@@ -106,6 +121,11 @@ void main() {
         // colors x 32 intensities in the texture), or the texture times it
         vec3 n = seenNormal();
         float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w, 0.0, 1.0);
+        // by vertex (options.w), as RealSpace: the intensity of the vertices,
+        // interpolated; the back of a face by its face normal
+        bool back = dot(faceDirection, faceDirection) > 0.0 && dot(vNormal, faceDirection) < 0.0;
+        if (options.w > 0.5 && options.z < 0.5 && !back)
+            intensity = vRampIntensity;
         vec3 c;
         if (flags2.y < 1.5) {
             int index = int(vColor.r * 255.0 + 0.5);
@@ -222,7 +242,8 @@ bool Renderer::createShaders() {
 gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
     bool blend = m.alpha == assets::AlphaMode::Blend;
     bool additive = m.alpha == assets::AlphaMode::Additive;
-    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) |
+    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) |
+                   (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) |
                    (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8;
     auto it = pipelines_.find(key);
     if (it != pipelines_.end())
@@ -236,9 +257,11 @@ gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Pri
     bool tris = primitive == assets::Primitive::Triangles;
     d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::None : gpu::CullMode::Back;
     d.blend = blend ? gpu::BlendMode::Alpha : additive ? gpu::BlendMode::Additive : gpu::BlendMode::Opaque;
-    d.depthWrite = !blend && m.depthWrite;
+    d.depthWrite = (!blend || m.blendDepthWrite) && m.depthWrite;
+    if (m.depthEqual)
+        d.depthCompare = gpu::CompareOp::Equal;
     d.wireframe = wireframe_ && tris;
-    if (m.decal) {
+    if (m.decal && !m.depthEqual) { // an equal depth needs the very same depth
         d.polygonOffsetFactor = -1;
         d.polygonOffsetUnits = -2;
     }
@@ -320,7 +343,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     copyVec(b.specular, p.specular, p.specular.x + p.specular.y + p.specular.z > 0 ? p.shininess : 0);
     copyVec(b.emissive, p.emissive, 1);
     b.flags[0] = texture ? 1.0f : 0.0f;
-    b.flags[1] = p.alpha == assets::AlphaMode::Mask ? p.alphaCutoff : 0.0f;
+    b.flags[1] = p.alpha == assets::AlphaMode::Mask ? p.alphaCutoff : p.alphaTest;
     b.flags[2] = p.vertexColors ? 1.0f : 0.0f;
     b.flags[3] = p.shading == assets::Shading::Unlit ? 1.0f : 0.0f;
     b.flags2[0] = p.sphereMap ? 1.0f : 0.0f;
@@ -542,6 +565,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.fogParams[2] = env_.fog ? 1.0f : 0.0f;
     fb.options[0] = options_.textures ? 1.0f : 0.0f;
     fb.options[1] = options_.lighting ? 1.0f : 0.0f;
+    fb.options[2] = options_.flatShading ? 1.0f : 0.0f;
+    fb.options[3] = options_.rampGouraud ? 1.0f : 0.0f;
     device_.updateBuffer(frameUniforms_, 0, &fb, sizeof fb);
 
     // the matrices of the items, in the order of the draws

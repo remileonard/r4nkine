@@ -61,6 +61,15 @@ struct Material {
     bool doubleSided = false;
     bool vertexColors = false; // the vertex colors multiply the diffuse
     bool depthWrite = true;    // false: drawn without writing the depth (flames, glows)
+    // Blend: it writes the depth all the same (the textured faces of the 8-bit
+    // games, blended at their edges but solid)
+    bool blendDepthWrite = false;
+    // drawn only where the depth is the one already there: over a face drawn
+    // before with the same vertices (the GL_EQUAL decals of RealSpace)
+    bool depthEqual = false;
+    // the texels under this alpha are dropped, whatever the alpha mode (the
+    // alpha test of the old games, with Blend); Mask uses alphaCutoff
+    float alphaTest = 0;
     // drawn over the coplanar faces before it (decals: runway markings,
     // the subfaces of OpenFlight)
     bool decal = false;

@@ -164,6 +164,7 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         if (g.menu("Style", style, {"Filled", "Lines"}))
             app.renderer->setWireframe(style == 1);
         g.toggle("Textures", o.textures);
+        g.toggle("Flat Shading", o.flatShading);
         // the state bits of the camera (flight: 1 body, 2 gear, 4 far,
         // 8 shadow, the high byte the weapons)
         g.bits("State Mask", app.camera.mask, 16);

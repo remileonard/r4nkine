@@ -22,6 +22,8 @@
 //  -focus    avec -mission : la caméra sur le premier objet de ce nom (ZSU-23...)
 //  -graph    le graphe de la scène ouvert au départ
 //  -distance la distance de la caméra au départ
+//  -flat     le rendu plat, objets et terrain (object_gouraud faux, terrain_flat)
+//  -gouraud  l'éclairage des objets calculé aux sommets, comme le jeu
 //
 //  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
 //  statistiques.
@@ -254,6 +256,7 @@ int main(int argc, char **argv) {
     int frames = -1;
     bool openTextures = false, graphAtStart = false;
     float startDistance = 0;
+    bool flatAtStart = false, gouraudAtStart = false;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-data" && i + 1 < argc)
@@ -274,6 +277,10 @@ int main(int argc, char **argv) {
             openTextures = true;
         else if (a == "-graph") // le graphe de la scène ouvert au départ
             graphAtStart = true;
+        else if (a == "-flat") // le rendu plat (objets et terrain)
+            flatAtStart = true;
+        else if (a == "-gouraud") // l'éclairage des objets par sommet, comme le jeu
+            gouraudAtStart = true;
         else if (a == "-distance" && i + 1 < argc)
             startDistance = (float)std::atof(argv[++i]);
     }
@@ -294,6 +301,10 @@ int main(int argc, char **argv) {
             std::printf("r4objviewer: configuration %s\n", ini.c_str());
             break;
         }
+    if (flatAtStart) {
+        config.setBool("Game", "object_gouraud", false);
+        config.setBool("Game", "terrain_flat", true);
+    }
     if (tres.empty()) {
         SDL_RWops *big = SDL_RWFromFile((dataDir + "TOBIGTRE.TRE").c_str(), "rb");
         if (big) {
@@ -506,6 +517,12 @@ int main(int argc, char **argv) {
         bool quit = false, sceneDrag = false, wireframe = false;
         bool openRender = false, openPost = false, openPerf = true, openObject = true;
         bool vsync = true; // SDL_GL_SetSwapInterval(1) à l'ouverture de la fenêtre
+        // le rendu plat et l'éclairage par sommet, d'après la configuration du
+        // jeu : object_gouraud (faux : les objets à plat), terrain_flat
+        bool flat = !config.getBool("Game", "object_gouraud", true) || config.getBool("Game", "terrain_flat", false);
+        bool gouraudByVertex = gouraudAtStart;
+        renderer.options().rampGouraud = gouraudByVertex;
+        renderer.options().flatShading = flat;
         bool openWorld = true, openParts = false, openMapObjects = false, openScenes = true;
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
@@ -662,6 +679,18 @@ int main(int argc, char **argv) {
                 gui.columns(2);
                 gui.toggle("Wireframe", wireframe);
                 gui.toggle("Textures", renderer.options().textures);
+                gui.columns(1);
+                if (gui.toggle("Flat Shading", flat)) {
+                    // les objets : la normale de la face (le object_gouraud du jeu) ;
+                    // le terrain : ses couleurs refaites par RSArea (terrain_flat)
+                    renderer.options().flatShading = flat;
+                    config.setBool("Game", "terrain_flat", flat);
+                    if (mode == 1 && currentWorld >= 0)
+                        loadWorld(currentWorld);
+                }
+                if (gui.toggle("Gouraud by Vertex (as the game)", gouraudByVertex))
+                    renderer.options().rampGouraud = gouraudByVertex;
+                gui.columns(2);
                 gui.columns(1);
                 gui.slider("LOD Scale", renderer.options().lodScale, 0.05f, 4, "%.2f", true);
                 bool relit = gui.slider("Ambient", lighting.ambient, 0, 1);

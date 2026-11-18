@@ -74,6 +74,13 @@ struct RenderOptions {
     bool textures = true;
     bool lighting = true;        // off: everything unlit
     float lodScale = 1;          // the distances of the LODs and instancers are multiplied by it
+    // the normal of the face instead of the normals of the vertices: the flat
+    // shading of the old games
+    bool flatShading = false;
+    // PaletteRamp: the intensity computed at the vertices and interpolated
+    // (the Gouraud of the old games), not at each pixel; the back of a
+    // two-sided face lit by its face normal, as RealSpace
+    bool rampGouraud = false;
 };
 
 struct RenderStats {
