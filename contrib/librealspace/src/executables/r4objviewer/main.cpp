@@ -27,6 +27,8 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
+//  -diag DIR avec -mission : les types de terrain et les textures de la carte,
+//            en images dans DIR (voir TerrainDiag.h)
 //
 //  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
 //  statistiques.
@@ -40,6 +42,7 @@
 #include "realspace/TreArchive.h"
 
 #include "../../r4bridge/R4Bridge.h"
+#include "TerrainDiag.h"
 #include "WorldScene.h"
 
 #include "r4/axes.h"
@@ -255,7 +258,7 @@ r4::scene::Node *graphRows(r4::ui::Context &gui, GraphView &view, r4::scene::Nod
 } // namespace
 
 int main(int argc, char **argv) {
-    std::string dataDir = ".", startObject = "F-16DES", startMission, focus, shot;
+    std::string dataDir = ".", startObject = "F-16DES", startMission, focus, shot, diagDir;
     std::vector<std::string> tres;
     int frames = -1;
     bool openTextures = false, graphAtStart = false;
@@ -296,6 +299,8 @@ int main(int argc, char **argv) {
             gouraudAtStart = true;
         else if (a == "-shadows") // les ombres portées du soleil
             shadowsAtStart = true;
+        else if (a == "-diag" && i + 1 < argc) // les types et les textures du terrain
+            diagDir = argv[++i];
         else if (a == "-distance" && i + 1 < argc)
             startDistance = (float)std::atof(argv[++i]);
     }
@@ -532,6 +537,13 @@ int main(int argc, char **argv) {
             if (currentWorld >= 0) {
                 mode = 1;
                 selectWorld(currentWorld);
+                if (!diagDir.empty()) {
+                    std::string error;
+                    if (terrainDiagnostic(world.area(), *palette.GetColorPalette(), palette.ranges, diagDir, error))
+                        std::printf("r4objviewer: diagnostic du terrain dans %s\n", diagDir.c_str());
+                    else
+                        std::fprintf(stderr, "r4objviewer: diagnostic : %s\n", error.c_str());
+                }
                 bool found = false;
                 for (const auto *list : {&world.parts(), &world.mapObjects()})
                     for (const WorldScene::Item &it : *list)

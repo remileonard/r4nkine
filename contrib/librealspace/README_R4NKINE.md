@@ -29,6 +29,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/r4bridge/CMakeLists.txt` | La bibliothèque statique `r4bridge` |
 | `src/executables/r4objviewer/main.cpp` | Le viewer : liste des objets ou des missions, caméra, GUI, post-process |
 | `src/executables/r4objviewer/WorldScene.h/.cpp` | Une mission en scène R4nkine : `RSMission`, `RSWorld` et `RSArea` chargés par libRealSpace, le terrain, les objets de la carte et de la mission |
+| `src/executables/r4objviewer/TerrainDiag.h/.cpp` | Le diagnostic d'un terrain (`-diag`) : ses types et ses textures en images |
 | `src/executables/r4objviewer/CMakeLists.txt` | L'exécutable, lié comme le debugger |
 | `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge et r4objviewer |
 
@@ -106,6 +107,15 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - **Follow the Ground** : la cible reste sur le sol ;
      - les boutons **Whole Map**, **Top View** et un par zone de la mission.
    - `-frames N -shot image.bmp` fait une capture après N images, utile pour les tests.
+   - `-mission NOM -diag DOSSIER` écrit le diagnostic du terrain dans DOSSIER, qui doit exister. Tout est au niveau LVL0, 360 × 360 sommets, avec le nord en haut :
+     - `terrain.ppm` : les couleurs de RSArea ;
+     - `types.ppm` : le type de chaque sommet, dans le ton le plus clair de sa rampe ;
+     - `textures.ppm` : les triangles texturés, chacun dans la couleur moyenne de son image ;
+     - `tex_<id>.ppm` : chaque image utilisée, avec les texels clairs en magenta ;
+     - `types.txt` : le nombre de sommets par type ;
+     - `textures.txt` : par image, le nombre de triangles, les types sur lesquels elle est posée et ses premières cellules.
+
+     Avec `-frames 1`, le viewer se ferme ensuite.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine
 

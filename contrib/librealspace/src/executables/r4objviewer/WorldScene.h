@@ -56,6 +56,7 @@ public:
     bool groundHeight(r4::Vec3 p, float &height) const;
 
     r4::scene::NodePtr root() const { return root_; }
+    RSArea *area() const { return area_.get(); }
     // the layers, shown or hidden
     void showTerrain(bool on);
     void showMapObjects(bool on);
