@@ -634,7 +634,23 @@ int main(int argc, char **argv) {
             gui.endPanel();
             }
 
-            gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight},
+            // la colonne de droite, comme r4fly : en haut le graphe de la scène
+            // (quand il est montré), en dessous les réglages et les statistiques
+            const float graphHeight = showGraph ? std::floor(win.pointHeight * 0.45f) : 0;
+            const float rightX = (float)win.pointWidth - rightWidth;
+            if (showGraph) {
+                gui.beginPanel("graph", {rightX, 0, rightWidth, graphHeight}, "Scene Graph");
+                r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
+                r4::Vec3 center;
+                float radius = 0;
+                if (graphRows(gui, graph, shown, r4::Mat4(1.0f), 0, center, radius)) {
+                    // la caméra sur le nœud cliqué
+                    target = center;
+                    distance = std::max(radius * 3, 60.0f);
+                }
+                gui.endPanel();
+            }
+            gui.beginPanel("view", {rightX, graphHeight, rightWidth, (float)win.pointHeight - graphHeight},
                            "r4objviewer");
             gui.toggle("Scene Graph", showGraph);
             if (gui.section("Render", openRender)) {
@@ -777,26 +793,11 @@ int main(int argc, char **argv) {
             }
             gui.endPanel();
 
-            // the scene graph, between the list and the view
-            const float graphWidth = 320;
-            if (showGraph) {
-                gui.beginPanel("graph", {leftWidth, 0, graphWidth, (float)win.pointHeight}, "Scene Graph");
-                r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
-                r4::Vec3 center;
-                float radius = 0;
-                if (graphRows(gui, graph, shown, r4::Mat4(1.0f), 0, center, radius)) {
-                    // the camera on the node clicked
-                    target = center;
-                    distance = std::max(radius * 3, 60.0f);
-                }
-                gui.endPanel();
-            }
             gui.endFrame();
 
             // --- la scène entre les panneaux, puis la GUI par-dessus -------------------------
             float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
-            float left = leftWidth + (showGraph ? graphWidth : 0);
-            int vx = (int)(left * pixel), vw = std::max(1, win.width - (int)((left + rightWidth) * pixel));
+            int vx = (int)(leftWidth * pixel), vw = std::max(1, win.width - (int)((leftWidth + rightWidth) * pixel));
             orbit.target = target;
             orbit.distance = distance;
             bool showWorld = mode == 1 && currentWorld >= 0;
