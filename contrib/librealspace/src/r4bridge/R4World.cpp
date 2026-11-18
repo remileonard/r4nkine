@@ -670,11 +670,11 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
     });
 }
 
-std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPalette &palette,
+std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette,
                                             const std::vector<PaletteRange> &ranges, Lighting lighting) {
     using namespace r4::assets;
     auto model = std::make_shared<Model>();
-    const std::string name = std::string(species == 0 ? "conifer" : "broadleaf") + (far ? " far" : "");
+    const std::string name = std::string(species == 0 ? "conifer" : "broadleaf") + (simple ? " simple" : "");
     model->images.push_back(rampImage(palette, ranges));
     Material m;
     m.name = "tree, palette ramp";
@@ -736,7 +736,7 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPal
         }
     };
     if (species == 0) {
-        if (far) {
+        if (simple) {
             solid({{5.5f, 2}, {0, 25}}, 4, conifer, 0.5f);
         } else {
             solid({{0.7f, 0}, {0.7f, 5}}, 5, trunk);
@@ -744,7 +744,7 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPal
             solid({{4.5f, 11}, {0, 25}}, 7, conifer, 0.5f);
         }
     } else {
-        if (far) {
+        if (simple) {
             solid({{0, 5}, {7, 13}, {0, 21}}, 4, leaves);
         } else {
             solid({{0.9f, 0}, {0.8f, 8}}, 5, trunk);

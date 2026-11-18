@@ -103,11 +103,11 @@ std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &settin
 void plantForest(RSArea *area, const ForestSettings &settings, ForestChunk &chunk);
 
 // A tree, low poly with flat faces, in the palette (PaletteRamp, the shades
-// of the green and brown ramps): species 0 a conifer, 1 a broadleaf; far:
+// of the green and brown ramps): species 0 a conifer, 1 a broadleaf; simple:
 // the simpler one for the distance (a pyramid, an octahedron). About 25 high
 // (the scale of the objects of the game, 2.1 times real), its foot at 0.
 // In libRealSpace's axes (Y up).
-std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPalette &palette,
+std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette,
                                             const std::vector<PaletteRange> &ranges, Lighting lighting = {});
 
 // The matrix of an object of the map: its position, then its 3 x 3

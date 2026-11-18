@@ -428,9 +428,9 @@ void WorldScene::buildForests() {
     // the 2 species, each detailed then simple
     std::vector<r4::scene::InstancePart> parts[2][2];
     for (int sp = 0; sp < 2; sp++)
-        for (int far = 0; far < 2; far++) {
-            auto model = r4bridge::treeModel(sp, far != 0, *palette_.GetColorPalette(), palette_.ranges, lighting);
-            parts[sp][far] = r4::scene::collectParts(*renderer_.upload(*model));
+        for (int level = 0; level < 2; level++) {
+            auto model = r4bridge::treeModel(sp, level != 0, *palette_.GetColorPalette(), palette_.ranges, lighting);
+            parts[sp][level] = r4::scene::collectParts(*renderer_.upload(*model));
         }
     forestNodes_.resize(chunks.size());
     for (size_t i = 0; i < chunks.size(); i++) {
