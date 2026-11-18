@@ -28,13 +28,28 @@ struct Lighting {
     float light = 5.0f / 8.0f;
 };
 
+// The axes of a model: R4nkine's (Z up, the default), or libRealSpace's own
+// (Y up), for the models placed in a world of libRealSpace (a mission), all
+// turned at once by realSpaceToR4() at its root.
+enum class Axes { R4, RealSpace };
+
+// libRealSpace's axes (Y up) to R4nkine's (Z up): (x, y, z) -> (x, -z, y),
+// a turn of 90 degrees about X. The only place the two meet.
+r4::Mat4 realSpaceToR4();
+
 // The table of the shades of the palette, as SCRenderer::shadeAlongRamp
 // computes them: 256 colors x 32 intensities, the image R4nkine's
 // PaletteRamp material reads (row k: intensity k / 31).
 r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<PaletteRange> &ranges);
 
+// The clear texels of an image (alpha 0, the index 255 of the palette) take
+// the color of their opaque neighbors: filtered, the edges of the opaque
+// parts then keep their color instead of turning to the black of index 255.
+void bleedClearTexels(r4::assets::Image &image);
+
 // An RSEntity as a model of R4nkine, as SCRenderer::drawModel draws it:
-// - the axes: the game has Y up, R4nkine Z up (a turn of 90 degrees about X);
+// - the axes: the game has Y up, R4nkine Z up (a turn of 90 degrees about X),
+//   or kept as they are with Axes::RealSpace;
 //   the faces of the game turn clockwise (glFrontFace(GL_CW)), they are
 //   turned the other way for R4nkine;
 // - the levels of detail (LVL0, LVL1...) become a LOD node, at their distances;
@@ -45,6 +60,7 @@ r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<Palette
 // - the clear pass (property 2): palette color - 1, added (AlphaMode::Additive);
 // - two-sided: flags[2] == 1 for a triangle, props2 == 1 of its ATTR for a quad.
 std::shared_ptr<r4::assets::Model> toModel(RSEntity *entity, const VGAPalette &palette,
-                                           const std::vector<PaletteRange> &ranges, Lighting lighting = {});
+                                           const std::vector<PaletteRange> &ranges, Lighting lighting = {},
+                                           Axes axes = Axes::R4);
 
 } // namespace r4bridge

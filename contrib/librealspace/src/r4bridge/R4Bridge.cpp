@@ -53,9 +53,12 @@ uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &range
     return pack(a.r + (b.r - a.r) * f, a.g + (b.g - a.g) * f, a.b + (b.b - a.b) * f);
 }
 
-// the axes of R4nkine (Z up) from those of the game (Y up): a turn of 90
-// degrees about X, which keeps the handedness (and the faces' winding)
-r4::Vec3 zUp(const Vector3D &v) { return {v.x, -v.z, v.y}; }
+// a point of libRealSpace in the axes asked: R4nkine's (Z up), a turn of
+// 90 degrees about X that keeps the handedness (and the faces' winding),
+// or libRealSpace's own (Y up), for a world turned once at its root
+r4::Vec3 toAxes(const Vector3D &v, Axes axes) {
+    return axes == Axes::R4 ? r4::Vec3{v.x, -v.z, v.y} : r4::Vec3{v.x, v.y, v.z};
+}
 
 } // namespace
 
@@ -75,8 +78,49 @@ r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<Palette
     return img;
 }
 
+void bleedClearTexels(r4::assets::Image &img) {
+    if (img.channels != 4 || img.width <= 0 || img.height <= 0)
+        return;
+    const int w = img.width, h = img.height;
+    std::vector<uint8_t> known((size_t)w * h);
+    bool any = false;
+    for (size_t i = 0; i < known.size(); i++)
+        any |= (known[i] = img.pixels[i * 4 + 3] != 0) != 0;
+    if (!any)
+        return;
+    // rings of the clear texels next to colored ones, until all are colored
+    for (bool changed = true; changed;) {
+        changed = false;
+        std::vector<uint8_t> next = known;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                size_t i = (size_t)y * w + x;
+                if (known[i])
+                    continue;
+                int sum[3] = {0, 0, 0}, n = 0;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || !known[(size_t)ny * w + nx])
+                            continue;
+                        const uint8_t *c = &img.pixels[((size_t)ny * w + nx) * 4];
+                        sum[0] += c[0], sum[1] += c[1], sum[2] += c[2], n++;
+                    }
+                if (!n)
+                    continue;
+                uint8_t *c = &img.pixels[i * 4];
+                c[0] = (uint8_t)(sum[0] / n), c[1] = (uint8_t)(sum[1] / n), c[2] = (uint8_t)(sum[2] / n);
+                next[i] = 1;
+                changed = true;
+            }
+        known.swap(next);
+    }
+}
+
+r4::Mat4 realSpaceToR4() { return r4::rotate(r4::radians(90.0f), {1, 0, 0}); }
+
 std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palette,
-                                           const std::vector<PaletteRange> &ranges, Lighting lighting) {
+                                           const std::vector<PaletteRange> &ranges, Lighting lighting, Axes axes) {
     using namespace r4::assets;
     if (!e || e->vertices.empty())
         return nullptr;
@@ -96,7 +140,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     // R4nkine's faces turn the other way: they are emitted (a, c, b) below.
     std::vector<r4::Vec3> normals(vertexCount, r4::Vec3(0));
     auto faceNormal = [&](uint16_t a, uint16_t b, uint16_t c) {
-        r4::Vec3 A = zUp(e->vertices[a]), B = zUp(e->vertices[b]), C = zUp(e->vertices[c]);
+        r4::Vec3 A = toAxes(e->vertices[a], axes), B = toAxes(e->vertices[b], axes), C = toAxes(e->vertices[c], axes);
         return r4::normalize(r4::cross(A - B, C - B));
     };
     for (const Triangle &t : e->triangles)
@@ -171,6 +215,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 // R4nkine's images start at the bottom row
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
+        bleedClearTexels(img);
         model->images.push_back(std::move(img));
         textureImage[i] = (int)model->images.size() - 1;
     }
@@ -191,6 +236,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     // --- the meshes of a level -------------------------------------------------------------
     struct Level {
         std::map<int, Mesh> meshes; // by material
+        Axes axes;
         void add(const RSEntity *e, const std::vector<r4::Vec3> &normals, int material, const uint16_t *ids, int n,
                  uint32_t color, const UV *uvs = nullptr, float w = 1, float h = 1) {
             Mesh &m = meshes[material];
@@ -198,7 +244,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
             for (int k = 1; k + 1 < n; k++)
                 for (int j : {0, k + 1, k}) {
                     Vertex v;
-                    v.position = zUp(e->vertices[ids[j]]);
+                    v.position = toAxes(e->vertices[ids[j]], axes);
                     v.normal = normals[ids[j]];
                     v.color = color;
                     if (uvs)
@@ -224,6 +270,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     std::vector<Node> levelNodes;
     for (size_t level = 0; level < lods.size(); level++) {
         Level out;
+        out.axes = axes;
         for (uint16_t id : lods[level].second) {
             // the face of the entry: through ATTR (T triangle, Q quad, L line),
             // or, without ATTR, the number of a triangle and of a quad

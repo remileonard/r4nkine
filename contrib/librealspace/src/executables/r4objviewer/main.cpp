@@ -6,22 +6,34 @@
 //  RSEntity un objet. r4bridge::toModel() en fait un modèle R4nkine, que le
 //  Renderer charge sur le GPU (upload) et dessine.
 //
-//    r4objviewer [-data DIR] [-tre FICHIER.TRE ...] [-object NOM] [-frames N] [-shot F.bmp]
+//  Deux modes :
+//  - Objects : un objet du jeu à la fois ;
+//  - Missions : une mission (ou un monde seul) avec son terrain, les objets
+//    de la carte et ceux de la mission, chargés par libRealSpace (RSMission,
+//    RSWorld, RSArea) ; seulement celles dont le terrain (<tera>.PAK) est
+//    dans le dossier des données.
 //
-//  -data    le dossier des TRE (par défaut le dossier courant)
-//  -tre     les TRE à ouvrir (par défaut TOBIGTRE.TRE, ou OBJECTS.TRE + MISC.TRE)
-//  -object  l'objet montré au départ (F-16DES, A-10...)
+//    r4objviewer [-data DIR] [-tre FICHIER.TRE ...] [-object NOM] [-mission NOM] [-frames N] [-shot F.bmp]
 //
-//  À gauche, la liste des objets ; à droite, le rendu et les statistiques.
+//  -data     le dossier des TRE et des terrains .PAK (par défaut le dossier courant)
+//  -tre      les TRE à ouvrir (par défaut TOBIGTRE.TRE, ou OBJECTS.TRE + MISC.TRE)
+//  -object   l'objet montré au départ (F-16DES, A-10...)
+//  -mission  la mission ou le monde montré au départ (MISN-A1, TURKEY...)
+//  -focus    avec -mission : la caméra sur le premier objet de ce nom (ZSU-23...)
+//
+//  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
+//  statistiques.
 //  Souris : bouton gauche tourner, molette zoom, bouton droit déplacer.
 //  Clavier : flèches haut et bas, objet précédent ou suivant ; Échap, quitter.
 //
+#include "engine/Config.hpp"
 #include "realspace/AssetManager.h"
 #include "realspace/RSEntity.h"
 #include "realspace/RSPalette.h"
 #include "realspace/TreArchive.h"
 
 #include "../../r4bridge/R4Bridge.h"
+#include "WorldScene.h"
 
 #include "r4/gpu/device.h"
 #include "r4/render/orbit.h"
@@ -152,7 +164,7 @@ void screenshot(const char *path, int w, int h) {
 } // namespace
 
 int main(int argc, char **argv) {
-    std::string dataDir = ".", startObject = "F-16DES", shot;
+    std::string dataDir = ".", startObject = "F-16DES", startMission, focus, shot;
     std::vector<std::string> tres;
     int frames = -1;
     bool openTextures = false;
@@ -164,6 +176,10 @@ int main(int argc, char **argv) {
             tres.push_back(argv[++i]);
         else if (a == "-object" && i + 1 < argc)
             startObject = argv[++i];
+        else if (a == "-mission" && i + 1 < argc)
+            startMission = argv[++i];
+        else if (a == "-focus" && i + 1 < argc)
+            focus = argv[++i];
         else if (a == "-frames" && i + 1 < argc)
             frames = std::atoi(argv[++i]);
         else if (a == "-shot" && i + 1 < argc)
@@ -172,7 +188,9 @@ int main(int argc, char **argv) {
             openTextures = true;
     }
 
-    // --- 1. libRealSpace : les TRE, la palette ----------------------------------------
+    // --- 1. libRealSpace : la configuration (RSArea la lit ; sans fichier,
+    // ses valeurs par défaut), les TRE, la palette -----------------------------------
+    Config::getInstance();
     AssetManager &assets = AssetManager::getInstance();
     if (dataDir.back() != '/' && dataDir.back() != '\\')
         dataDir += '/';
@@ -201,6 +219,14 @@ int main(int argc, char **argv) {
         return 1;
     }
     std::printf("r4objviewer: %zu objets\n", objects.size());
+    // les chemins des missions, des objets et des textures du terrain, comme le jeu
+    assets.mission_root_path = "..\\..\\DATA\\MISSIONS\\";
+    assets.object_root_path = "..\\..\\DATA\\OBJECTS\\";
+    assets.texture_root_path = "..\\..\\DATA\\TXM\\";
+    assets.txm_filename = assets.texture_root_path + "TXMPACK.PAK";
+    assets.acc_filename = assets.texture_root_path + "ACCPACK.PAK";
+    std::vector<WorldEntry> worlds = listWorlds(assets, dataDir);
+    std::printf("r4objviewer: %zu missions ou mondes avec leur terrain\n", worlds.size());
 
     // --- 2. R4nkine : la fenêtre, le device, le renderer, la GUI ----------------------------
     Window win;
@@ -298,6 +324,30 @@ int main(int argc, char **argv) {
         };
         load(current);
 
+        // --- 3 bis. une mission : son terrain, ses objets (WorldScene) ----------------
+        WorldScene world(assets, palette, renderer);
+        int mode = 0;          // 0 objets, 1 missions
+        int currentWorld = -1; // dans worlds
+        int terrainLod = 0;
+        bool showTerrain = true, showMapObjects = true, showParts = true;
+        std::string worldError;
+        const r4::Vec3 objectLight = env.lightDirection;
+        float worldScroll = 0;
+        auto loadWorld = [&](int index) {
+            currentWorld = index;
+            worldError.clear();
+            if (!world.load(worlds[index], worldError))
+                std::fprintf(stderr, "r4objviewer: %s\n", worldError.c_str());
+            world.showTerrain(showTerrain);
+            world.showMapObjects(showMapObjects);
+            world.showParts(showParts);
+            std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %.0f ms\n",
+                        worlds[index].label.c_str(), world.terrainTriangles, world.mapObjects().size(),
+                        world.parts().size(), world.loadMs);
+            if (index < (int)worldScroll || index >= (int)worldScroll + listRows)
+                worldScroll = (float)std::max(0, index - listRows / 2);
+        };
+
         // --- 4. la caméra : r4::render::Orbit tourne autour d'un point ------------------
         r4::render::Orbit orbit;
         orbit.setAngles(-140, 20, 0);
@@ -308,11 +358,45 @@ int main(int argc, char **argv) {
             target = bounds.center;
             distance = bounds.radius * 3;
         };
+        // une mission : la caméra sur le joueur (ou le milieu de la carte), d'un peu haut
+        auto selectWorld = [&](int index) {
+            loadWorld(index);
+            if (world.parts().empty()) {
+                // un monde seul : toute la carte
+                r4::Sphere b = world.root()->bounds();
+                target = b.center;
+                distance = b.radius * 1.6f;
+            } else {
+                target = world.start;
+                distance = 3000;
+            }
+            orbit.setAngles(-140, 25, 0);
+        };
+        if (!startMission.empty()) {
+            for (size_t i = 0; i < worlds.size(); i++)
+                if (worlds[i].label == startMission || worlds[i].label == startMission + " (world)")
+                    currentWorld = (int)i;
+            if (currentWorld >= 0) {
+                mode = 1;
+                selectWorld(currentWorld);
+                bool found = false;
+                for (const auto *list : {&world.parts(), &world.mapObjects()})
+                    for (const WorldScene::Item &it : *list)
+                        if (!found && !focus.empty() && it.name.compare(0, focus.size(), focus) == 0) {
+                            target = it.position;
+                            distance = std::max(it.radius * 4, 60.0f);
+                            found = true;
+                        }
+            } else {
+                std::fprintf(stderr, "r4objviewer: pas de mission %s avec son terrain\n", startMission.c_str());
+            }
+        }
         r4::render::Camera camera;
 
         r4::ui::Input input;
         bool quit = false, sceneDrag = false, wireframe = false;
         bool openRender = false, openPost = false, openPerf = true, openObject = true;
+        bool openWorld = true, openParts = false, openMapObjects = false;
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
         const float leftWidth = 230, rightWidth = 310;
@@ -326,8 +410,14 @@ int main(int argc, char **argv) {
                 if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE))
                     quit = true;
                 if (e.type == SDL_KEYDOWN && (e.key.keysym.sym == SDLK_DOWN || e.key.keysym.sym == SDLK_UP)) {
-                    int n = (int)objects.size();
-                    select((current + (e.key.keysym.sym == SDLK_DOWN ? 1 : n - 1)) % n);
+                    int step = e.key.keysym.sym == SDLK_DOWN ? 1 : -1;
+                    if (mode == 0) {
+                        int n = (int)objects.size();
+                        select((current + step + n) % n);
+                    } else if (!worlds.empty()) {
+                        int n = (int)worlds.size();
+                        selectWorld(((currentWorld < 0 ? 0 : currentWorld) + step + n) % n);
+                    }
                 }
                 if (e.type == SDL_MOUSEMOTION) {
                     input.mouseX = (float)e.motion.x;
@@ -387,7 +477,33 @@ int main(int argc, char **argv) {
             gui.beginFrame(win.pointWidth, win.pointHeight, input,
                            win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1);
 
-            gui.beginPanel("objects", {0, 0, leftWidth, (float)win.pointHeight}, "Objects");
+            gui.beginPanel("objects", {0, 0, leftWidth, (float)win.pointHeight}, "r4objviewer");
+            if (gui.radio("Mode", mode, {"Objects", "Missions"}) && mode == 1 && currentWorld < 0 && !worlds.empty())
+                selectWorld(0);
+            if (mode == 1) {
+                // les missions et les mondes dont le terrain est là
+                if (worlds.empty()) {
+                    gui.message("No terrain (.PAK) in the data\nfolder for these missions.");
+                } else {
+                    gui.message(fmt("%d / %d   %s", currentWorld + 1, (int)worlds.size(),
+                                    currentWorld >= 0 ? worlds[currentWorld].label.c_str() : "-")
+                                    .c_str());
+                    listRows = std::max(4, (int)(gui.remainingHeight() / 21.0f) - 1);
+                    int maxFirst = std::max(0, (int)worlds.size() - listRows);
+                    worldScroll = std::clamp(worldScroll - input.wheel * 3, 0.0f, (float)maxFirst);
+                    int first = (int)worldScroll;
+                    for (int i = first; i < std::min((int)worlds.size(), first + listRows); i++) {
+                        r4::ui::Context::TreeRow row;
+                        row.id = &worlds[i];
+                        row.label = worlds[i].label.c_str();
+                        row.selected = i == currentWorld;
+                        bool open = false, visible = true;
+                        if (gui.treeRow(row, open, visible) && i != currentWorld)
+                            selectWorld(i);
+                    }
+                }
+                gui.endPanel();
+            } else {
             gui.message(fmt("%d / %d   %s", current + 1, (int)objects.size(), objects[current].label.c_str()).c_str());
             gui.columns(2);
             if (gui.button("< Previous"))
@@ -416,6 +532,7 @@ int main(int argc, char **argv) {
                           r4::ui::Font::Small);
             }
             gui.endPanel();
+            }
 
             gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight},
                            "r4objviewer");
@@ -463,7 +580,54 @@ int main(int argc, char **argv) {
                            {"Items opaque / transparent", fmt("%u / %u", st.opaqueItems, st.transparentItems)},
                            {"Nodes visited / culled", fmt("%u / %u", st.nodesVisited, st.nodesCulled)}});
             }
-            if (gui.section("Object", openObject)) {
+            if (mode == 1 && currentWorld >= 0) {
+                if (gui.section("World", openWorld)) {
+                    gui.columns(3);
+                    if (gui.toggle("Terrain", showTerrain))
+                        world.showTerrain(showTerrain);
+                    if (gui.toggle("Map", showMapObjects))
+                        world.showMapObjects(showMapObjects);
+                    if (gui.toggle("Parts", showParts))
+                        world.showParts(showParts);
+                    gui.columns(1);
+                    if (gui.menu("Terrain Detail", terrainLod, {"Fine (400 per block)", "Medium (100)", "Coarse (25)"}))
+                        world.setTerrainLod(terrainLod);
+                    size_t missing = 0;
+                    for (const auto *list : {&world.parts(), &world.mapObjects()})
+                        for (const WorldScene::Item &it : *list)
+                            missing += it.found ? 0 : 1;
+                    gui.table({{"World", world.worldName},
+                               {"Terrain", world.terrainName},
+                               {"Terrain triangles", fmt("%zu", world.terrainTriangles)},
+                               {"Terrain textures", fmt("%zu", world.terrainTextures)},
+                               {"Map objects", fmt("%zu", world.mapObjects().size())},
+                               {"Mission parts", fmt("%zu", world.parts().size())},
+                               {"Objects not in the TRE", fmt("%zu", missing)},
+                               {"Light ambient / direct", fmt("%.2f / %.2f", world.lighting.ambient, world.lighting.light)},
+                               {"Load + convert", fmt("%.0f ms", world.loadMs)}});
+                    if (!worldError.empty())
+                        gui.message(worldError.c_str());
+                }
+                // un clic : la caméra sur l'objet
+                auto itemList = [&](const std::vector<WorldScene::Item> &items) {
+                    for (const WorldScene::Item &it : items) {
+                        r4::ui::Context::TreeRow row;
+                        row.id = &it;
+                        row.label = it.name.c_str();
+                        row.tagText = it.found ? "" : "?";
+                        bool open = false, visible = true;
+                        if (gui.treeRow(row, open, visible)) {
+                            target = it.position;
+                            distance = std::max(it.radius * 4, 60.0f);
+                        }
+                    }
+                };
+                if (!world.parts().empty() && gui.section(fmt("Parts (%zu)", world.parts().size()).c_str(), openParts))
+                    itemList(world.parts());
+                if (gui.section(fmt("Map Objects (%zu)", world.mapObjects().size()).c_str(), openMapObjects))
+                    itemList(world.mapObjects());
+            }
+            if (mode == 0 && gui.section("Object", openObject)) {
                 const ObjectEntry &o = objects[current];
                 std::vector<std::pair<std::string, std::string>> rows = {
                     {"File", fmt("%s, %u bytes", o.label.c_str(), (unsigned)o.entry->size)},
@@ -484,7 +648,7 @@ int main(int argc, char **argv) {
                 }
                 gui.table(rows);
             }
-            if (gui.section(fmt("Textures (%zu)", thumbs.size()).c_str(), openTextures)) {
+            if (mode == 0 && gui.section(fmt("Textures (%zu)", thumbs.size()).c_str(), openTextures)) {
                 for (const Thumb &t : thumbs) {
                     std::string frames = t.frames > 1 ? fmt(", %d frames", t.frames) : "";
                     gui.label(fmt("%s  %dx%d%s", t.name.c_str(), t.width, t.height, frames.c_str()).c_str(),
@@ -500,12 +664,21 @@ int main(int argc, char **argv) {
             int vx = (int)(leftWidth * pixel), vw = std::max(1, win.width - (int)((leftWidth + rightWidth) * pixel));
             orbit.target = target;
             orbit.distance = distance;
-            orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f,
-                        distance + bounds.radius * 400);
+            bool showWorld = mode == 1 && currentWorld >= 0;
+            if (showWorld) {
+                // un monde : la carte fait 360 km de côté
+                orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f),
+                            distance + 600000.0f);
+                env.lightDirection = -world.lightTowards; // la lumière du monde
+            } else {
+                orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f,
+                            distance + bounds.radius * 400);
+                env.lightDirection = objectLight;
+            }
             renderer.setWireframe(wireframe);
             r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
             renderer.setTarget(rt);
-            renderer.render(*root, camera, vx, 0, vw, win.height);
+            renderer.render(showWorld ? *world.root() : *root, camera, vx, 0, vw, win.height);
             renderer.setTarget({});
             post.end(0, 0, win.width, win.height, win.width, win.height);
             gui.render();
