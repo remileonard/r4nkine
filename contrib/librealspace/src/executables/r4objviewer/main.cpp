@@ -634,12 +634,11 @@ int main(int argc, char **argv) {
             gui.endPanel();
             }
 
-            // la colonne de droite, comme r4fly : en haut le graphe de la scène
-            // (quand il est montré), en dessous les réglages et les statistiques
-            const float graphHeight = showGraph ? std::floor(win.pointHeight * 0.45f) : 0;
-            const float rightX = (float)win.pointWidth - rightWidth;
+            gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight},
+                           "r4objviewer");
+            // le graphe de la scène, sous son bouton
+            gui.toggle("Scene Graph", showGraph);
             if (showGraph) {
-                gui.beginPanel("graph", {rightX, 0, rightWidth, graphHeight}, "Scene Graph");
                 r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
                 r4::Vec3 center;
                 float radius = 0;
@@ -648,11 +647,7 @@ int main(int argc, char **argv) {
                     target = center;
                     distance = std::max(radius * 3, 60.0f);
                 }
-                gui.endPanel();
             }
-            gui.beginPanel("view", {rightX, graphHeight, rightWidth, (float)win.pointHeight - graphHeight},
-                           "r4objviewer");
-            gui.toggle("Scene Graph", showGraph);
             if (gui.section("Render", openRender)) {
                 gui.columns(2);
                 gui.toggle("Wireframe", wireframe);

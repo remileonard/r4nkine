@@ -78,7 +78,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - la section **Scenes** : les parts groupées par la scène qui les fait apparaître ; chaque scène s'affiche ou se cache, et « No scene » (les parts amenées par un programme de la mission) est cachée au départ ;
      - les sections **Parts** et **Map Objects** : un clic met la caméra sur l'objet ;
      - `-focus NOM` fait de même au démarrage, et `-distance D` règle le recul de la caméra.
-   - En haut à droite, **Scene Graph** (ou `-graph`) : le haut de la colonne de droite montre le graphe de la scène affichée, la vue garde sa taille, objet ou mission, comme dans r4fly. On y voit le type de chaque nœud, un voyant pour le cacher ou le montrer, et un clic sur un nœud y amène la caméra.
+   - En haut à droite, **Scene Graph** (ou `-graph`), en haut du panneau de droite : le graphe de la scène affichée (objet ou mission) s'affiche sous ce bouton. On y voit le type de chaque nœud, un voyant pour le cacher ou le montrer, et un clic sur un nœud y amène la caméra.
    - Panneau de gauche en mode Objects, **Objects** : la liste des objets des TRE. Un clic choisit un objet, la molette fait défiler la liste, et il y a des boutons Précédent et Suivant.
    - Panneau de droite :
      - **Render** : fil de fer, textures, facteur de LOD, lumière, ciel, angles de la caméra ;
