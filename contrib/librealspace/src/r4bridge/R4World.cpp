@@ -159,6 +159,106 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     return model;
 }
 
+std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &palette) {
+    using namespace r4::assets;
+    if (!area || area->objectOverlay.empty())
+        return nullptr;
+    auto model = std::make_shared<Model>();
+    model->source = "overlays";
+    // over the terrain, both faces, as they are (not lit)
+    Material colors;
+    colors.name = "overlay colors";
+    colors.shading = Shading::Unlit;
+    colors.vertexColors = true;
+    colors.diffuse = {1, 1, 1, 1};
+    colors.doubleSided = true;
+    colors.decal = true;
+    model->materials.push_back(colors);
+
+    // a textured triangle of color c: the image c + 255, its clear texels in
+    // the palette color c (the color the game gives it under GL_DECAL)
+    std::map<int, int> textureMaterial;
+    auto textured = [&](int c) {
+        auto it = textureMaterial.find(c);
+        if (it != textureMaterial.end())
+            return it->second;
+        int material = -1;
+        RSImage *src = area->GetImageByID(c + 255);
+        if (src && src->data && src->width && src->height) {
+            const VGAPalette &pal = src->palette ? *src->palette : palette;
+            const Texel &under = palette.colors[c & 0xff];
+            Image img;
+            img.name = std::string(src->name);
+            img.width = (int)src->width;
+            img.height = (int)src->height;
+            img.channels = 4;
+            img.pixels.resize((size_t)img.width * img.height * 4);
+            for (int y = 0; y < img.height; y++)
+                for (int x = 0; x < img.width; x++) {
+                    const Texel &t = pal.colors[src->data[(size_t)y * img.width + x]];
+                    const Texel &o = t.a ? t : under;
+                    uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
+                    d[0] = o.r, d[1] = o.g, d[2] = o.b, d[3] = 255;
+                }
+            model->images.push_back(std::move(img));
+            Material m;
+            m.name = std::string("overlay ") + src->name;
+            m.shading = Shading::Unlit;
+            m.diffuseImage = (int)model->images.size() - 1;
+            m.decal = true;
+            m.doubleSided = true;
+            model->materials.push_back(m);
+            material = (int)model->materials.size() - 1;
+        }
+        return textureMaterial[c] = material;
+    };
+
+    const float kTriUvScale = 128.0f; // the uvs of the .TRI: 0..125, 128 a whole tile
+    const float kLift = 0.05f;        // a triangle over the ones drawn before it
+    std::map<int, Mesh> meshes;
+    for (const AreaOverlay &ov : area->objectOverlay) {
+        if (!ov.vertices || ov.nbTriangles <= 0)
+            continue;
+        int rank = 0;
+        for (uint16_t j : ov.drawList) {
+            if (j >= 400)
+                continue;
+            const AreaOverlayTriangles &tri = ov.trianles[j];
+            int material = tri.color != 255 ? textured(tri.color) : 0;
+            if (material < 0)
+                material = 0;
+            const Texel &t = palette.colors[tri.color & 0xff];
+            uint32_t color = material == 0 ? (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | 0xff000000u
+                                           : 0xffffffffu;
+            Mesh &m = meshes[material];
+            for (int k = 0; k < 3; k++) {
+                const AoVPoints &p = ov.vertices[tri.verticesIdx[k]];
+                Vertex v;
+                v.position = {(float)p.x, (float)p.y + rank * kLift, (float)p.z};
+                v.normal = {0, 1, 0};
+                v.uv = {tri.uv[k].u / kTriUvScale, 1 - tri.uv[k].v / kTriUvScale};
+                v.color = color;
+                m.vertices.push_back(v);
+                m.indices.push_back((uint32_t)m.vertices.size() - 1);
+            }
+            rank++;
+        }
+    }
+    Node root;
+    root.name = "overlays";
+    for (auto &[material, mesh] : meshes) {
+        mesh.material = material;
+        mesh.name = model->materials[material].name;
+        mesh.computeBounds();
+        root.meshes.push_back((int)model->meshes.size());
+        model->meshes.push_back(std::move(mesh));
+    }
+    if (model->meshes.empty())
+        return nullptr;
+    model->nodes.push_back(root);
+    return model;
+}
+
 r4::Mat4 mapObjectMatrix(const MapObject &object) {
     // the columns given to glMultMatrixf by SCRenderer::renderObjects
     const float (*o)[3] = object.orientation;

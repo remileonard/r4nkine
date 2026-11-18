@@ -20,6 +20,8 @@
 //  -object   l'objet montré au départ (F-16DES, A-10...)
 //  -mission  la mission ou le monde montré au départ (MISN-A1, TURKEY...)
 //  -focus    avec -mission : la caméra sur le premier objet de ce nom (ZSU-23...)
+//  -graph    le graphe de la scène ouvert au départ
+//  -distance la distance de la caméra au départ
 //
 //  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
 //  statistiques.
@@ -52,6 +54,7 @@
 #include <cstdio>
 #include <cstring>
 #include <deque>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -161,13 +164,96 @@ void screenshot(const char *path, int w, int h) {
     SDL_FreeSurface(s);
 }
 
+// --- the scene graph, as the Scene Graph of r4fly ------------------------------------
+struct GraphView {
+    std::map<const r4::scene::Node *, bool> open;      // the open nodes
+    std::map<r4::scene::Node *, uint32_t> hiddenMasks; // the hidden nodes, their old mask
+    const r4::scene::Node *selected = nullptr;
+    void reset() {
+        open.clear();
+        hiddenMasks.clear();
+        selected = nullptr;
+    }
+};
+
+const char *typeTag(r4::scene::NodeType t) {
+    switch (t) {
+    case r4::scene::NodeType::Group: return "GRP";
+    case r4::scene::NodeType::Geode: return "GEO";
+    case r4::scene::NodeType::Switch: return "SW";
+    case r4::scene::NodeType::LOD: return "LOD";
+    case r4::scene::NodeType::Billboard: return "BB";
+    case r4::scene::NodeType::Instancer: return "INST";
+    }
+    return "?";
+}
+r4::ui::Color typeColor(r4::scene::NodeType t) {
+    switch (t) {
+    case r4::scene::NodeType::Geode: return r4::ui::Color::rgb(0.55f, 0.85f, 0.55f);
+    case r4::scene::NodeType::Switch: return r4::ui::Color::rgb(0.95f, 0.75f, 0.4f);
+    case r4::scene::NodeType::LOD: return r4::ui::Color::rgb(0.6f, 0.75f, 1.0f);
+    default: return r4::ui::Color::rgb(0.85f, 0.85f, 0.85f);
+    }
+}
+
+// a node and, open, its children: the light shows or hides it (its mask), a
+// click on its name selects it; returns the node clicked, with its center
+r4::scene::Node *graphRows(r4::ui::Context &gui, GraphView &view, r4::scene::Node &n, const r4::Mat4 &parent,
+                           int depth, r4::Vec3 &center, float &radius) {
+    r4::scene::Node *clicked = nullptr;
+    if (gui.remainingHeight() < 22)
+        return nullptr; // the panel is full
+    auto it = view.open.find(&n);
+    if (it == view.open.end())
+        it = view.open.emplace(&n, depth < 2).first;
+    bool open = it->second;
+    bool visible = view.hiddenMasks.count(&n) == 0;
+    std::string label = n.name().empty() ? std::string("(") + typeTag(n.type()) + ")" : n.name();
+    if (!n.children().empty())
+        label += fmt("  [%zu]", n.children().size());
+    r4::ui::Context::TreeRow row;
+    row.id = &n;
+    row.depth = depth;
+    row.label = label.c_str();
+    row.tag = typeColor(n.type());
+    row.tagText = typeTag(n.type());
+    row.hasChildren = !n.children().empty();
+    row.selected = view.selected == &n;
+    bool wasVisible = visible;
+    if (gui.treeRow(row, open, visible)) {
+        view.selected = &n;
+        clicked = &n;
+        // its bounds are in the space of its parent
+        center = r4::transformPoint(parent, n.bounds().center);
+        radius = n.bounds().radius;
+    }
+    it->second = open;
+    if (visible != wasVisible) {
+        if (!visible) {
+            view.hiddenMasks[&n] = n.mask();
+            n.setMask(0);
+        } else {
+            n.setMask(view.hiddenMasks[&n]);
+            view.hiddenMasks.erase(&n);
+        }
+    }
+    if (open) {
+        r4::Mat4 world = parent * n.matrix();
+        for (const auto &c : n.children())
+            if (r4::scene::Node *k = graphRows(gui, view, *c, world, depth + 1, center, radius))
+                clicked = k;
+    }
+    return clicked;
+}
+
 } // namespace
 
 int main(int argc, char **argv) {
     std::string dataDir = ".", startObject = "F-16DES", startMission, focus, shot;
     std::vector<std::string> tres;
     int frames = -1;
-    bool openTextures = false;
+    bool openTextures = false, graphAtStart = false;
+    float startDistance = 0;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-data" && i + 1 < argc)
@@ -186,6 +272,10 @@ int main(int argc, char **argv) {
             shot = argv[++i];
         else if (a == "-textures") // la section des textures ouverte au départ
             openTextures = true;
+        else if (a == "-graph") // le graphe de la scène ouvert au départ
+            graphAtStart = true;
+        else if (a == "-distance" && i + 1 < argc)
+            startDistance = (float)std::atof(argv[++i]);
     }
 
     // --- 1. libRealSpace : la configuration (RSArea la lit ; sans fichier,
@@ -329,7 +419,10 @@ int main(int argc, char **argv) {
         int mode = 0;          // 0 objets, 1 missions
         int currentWorld = -1; // dans worlds
         int terrainLod = 0;
-        bool showTerrain = true, showMapObjects = true, showParts = true;
+        bool showTerrain = true, showMapObjects = true, showParts = true, showOverlays = true;
+        std::vector<bool> showScenes; // by scene, then "no scene"
+        GraphView graph;
+        bool showGraph = graphAtStart;
         std::string worldError;
         const r4::Vec3 objectLight = env.lightDirection;
         float worldScroll = 0;
@@ -341,6 +434,10 @@ int main(int argc, char **argv) {
             world.showTerrain(showTerrain);
             world.showMapObjects(showMapObjects);
             world.showParts(showParts);
+            world.showOverlays(showOverlays);
+            showScenes.assign(world.scenes().size() + 1, true);
+            showScenes.back() = false; // the parts of no scene: hidden at first
+            graph.reset();
             std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %.0f ms\n",
                         worlds[index].label.c_str(), world.terrainTriangles, world.mapObjects().size(),
                         world.parts().size(), world.loadMs);
@@ -354,6 +451,7 @@ int main(int argc, char **argv) {
         r4::Vec3 target = bounds.center;
         float distance = bounds.radius * 3;
         auto select = [&](int index) {
+            graph.reset();
             load(current = index);
             target = bounds.center;
             distance = bounds.radius * 3;
@@ -391,12 +489,14 @@ int main(int argc, char **argv) {
                 std::fprintf(stderr, "r4objviewer: pas de mission %s avec son terrain\n", startMission.c_str());
             }
         }
+        if (startDistance > 0)
+            distance = startDistance;
         r4::render::Camera camera;
 
         r4::ui::Input input;
         bool quit = false, sceneDrag = false, wireframe = false;
         bool openRender = false, openPost = false, openPerf = true, openObject = true;
-        bool openWorld = true, openParts = false, openMapObjects = false;
+        bool openWorld = true, openParts = false, openMapObjects = false, openScenes = true;
         std::deque<float> frameMs, cullMs, drawMs;
         Uint64 lastFrame = SDL_GetPerformanceCounter();
         const float leftWidth = 230, rightWidth = 310;
@@ -536,6 +636,7 @@ int main(int argc, char **argv) {
 
             gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight},
                            "r4objviewer");
+            gui.toggle("Scene Graph", showGraph);
             if (gui.section("Render", openRender)) {
                 gui.columns(2);
                 gui.toggle("Wireframe", wireframe);
@@ -582,12 +683,14 @@ int main(int argc, char **argv) {
             }
             if (mode == 1 && currentWorld >= 0) {
                 if (gui.section("World", openWorld)) {
-                    gui.columns(3);
+                    gui.columns(2);
                     if (gui.toggle("Terrain", showTerrain))
                         world.showTerrain(showTerrain);
-                    if (gui.toggle("Map", showMapObjects))
+                    if (gui.toggle("Runways", showOverlays))
+                        world.showOverlays(showOverlays);
+                    if (gui.toggle("Map Objects", showMapObjects))
                         world.showMapObjects(showMapObjects);
-                    if (gui.toggle("Parts", showParts))
+                    if (gui.toggle("Mission Parts", showParts))
                         world.showParts(showParts);
                     gui.columns(1);
                     if (gui.menu("Terrain Detail", terrainLod, {"Fine (400 per block)", "Medium (100)", "Coarse (25)"}))
@@ -600,6 +703,7 @@ int main(int argc, char **argv) {
                                {"Terrain", world.terrainName},
                                {"Terrain triangles", fmt("%zu", world.terrainTriangles)},
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
+                               {"Runway triangles", fmt("%zu", world.overlayTriangles)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},
                                {"Mission parts", fmt("%zu", world.parts().size())},
                                {"Objects not in the TRE", fmt("%zu", missing)},
@@ -613,7 +717,9 @@ int main(int argc, char **argv) {
                     for (const WorldScene::Item &it : items) {
                         r4::ui::Context::TreeRow row;
                         row.id = &it;
-                        row.label = it.name.c_str();
+                        std::string label = it.scene >= 0 ? fmt("%s  (scene %d)", it.name.c_str(), it.scene)
+                                            : it.scene == -1 ? it.name + "  (no scene)" : it.name;
+                        row.label = label.c_str();
                         row.tagText = it.found ? "" : "?";
                         bool open = false, visible = true;
                         if (gui.treeRow(row, open, visible)) {
@@ -622,6 +728,19 @@ int main(int argc, char **argv) {
                         }
                     }
                 };
+                if (!world.scenes().empty() && gui.section(fmt("Scenes (%zu)", world.scenes().size()).c_str(), openScenes)) {
+                    // the parts by the scene that makes them appear
+                    for (size_t sc = 0; sc <= world.scenes().size(); sc++) {
+                        bool last = sc == world.scenes().size();
+                        std::string label = last ? fmt("No scene (%zu)", world.partsWithoutScene)
+                                                 : fmt("%s (%zu)", world.scenes()[sc].label.c_str(), world.scenes()[sc].parts);
+                        bool on = showScenes[sc];
+                        if (gui.toggle(label.c_str(), on)) {
+                            showScenes[sc] = on;
+                            world.showScene(last ? -1 : (int)sc, on);
+                        }
+                    }
+                }
                 if (!world.parts().empty() && gui.section(fmt("Parts (%zu)", world.parts().size()).c_str(), openParts))
                     itemList(world.parts());
                 if (gui.section(fmt("Map Objects (%zu)", world.mapObjects().size()).c_str(), openMapObjects))
@@ -657,11 +776,27 @@ int main(int argc, char **argv) {
                 }
             }
             gui.endPanel();
+
+            // the scene graph, between the list and the view
+            const float graphWidth = 320;
+            if (showGraph) {
+                gui.beginPanel("graph", {leftWidth, 0, graphWidth, (float)win.pointHeight}, "Scene Graph");
+                r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
+                r4::Vec3 center;
+                float radius = 0;
+                if (graphRows(gui, graph, shown, r4::Mat4(1.0f), 0, center, radius)) {
+                    // the camera on the node clicked
+                    target = center;
+                    distance = std::max(radius * 3, 60.0f);
+                }
+                gui.endPanel();
+            }
             gui.endFrame();
 
             // --- la scène entre les panneaux, puis la GUI par-dessus -------------------------
             float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
-            int vx = (int)(leftWidth * pixel), vw = std::max(1, win.width - (int)((leftWidth + rightWidth) * pixel));
+            float left = leftWidth + (showGraph ? graphWidth : 0);
+            int vx = (int)(left * pixel), vw = std::max(1, win.width - (int)((left + rightWidth) * pixel));
             orbit.target = target;
             orbit.distance = distance;
             bool showWorld = mode == 1 && currentWorld >= 0;

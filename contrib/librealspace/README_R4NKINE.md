@@ -25,7 +25,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | Fichier | Rôle |
 |---|---|
 | `src/r4bridge/R4Bridge.h/.cpp` | L'adaptateur `RSEntity` vers `r4::assets::Model`, et la table des teintes de la palette |
-| `src/r4bridge/R4World.h/.cpp` | Le terrain d'une zone (`RSArea`) en modèle R4nkine, et les matrices des objets de la carte (`MapObject`) et de la mission (`MISN_PART`), calculées comme `SCRenderer` |
+| `src/r4bridge/R4World.h/.cpp` | Le terrain d'une zone (`RSArea`) et ses overlays (les pistes) en modèles R4nkine, et les matrices des objets de la carte (`MapObject`) et de la mission (`MISN_PART`), calculées comme `SCRenderer` |
 | `src/r4bridge/CMakeLists.txt` | La bibliothèque statique `r4bridge` |
 | `src/executables/r4objviewer/main.cpp` | Le viewer : liste des objets ou des missions, caméra, GUI, post-process |
 | `src/executables/r4objviewer/WorldScene.h/.cpp` | Une mission en scène R4nkine : `RSMission`, `RSWorld` et `RSArea` chargés par libRealSpace, le terrain, les objets de la carte et de la mission |
@@ -64,7 +64,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 5. **Lancer** :
    ```
    r4objviewer -data /chemin/vers/les/TRE [-object F-16DES] [-tre TOBIGTRE.TRE] [-textures]
-   r4objviewer -data /chemin/vers/les/TRE -mission MISN-A1 [-focus ZSU-23]
+   r4objviewer -data /chemin/vers/les/TRE -mission MISN-A1 [-focus TOWB24] [-distance 2500] [-graph]
    ```
    - Sans `-tre`, le viewer ouvre `TOBIGTRE.TRE` s'il existe, sinon `OBJECTS.TRE` et `MISC.TRE`.
    - En haut à gauche, **Mode** : *Objects* (un objet à la fois) ou *Missions*.
@@ -75,8 +75,10 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
        - couches *Terrain*, *Map* (objets de la carte) et *Parts* (objets de la mission) ;
        - niveau de détail du terrain ;
        - chiffres : triangles, textures, objets, objets absents du TRE, lumière du monde, temps de chargement ;
+     - la section **Scenes** : les parts groupées par la scène qui les fait apparaître ; chaque scène s'affiche ou se cache, et « No scene » (les parts amenées par un programme de la mission) est cachée au départ ;
      - les sections **Parts** et **Map Objects** : un clic met la caméra sur l'objet ;
-     - `-focus NOM` fait de même au démarrage.
+     - `-focus NOM` fait de même au démarrage, et `-distance D` règle le recul de la caméra.
+   - En haut à droite, **Scene Graph** (ou `-graph`) : le graphe de la scène affichée, objet ou mission, comme dans r4fly. On y voit le type de chaque nœud, un voyant pour le cacher ou le montrer, et un clic sur un nœud y amène la caméra.
    - Panneau de gauche en mode Objects, **Objects** : la liste des objets des TRE. Un clic choisit un objet, la molette fait défiler la liste, et il y a des boutons Précédent et Suivant.
    - Panneau de droite :
      - **Render** : fil de fer, textures, facteur de LOD, lumière, ciel, angles de la caméra ;
@@ -153,7 +155,16 @@ Pour la lumière du monde, `setObjectLight` reçoit (c0, c1, c2) et en fait (c0,
 
 Le terrain (`WorldScene` et `R4World`) :
 - **Le nécessaire est fait** : les 18 × 18 blocs et leurs jointures, au niveau de détail choisi. Les couleurs viennent de `RSArea` et ne sont pas éclairées, comme dans le jeu. Les textures sont en décalque (le `GL_DECAL` du jeu), avec l'alpha de leur palette : les index inutilisés sont transparents.
-- **Pas encore fait** : les pistes et les marquages au sol (`objectOverlay`), le ciel, les nuages et le brouillard.
+- **Les overlays** (les pistes et leur sol, `objectOverlay`) : comme `renderMapOverlay`, dans l'ordre de `drawList`. Chaque triangle est surélevé de 0,05 au-dessus des précédents, à la place du `GL_LEQUAL` du jeu. Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128, et leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
+- **Pas encore fait** : le ciel, les nuages et le brouillard.
+
+Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :
+- **Le joueur** : sa position plus celle de la zone de la mission qu'il nomme.
+- **Les autres parts** apparaissent avec la première scène dont le `cast` les contient (le `cast` donne l'index de la part dans la liste) :
+  - avec `placement` 0, elles sont placées dans leur zone (position plus `areas[area_id]->position`) ;
+  - avec `placement` 1, le jeu les place par rapport au joueur au moment où la scène s'active (`placeRelativeToPlayer`). Le viewer les met au centre de la zone de la scène, à 4000 d'altitude pour un avion (`EntityType::jet`).
+- **Ensuite**, une part sous le sol est posée dessus (`RSArea::getY`), et un avion à moins de 10 du sol aussi.
+- **Une part placée dans le repère du monde** (`area_id` 255, `placement` 0) reste telle quelle.
 
 ## Testé
 
@@ -162,7 +173,11 @@ Le terrain (`WorldScene` et `R4World`) :
   - environ 0,3 s de chargement ;
   - les objets sont posés sur le terrain.
 
-  Aucune mission de TOBIGTRE.TRE n'utilise la Turquie. Le placement des parts a seulement été vérifié avec MISN-A1, sur un terrain substitué.
+  Aucune mission de TOBIGTRE.TRE n'utilise la Turquie.
+- Avec `SYRIA.PAK`, MISN-A1 (la première mission de Tactical Operations) montre :
+  - les deux pistes (236 triangles d'overlay) ;
+  - les 41 parts réparties dans 10 scènes, plus 8 sans scène ;
+  - la base d'attaque (scène 0) et la base d'entraînement (scène 6), posées au sol à côté de leurs pistes.
 - Testé sur Linux (GCC 13) avec une copie de libRealSpace (CMake complet du projet, plus les trois lignes ci-dessus) et R4nkine `6af0d4b`. Les données venaient de `TOBIGTRE.TRE`.
 - 342 objets listés. Rendu vérifié sur F-16DES, A-10 (verrière), 747, CARRIERW et T-72.
 - R4nkine doit être au moins à `6af0d4b` (le mode `AlphaMode::Additive`, ajouté pour les verrières).

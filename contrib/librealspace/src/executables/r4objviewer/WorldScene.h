@@ -52,6 +52,9 @@ public:
     void showTerrain(bool on);
     void showMapObjects(bool on);
     void showParts(bool on);
+    void showOverlays(bool on);
+    // the parts of a scene of the mission (or, scene -1, those of no scene)
+    void showScene(int scene, bool on);
 
     // what the scene holds, for the GUI
     struct Item {
@@ -59,11 +62,19 @@ public:
         r4::Vec3 position; // R4nkine's axes
         float radius;
         bool found;        // its object is in the TRE
+        int scene = -2;    // the scene that makes it appear; -1: none, -2: not a part
     };
+    // the scenes of the mission: their area and how many parts they bring
+    struct Scene {
+        std::string label;
+        size_t parts = 0;
+    };
+    const std::vector<Scene> &scenes() const { return scenes_; }
+    size_t partsWithoutScene = 0;
     const std::vector<Item> &parts() const { return parts_; }
     const std::vector<Item> &mapObjects() const { return mapObjects_; }
     std::string worldName, terrainName;
-    size_t terrainTriangles = 0, terrainTextures = 0;
+    size_t terrainTriangles = 0, terrainTextures = 0, overlayTriangles = 0;
     double loadMs = 0;
     bool hasLight = false;
     r4::Vec3 lightTowards{0, 0, 1}; // R4nkine's axes, towards the light
@@ -75,6 +86,8 @@ private:
     // by its instances; null when it is not in the TRE
     r4::scene::NodePtr object(const std::string &name, float *radius);
     void clear();
+    // the places of the parts, as the game makes them appear: see placeParts()
+    void placeParts();
 
     AssetManager &assets_;
     RSPalette &palette_;
@@ -85,7 +98,9 @@ private:
     std::map<std::string, std::unique_ptr<RSEntity>> entities_;
     std::map<std::string, r4::scene::NodePtr> objects_;
     std::shared_ptr<r4::scene::Group> root_;
-    std::shared_ptr<r4::scene::Switch> terrain_, mapLayer_, partsLayer_;
+    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_;
+    std::vector<std::shared_ptr<r4::scene::Switch>> sceneLayers_; // the scenes, then "no scene"
+    std::vector<Scene> scenes_;
     std::vector<Item> parts_, mapObjects_;
     int terrainLod_ = 0;
 };

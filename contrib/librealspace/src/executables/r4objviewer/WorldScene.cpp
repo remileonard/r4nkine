@@ -105,7 +105,10 @@ WorldScene::WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Ren
     mapLayer_->setName("objects of the map");
     partsLayer_ = r4::scene::make<r4::scene::Switch>();
     partsLayer_->setName("parts of the mission");
+    overlays_ = r4::scene::make<r4::scene::Switch>();
+    overlays_->setName("overlays (runways)");
     root_->addChild(terrain_);
+    root_->addChild(overlays_);
     root_->addChild(mapLayer_);
     root_->addChild(partsLayer_);
 }
@@ -114,8 +117,13 @@ WorldScene::~WorldScene() { clear(); }
 
 void WorldScene::clear() {
     terrain_->removeAllChildren();
+    overlays_->removeAllChildren();
     mapLayer_->removeAllChildren();
     partsLayer_->removeAllChildren();
+    sceneLayers_.clear();
+    scenes_.clear();
+    partsWithoutScene = 0;
+    overlayTriangles = 0;
     objects_.clear();
     parts_.clear();
     mapObjects_.clear();
@@ -191,6 +199,12 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
     setTerrainLod(terrainLod_);
+    // the runways and their ground, over the terrain
+    if (auto overlays = r4bridge::overlayModel(area_.get(), *palette_.GetColorPalette())) {
+        for (const r4::assets::Mesh &m : overlays->meshes)
+            overlayTriangles += m.indices.size() / 3;
+        overlays_->addChild(renderer_.upload(*overlays));
+    }
 
     // the objects of the map: as SCMission, each its entity
     for (MapObject &o : area_->objects) {
@@ -210,30 +224,118 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
                                radius, node != nullptr});
     }
 
-    // the parts of the mission
+    // the parts of the mission, where their scenes make them appear
     start = {0, 0, 0};
-    if (mission_) {
-        MISN_PART *player = mission_->getPlayerCoord();
-        for (MISN_PART *part : mission_->mission_data.parts) {
-            float radius = 0;
-            r4::scene::NodePtr node = object(part->member_name, &radius);
-            part->entity = entities_.count(part->member_name) ? entities_[part->member_name].get() : nullptr;
-            r4::Mat4 m = r4bridge::missionPartMatrix(*part);
-            if (node) {
-                auto place = r4::scene::make<r4::scene::Group>();
-                place->setName(part->member_name);
-                place->setMatrix(m);
-                place->addChild(node);
-                partsLayer_->addChild(place);
-            }
-            r4::Vec3 at = r4::transformPoint(r4bridge::realSpaceToR4(), r4::translationOf(m));
-            parts_.push_back({part->member_name + (part == player ? " (player)" : ""), at, radius, node != nullptr});
-            if (part == player)
-                start = at;
-        }
-    }
+    if (mission_)
+        placeParts();
     loadMs = (SDL_GetPerformanceCounter() - t0) * 1000.0 / SDL_GetPerformanceFrequency();
     return true;
+}
+
+// SCMission::loadMission and SCMissionScene::spawnCast:
+// - the player: its position in the area of the mission it names
+//   (part position + areas[area_id]->position);
+// - the other parts appear with the first scene whose cast holds them (the
+//   cast numbers the parts in their list): placement 0, in their area (part
+//   position + areas[area_id]->position); placement 1 (relative to the player
+//   in the game, at the time the scene comes), at the center of the area of
+//   the scene, 4000 high for an aircraft;
+// - then on the ground when under it (RSArea::getY), an aircraft within 10 of
+//   it too;
+// - a part of no scene (brought by a program of the mission) is placed the
+//   same way, in a layer of its own, hidden at first.
+void WorldScene::placeParts() {
+    MISN &data = mission_->mission_data;
+    MISN_PART *player = mission_->getPlayerCoord();
+    auto areaOf = [&](int id) -> AREA * { return id >= 0 && id < (int)data.areas.size() ? data.areas[id] : nullptr; };
+    std::vector<int> sceneOf(data.parts.size(), -1);
+    for (size_t s = 0; s < data.scenes.size(); s++)
+        for (uint16_t cast : data.scenes[s]->cast)
+            if (cast < data.parts.size() && sceneOf[cast] < 0)
+                sceneOf[cast] = (int)s;
+
+    auto isAircraft = [&](MISN_PART *part) {
+        auto it = entities_.find(part->member_name);
+        return it != entities_.end() && it->second->entity_type == EntityType::jet;
+    };
+    auto onGround = [&](MISN_PART *part) {
+        float ground = area_->getY(part->position.x, part->position.z);
+        if (isAircraft(part) ? std::abs(ground - part->position.y) <= 10 || part->position.y < ground
+                             : part->position.y < ground)
+            part->position.y = ground;
+    };
+    for (size_t i = 0; i < data.parts.size(); i++) {
+        MISN_PART *part = data.parts[i];
+        object(part->member_name, nullptr); // its entity, for its type
+        if (part == player) {
+            if (AREA *a = areaOf(part->area_id); a && part->area_id != 255 && part->placement == 0)
+                part->position += a->position;
+            continue;
+        }
+        if (part->area_id == 255 && part->placement == 0)
+            continue; // a place of the world, as it is
+        if (part->placement != 0) {
+            // instead of SCMission::placeRelativeToPlayer: the center of the scene's area
+            int s = sceneOf[i];
+            AREA *a = s >= 0 ? areaOf(data.scenes[s]->area_id) : areaOf(part->area_id);
+            if (a)
+                part->position = a->position;
+            if (isAircraft(part))
+                part->position.y = 4000;
+        } else if (AREA *a = areaOf(part->area_id)) {
+            part->position += a->position;
+        }
+        onGround(part);
+    }
+
+    // a layer by scene, and one for the parts of no scene
+    for (size_t s = 0; s < data.scenes.size(); s++) {
+        AREA *a = areaOf(data.scenes[s]->area_id);
+        Scene sc;
+        sc.label = "Scene " + std::to_string(s) + (a ? std::string(": ") + a->AreaName : std::string(": no area"));
+        scenes_.push_back(sc);
+    }
+    for (size_t s = 0; s <= data.scenes.size(); s++) {
+        auto layer = r4::scene::make<r4::scene::Switch>();
+        layer->setName(s < data.scenes.size() ? scenes_[s].label : "no scene");
+        if (s == data.scenes.size())
+            layer->setValue(r4::scene::Switch::kNone);
+        partsLayer_->addChild(layer);
+        sceneLayers_.push_back(layer);
+    }
+    for (size_t i = 0; i < data.parts.size(); i++) {
+        MISN_PART *part = data.parts[i];
+        float radius = 0;
+        r4::scene::NodePtr node = object(part->member_name, &radius);
+        part->entity = entities_.count(part->member_name) ? entities_[part->member_name].get() : nullptr;
+        int s = sceneOf[i];
+        if (s < 0)
+            partsWithoutScene++;
+        else
+            scenes_[s].parts++;
+        r4::Mat4 m = r4bridge::missionPartMatrix(*part);
+        if (node) {
+            auto place = r4::scene::make<r4::scene::Group>();
+            place->setName(part->member_name);
+            place->setMatrix(m);
+            place->addChild(node);
+            sceneLayers_[s < 0 ? data.scenes.size() : (size_t)s]->addChild(place);
+        }
+        r4::Vec3 at = r4::transformPoint(r4bridge::realSpaceToR4(), r4::translationOf(m));
+        std::string label = part->member_name + (part == player ? " (player)" : "");
+        parts_.push_back({label, at, radius, node != nullptr, s});
+        if (part == player)
+            start = at;
+    }
+}
+
+void WorldScene::showOverlays(bool on) {
+    overlays_->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone);
+}
+void WorldScene::showScene(int scene, bool on) {
+    size_t i = scene < 0 ? sceneLayers_.size() - 1 : (size_t)scene;
+    if (i < sceneLayers_.size())
+        sceneLayers_[i]->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone);
 }
 
 void WorldScene::setTerrainLod(int lod) {
