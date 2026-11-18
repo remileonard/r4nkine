@@ -9,6 +9,7 @@
 #pragma once
 
 #include "../../r4bridge/R4Bridge.h"
+#include "../../r4bridge/R4World.h"
 
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
@@ -62,6 +63,17 @@ public:
     void showMapObjects(bool on);
     void showParts(bool on);
     void showOverlays(bool on);
+    void showForests(bool on);
+    // the forests on the green of the terrain (r4bridge::forestOf), made again
+    // at this density (0: none)
+    void setForestDensity(float density);
+    float forestDensity() const { return forestDensity_; }
+    // the trees of the chunks near the eye planted, those of the far ones
+    // dropped (R4nkine's axes); a few chunks a call, the nearest first
+    void updateForests(r4::Vec3 eye);
+    size_t forestTrees = 0, forestChunks = 0, forestChunksPlanted = 0;
+    // the trees: the detailed ones up to the first, the simple ones up to the second
+    const float kTreeNear = 1500, kTreeFar = 6000;
     // the parts of a scene of the mission (or, scene -1, those of no scene)
     void showScene(int scene, bool on);
 
@@ -103,6 +115,7 @@ private:
     // the places of the parts, as the game makes them appear: see placeParts()
     void placeParts();
     void buildTerrain();
+    void buildForests();
 
     AssetManager &assets_;
     RSPalette &palette_;
@@ -113,12 +126,20 @@ private:
     std::map<std::string, std::unique_ptr<RSEntity>> entities_;
     std::map<std::string, r4::scene::NodePtr> objects_;
     std::shared_ptr<r4::scene::Group> root_;
-    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_;
+    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_, forests_;
     std::vector<std::shared_ptr<r4::scene::Switch>> sceneLayers_; // the scenes, then "no scene"
     std::vector<Scene> scenes_;
     std::vector<Item> parts_, mapObjects_, areas_;
     bool terrainDynamic_ = false;
     float terrainRelief_ = 4;
+    float forestDensity_ = 1;
     int terrainLod_ = 0;
     std::vector<r4::scene::LOD *> terrainLods_;
+    struct ForestNode {
+        r4bridge::ForestChunk chunk;
+        std::shared_ptr<r4::scene::Instancer> trees[2];
+        bool planted = false;
+    };
+    std::vector<ForestNode> forestNodes_;
+    r4bridge::ForestSettings forestSettings_;
 };

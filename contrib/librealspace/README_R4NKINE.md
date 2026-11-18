@@ -73,13 +73,14 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - la liste ne montre que les missions et les mondes dont le terrain (`<tera>.PAK`) est dans le dossier `-data` ;
      - un monde seul, sans mission, montre son terrain et les objets de la carte ;
      - à droite, la section **World** :
-       - couches *Terrain*, *Map* (objets de la carte) et *Parts* (objets de la mission) ;
+       - couches *Terrain*, *Runways*, *Map Objects*, *Mission Parts* et *Forests* ;
+       - **Forest Density** (`-forests 0..3`) : aucune, clairsemée, normale ou dense ;
        - niveau de détail du terrain ;
        - chiffres : triangles, textures, objets, objets absents du TRE, lumière du monde, temps de chargement ;
      - le graphe : sous « parts of the mission », un nœud par zone de la mission (entrer dans une zone déclenche ses scènes), puis les scènes de cette zone ;
      - la section **Scenes** : les parts groupées par la scène qui les fait apparaître ; chaque scène s'affiche ou se cache, et « No scene » (les parts amenées par un programme de la mission) est cachée au départ ;
      - les sections **Parts** et **Map Objects** : un clic met la caméra sur l'objet ;
-     - `-focus NOM` fait de même au démarrage, et `-distance D` règle le recul de la caméra.
+     - `-focus NOM` fait de même au démarrage, `-at X,Y` met la caméra sur un point de la carte (axes de R4nkine), et `-distance D` règle le recul de la caméra.
    - En haut à droite, **Scene Graph** (ou `-graph`), en haut du panneau de droite : le graphe de la scène affichée (objet ou mission) s'affiche sous ce bouton. On y voit le type de chaque nœud, un voyant pour le cacher ou le montrer, et un clic sur un nœud y amène la caméra.
    - Panneau de gauche en mode Objects, **Objects** : la liste des objets des TRE. Un clic choisit un objet, la molette fait défiler la liste, et il y a des boutons Précédent et Suivant.
    - Panneau de droite :
@@ -189,6 +190,16 @@ Le terrain (`WorldScene` et `R4World`) :
   - Un mesh par overlay, ses triangles dans l'ordre de `drawList`, dessinés après le terrain (`drawOrder` 1) et sans écrire la profondeur. Chaque triangle recouvre donc les précédents, comme le `GL_LEQUAL` du jeu, sans surélévation.
   - Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128. Leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
   - Les images sont réunies dans un atlas, avec des bords répétés (le `GL_CLAMP_TO_EDGE` du jeu).
+- **Les forêts** (`forestChunks`, `plantForest` et `treeModel` dans R4World). RSArea n'a pas d'arbres : le jeu en peint seulement dans quelques textures (217 sur TURKEY). Le pont en génère sur le vert.
+  - **Où** : les triangles de LVL0 de type 3 (la rampe verte de la palette, type pris au sommet le plus haut comme `RSArea`) et sans sommet d'eau.
+  - **Densité** : un bruit de quelques km fait des bois, jusqu'à 750 arbres/km² en leur cœur, et des arbres isolés entre eux. Sous les textures de bois (216 et 217), la densité est fixe. Il n'y a pas d'arbre près des pistes ni des objets de la carte et de la mission.
+  - **Les mêmes arbres à chaque chargement** : le tirage est calé sur la cellule.
+  - **Les modèles** : deux essences en low poly, à faces plates, dans les rampes de la palette (PaletteRamp) :
+    - un conifère, plus fréquent en altitude ;
+    - un feuillu.
+    Chacune a une version détaillée jusqu'à 1 500 et une version simple (pyramide, octaèdre) jusqu'à 6 000.
+  - **Le graphe** : la carte est découpée en carrés de 5 km, chacun un nœud `LOD` coupé au-delà de 6 000 avec un `Instancer` par essence. Le renderer cule chaque arbre et choisit son niveau ; les arbres projettent leur ombre.
+  - **À la demande** : la carte entière ferait environ 2 millions d'arbres, soit environ 140 Mo de matrices. Les carrés sont donc plantés quand la caméra s'en approche (8 par image, les plus proches d'abord) et vidés quand elle s'en éloigne.
 - **Pas encore fait** : le ciel, les nuages et le brouillard.
 
 Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :

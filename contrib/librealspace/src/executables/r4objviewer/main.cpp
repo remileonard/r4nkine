@@ -27,6 +27,9 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
+//  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
+//  -forests N les forêts sur le vert du terrain : 0 aucune, 1 clairsemées,
+//            2 normales (par défaut), 3 denses
 //  -diag DIR avec -mission : les types de terrain et les textures de la carte,
 //            en images dans DIR (voir TerrainDiag.h)
 //
@@ -263,7 +266,10 @@ int main(int argc, char **argv) {
     int frames = -1;
     bool openTextures = false, graphAtStart = false;
     float startDistance = 0;
+    float startAt[2] = {0, 0};
+    bool hasStartAt = false;
     bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false, shadowsAtStart = false;
+    int forestsAtStart = 2;
     int reliefAtStart = 2;
     float sunAtStart[2] = {1000, 1000}; // -sun cap élévation
     for (int i = 1; i < argc; i++) {
@@ -299,6 +305,10 @@ int main(int argc, char **argv) {
             gouraudAtStart = true;
         else if (a == "-shadows") // les ombres portées du soleil
             shadowsAtStart = true;
+        else if (a == "-at" && i + 1 < argc) // la cible au départ, en X,Y de R4nkine
+            hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
+        else if (a == "-forests" && i + 1 < argc) // 0..3 : aucune .. denses
+            forestsAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
         else if (a == "-diag" && i + 1 < argc) // les types et les textures du terrain
             diagDir = argv[++i];
         else if (a == "-distance" && i + 1 < argc)
@@ -459,7 +469,11 @@ int main(int argc, char **argv) {
         int mode = 0;          // 0 objets, 1 missions
         int currentWorld = -1; // dans worlds
         int terrainLod = 0;
-        bool showTerrain = true, showMapObjects = true, showParts = true, showOverlays = true;
+        bool showTerrain = true, showMapObjects = true, showParts = true, showOverlays = true, showForests = true;
+        // les forêts : leur densité (r4bridge::forestOf), avant le chargement d'un monde
+        int forests = forestsAtStart;
+        const float kForestDensity[] = {0, 0.4f, 1, 2.5f};
+        world.setForestDensity(kForestDensity[forests]);
         std::vector<bool> showScenes; // by scene, then "no scene"
         GraphView graph;
         bool showGraph = graphAtStart;
@@ -491,6 +505,7 @@ int main(int argc, char **argv) {
             world.showMapObjects(showMapObjects);
             world.showParts(showParts);
             world.showOverlays(showOverlays);
+            world.showForests(showForests);
             if (world.hasLight)
                 sunFrom(world.lightTowards); // la lumière du monde
             if (world.terrainLightDynamic() != dynamicTerrainLight || world.terrainRelief() != reliefOf())
@@ -555,6 +570,12 @@ int main(int argc, char **argv) {
             } else {
                 std::fprintf(stderr, "r4objviewer: pas de mission %s avec son terrain\n", startMission.c_str());
             }
+        }
+        if (hasStartAt && mode == 1) {
+            target = {startAt[0], startAt[1], 0};
+            float ground;
+            if (world.groundHeight(target, ground))
+                target.z = ground;
         }
         if (startDistance > 0)
             distance = startDistance;
@@ -916,7 +937,11 @@ int main(int argc, char **argv) {
                         world.showMapObjects(showMapObjects);
                     if (gui.toggle("Mission Parts", showParts))
                         world.showParts(showParts);
+                    if (gui.toggle("Forests", showForests))
+                        world.showForests(showForests);
                     gui.columns(1);
+                    if (gui.menu("Forest Density", forests, {"None", "Sparse", "Normal", "Dense"}))
+                        world.setForestDensity(kForestDensity[forests]);
                     if (gui.menu("Terrain Detail", terrainLod, {"By Distance (LOD)", "Fine (400 per block)", "Medium (100)", "Coarse (25)"}))
                         world.setTerrainLod(terrainLod);
                     size_t missing = 0;
@@ -929,6 +954,7 @@ int main(int argc, char **argv) {
                                {"Terrain triangles (fine + skirts)", fmt("%zu", world.terrainTriangles)},
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
                                {"Runway triangles", fmt("%zu", world.overlayTriangles)},
+                               {"Trees planted (chunks)", fmt("%zu (%zu of %zu)", world.forestTrees, world.forestChunksPlanted, world.forestChunks)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},
                                {"Mission parts", fmt("%zu", world.parts().size())},
                                {"Objects not in the TRE", fmt("%zu", missing)},
@@ -1027,6 +1053,8 @@ int main(int argc, char **argv) {
             renderer.options().shadows = shadows;
             renderer.options().shadowDistance = shadowRange > 0 ? kShadowRanges[shadowRange] : std::max(distance * 3, 100.0f);
             renderer.options().shadowCasterReach = showWorld ? 8000.0f : std::max(distance * 2, bounds.radius * 4);
+            if (showWorld)
+                world.updateForests(camera.position); // les arbres autour de l'œil
             renderer.setWireframe(wireframe);
             r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
             renderer.setTarget(rt);

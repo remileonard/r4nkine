@@ -107,8 +107,11 @@ WorldScene::WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Ren
     partsLayer_->setName("parts of the mission");
     overlays_ = r4::scene::make<r4::scene::Switch>();
     overlays_->setName("overlays (runways)");
+    forests_ = r4::scene::make<r4::scene::Switch>();
+    forests_->setName("forests");
     root_->addChild(terrain_);
     root_->addChild(overlays_);
+    root_->addChild(forests_);
     root_->addChild(mapLayer_);
     root_->addChild(partsLayer_);
 }
@@ -118,6 +121,9 @@ WorldScene::~WorldScene() { clear(); }
 void WorldScene::clear() {
     terrain_->removeAllChildren();
     overlays_->removeAllChildren();
+    forests_->removeAllChildren();
+    forestNodes_.clear();
+    forestTrees = forestChunks = forestChunksPlanted = 0;
     mapLayer_->removeAllChildren();
     partsLayer_->removeAllChildren();
     sceneLayers_.clear();
@@ -229,6 +235,8 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     start = {0, 0, 0};
     if (mission_)
         placeParts();
+    // the forests, around the objects
+    buildForests();
     loadMs = (SDL_GetPerformanceCounter() - t0) * 1000.0 / SDL_GetPerformanceFrequency();
     return true;
 }
@@ -400,6 +408,95 @@ void WorldScene::buildTerrain() {
     terrainBlocks = terrainLods_.size();
     setTerrainLod(terrainLod_);
 }
+
+void WorldScene::buildForests() {
+    forests_->removeAllChildren();
+    forestNodes_.clear();
+    forestTrees = forestChunks = forestChunksPlanted = 0;
+    if (!area_ || forestDensity_ <= 0)
+        return;
+    forestSettings_ = {};
+    forestSettings_.density = forestDensity_;
+    // none on the objects of the map and of the mission (R4nkine's (x, y) is
+    // libRealSpace's (x, -z))
+    for (const auto *list : {&parts_, &mapObjects_})
+        for (const Item &it : *list)
+            forestSettings_.keepOut.push_back({it.position.x, -it.position.y, std::max(it.radius * 2, 150.0f)});
+    std::vector<r4bridge::ForestChunk> chunks = r4bridge::forestChunks(area_.get(), forestSettings_);
+    if (chunks.empty())
+        return;
+    // the 2 species, each detailed then simple
+    std::vector<r4::scene::InstancePart> parts[2][2];
+    for (int sp = 0; sp < 2; sp++)
+        for (int far = 0; far < 2; far++) {
+            auto model = r4bridge::treeModel(sp, far != 0, *palette_.GetColorPalette(), palette_.ranges, lighting);
+            parts[sp][far] = r4::scene::collectParts(*renderer_.upload(*model));
+        }
+    forestNodes_.resize(chunks.size());
+    for (size_t i = 0; i < chunks.size(); i++) {
+        ForestNode &f = forestNodes_[i];
+        f.chunk = std::move(chunks[i]);
+        // a chunk is skipped as a whole beyond the trees' distance
+        auto lod = r4::scene::make<r4::scene::LOD>();
+        lod->setName("trees " + std::to_string(f.chunk.cx) + "," + std::to_string(f.chunk.cz));
+        lod->setCenter(f.chunk.center);
+        lod->setRanges({0, kTreeFar + f.chunk.radius});
+        auto group = r4::scene::make<r4::scene::Group>();
+        for (int sp = 0; sp < 2; sp++) {
+            f.trees[sp] = r4::scene::make<r4::scene::Instancer>();
+            f.trees[sp]->setName(sp == 0 ? "conifers" : "broadleaves");
+            f.trees[sp]->addLevel(parts[sp][0], kTreeNear);
+            f.trees[sp]->addLevel(parts[sp][1], kTreeFar);
+            group->addChild(f.trees[sp]);
+        }
+        lod->addChild(group);
+        forests_->addChild(lod);
+    }
+    forestChunks = forestNodes_.size();
+}
+
+void WorldScene::updateForests(r4::Vec3 eye) {
+    if (forestNodes_.empty())
+        return;
+    // the eye in libRealSpace's axes
+    r4::Vec3 e{eye.x, eye.z, -eye.y};
+    const float plant = kTreeFar + 1000, drop = kTreeFar + 4000;
+    std::vector<std::pair<float, size_t>> wanted;
+    for (size_t i = 0; i < forestNodes_.size(); i++) {
+        ForestNode &f = forestNodes_[i];
+        float d = r4::length(f.chunk.center - e) - f.chunk.radius;
+        if (!f.planted && d < plant)
+            wanted.push_back({d, i});
+        else if (f.planted && d > drop) {
+            for (auto &t : f.trees) {
+                forestTrees -= t->instances().size();
+                t->clearInstances();
+            }
+            f.planted = false;
+            forestChunksPlanted--;
+        }
+    }
+    std::sort(wanted.begin(), wanted.end());
+    for (size_t k = 0; k < wanted.size() && k < 8; k++) {
+        ForestNode &f = forestNodes_[wanted[k].second];
+        r4bridge::plantForest(area_.get(), forestSettings_, f.chunk);
+        for (int sp = 0; sp < 2; sp++) {
+            forestTrees += f.chunk.trees[sp].size();
+            f.trees[sp]->setInstances(std::move(f.chunk.trees[sp]));
+            f.chunk.trees[sp].clear();
+        }
+        f.planted = true;
+        forestChunksPlanted++;
+    }
+}
+
+void WorldScene::setForestDensity(float density) {
+    forestDensity_ = density;
+    if (area_)
+        buildForests();
+}
+
+void WorldScene::showForests(bool on) { forests_->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone); }
 
 void WorldScene::setTerrainLight(bool dynamic, float relief) {
     terrainDynamic_ = dynamic;

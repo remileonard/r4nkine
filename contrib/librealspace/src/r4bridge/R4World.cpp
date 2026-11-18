@@ -477,4 +477,286 @@ r4::Mat4 missionPartMatrix(const MISN_PART &part) {
            r4::rotate(r4::radians(-(float)part.roll), {1, 0, 0});
 }
 
+// --- the forests ------------------------------------------------------------------------
+
+namespace {
+
+// a number of 0..1 from integers: the same at each load
+float hash01(uint32_t a, uint32_t b, uint32_t seed) {
+    uint32_t h = a * 0x8da6b343u ^ b * 0xd8163841u ^ seed * 0xcb1ab31fu;
+    h ^= h >> 13;
+    h *= 0x5bd1e995u;
+    h ^= h >> 15;
+    return (h & 0xffffff) / (float)0x1000000;
+}
+
+// a smooth noise of 0..1 over the map: the woods and the clearings
+float valueNoise(float x, float z, float scale, uint32_t seed) {
+    float fx = x / scale, fz = z / scale;
+    int ix = (int)std::floor(fx), iz = (int)std::floor(fz);
+    float tx = fx - ix, tz = fz - iz;
+    tx = tx * tx * (3 - 2 * tx);
+    tz = tz * tz * (3 - 2 * tz);
+    auto at = [&](int i, int j) { return hash01((uint32_t)i, (uint32_t)j, seed); };
+    float a = at(ix, iz) + (at(ix + 1, iz) - at(ix, iz)) * tx;
+    float b = at(ix, iz + 1) + (at(ix + 1, iz + 1) - at(ix, iz + 1)) * tx;
+    return a + (b - a) * tz;
+}
+
+// a small random generator, for the trees of a triangle
+struct Random {
+    uint32_t state;
+    float next() {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return (state & 0xffffff) / (float)0x1000000;
+    }
+};
+
+} // namespace
+
+namespace {
+
+constexpr int kMapSide = BLOCK_PER_MAP_SIDE * 20; // the vertices of LVL0 on a side
+constexpr float kCell = BLOCK_WIDTH / 20.0f;      // between two of them
+constexpr int kGreen = 3, kWater = 0;
+// the density at the heart of a wood, and between the woods, x perKm2
+constexpr float kWoodCore = 25, kScattered = 0.1f;
+
+const MapVertex *mapVertex(RSArea *area, int x, int y) {
+    if (x < 0 || y < 0 || x >= kMapSide || y >= kMapSide)
+        return nullptr;
+    AreaBlock *b = area->GetAreaBlockByCoo(0, x / 20, y / 20);
+    if (!b || b->sideSize != 20)
+        return nullptr;
+    return b->GetVertice(x % 20, y % 20);
+}
+
+// the type of a triangle: the one of its highest vertex (RSArea::highestVertex)
+const MapVertex *highest(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
+    const MapVertex *h = a;
+    if ((uint16_t)b->height >= (uint16_t)h->height)
+        h = b;
+    if ((uint16_t)c->height >= (uint16_t)h->height)
+        h = c;
+    return h;
+}
+
+bool green(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
+    return highest(a, b, c)->type == kGreen && a->type != kWater && b->type != kWater && c->type != kWater;
+}
+
+// each cell of a chunk: its 4 corners, the lower triangle then the upper
+// one, as RSArea
+template <class F> void forEachTriangle(RSArea *area, int cx, int cz, int cellsPerChunk, F f) {
+    for (int y = cz * cellsPerChunk; y < (cz + 1) * cellsPerChunk; y++)
+        for (int x = cx * cellsPerChunk; x < (cx + 1) * cellsPerChunk; x++) {
+            const MapVertex *cur = mapVertex(area, x, y), *right = mapVertex(area, x + 1, y),
+                            *bottomRight = mapVertex(area, x + 1, y + 1), *bottom = mapVertex(area, x, y + 1);
+            if (!cur || !right || !bottomRight || !bottom)
+                continue;
+            uint32_t key = (uint32_t)(y * kMapSide + x) * 2;
+            f(cur, bottomRight, bottom, (int)cur->lowerImageID, key);
+            f(cur, right, bottomRight, (int)cur->upperImageID, key + 1);
+        }
+}
+
+int cellsPerChunk(const ForestSettings &st) { return std::max(1, (int)std::lround(st.chunk / kCell)); }
+
+} // namespace
+
+std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &st) {
+    std::vector<ForestChunk> chunks;
+    if (!area)
+        return chunks;
+    const int cells = cellsPerChunk(st);
+    const int perSide = (kMapSide - 1 + cells - 1) / cells;
+    const float half = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE_DIV_2;
+    for (int cz = 0; cz < perSide; cz++)
+        for (int cx = 0; cx < perSide; cx++) {
+            bool any = false;
+            float low = 1e30f, high = -1e30f;
+            forEachTriangle(area, cx, cz, cells, [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int, uint32_t) {
+                if (!green(a, b, c))
+                    return;
+                any = true;
+                for (const MapVertex *v : {a, b, c})
+                    low = std::min(low, v->v.y), high = std::max(high, v->v.y);
+            });
+            if (!any)
+                continue;
+            ForestChunk chunk;
+            chunk.cx = cx;
+            chunk.cz = cz;
+            float side = cells * kCell;
+            float trees = 40 * st.treeScale; // the tallest tree
+            chunk.center = {-half + (cx + 0.5f) * side, (low + high + trees) / 2, -half + (cz + 0.5f) * side};
+            float dy = (high + trees - low) / 2;
+            chunk.radius = std::sqrt(side * side / 2 + dy * dy);
+            chunks.push_back(chunk);
+        }
+    return chunks;
+}
+
+void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
+    chunk.trees[0].clear();
+    chunk.trees[1].clear();
+    if (!area)
+        return;
+    // the boxes of the runways, and their surroundings
+    struct Box {
+        float x0, z0, x1, z1;
+    };
+    std::vector<Box> runways;
+    for (const AreaOverlay &ov : area->objectOverlay) {
+        if (ov.verticesVec.empty())
+            continue;
+        Box b{1e30f, 1e30f, -1e30f, -1e30f};
+        for (const AoVPoints &p : ov.verticesVec) {
+            b.x0 = std::min(b.x0, (float)p.x), b.x1 = std::max(b.x1, (float)p.x);
+            b.z0 = std::min(b.z0, (float)p.z), b.z1 = std::max(b.z1, (float)p.z);
+        }
+        const float margin = 300;
+        runways.push_back({b.x0 - margin, b.z0 - margin, b.x1 + margin, b.z1 + margin});
+    }
+    auto free = [&](float x, float z) {
+        for (const Box &b : runways)
+            if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1)
+                return false;
+        for (const r4::Vec3 &k : st.keepOut)
+            if ((x - k.x) * (x - k.x) + (z - k.y) * (z - k.y) < k.z * k.z)
+                return false;
+        return true;
+    };
+    forEachTriangle(area, chunk.cx, chunk.cz, cellsPerChunk(st),
+                    [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key) {
+        if (!green(a, b, c))
+            return;
+        auto it = st.images.find(image);
+        bool woodImage = image != 0xFF && it != st.images.end();
+        r4::Vec3 pa{a->v.x, a->v.y, a->v.z}, pb{b->v.x, b->v.y, b->v.z}, pc{c->v.x, c->v.y, c->v.z};
+        float areaKm2 = 0.5f * std::abs((pb.x - pa.x) * (pc.z - pa.z) - (pc.x - pa.x) * (pb.z - pa.z)) / 1e6f;
+        Random rnd{key * 2654435761u + st.seed * 97u + 1};
+        // the candidates at the highest density, kept by the density of their place
+        float top = (woodImage ? it->second : st.perKm2 * kWoodCore) * st.density;
+        float expected = top * areaKm2;
+        int n = (int)expected + (rnd.next() < expected - (int)expected ? 1 : 0);
+        for (int i = 0; i < n; i++) {
+            // a point of the triangle, uniform
+            float u = rnd.next(), v = rnd.next();
+            if (u + v > 1)
+                u = 1 - u, v = 1 - v;
+            r4::Vec3 p = pa + (pb - pa) * u + (pc - pa) * v;
+            float keep = rnd.next(), species = rnd.next(), turn = rnd.next(), size = rnd.next();
+            // the woods, where the noise is high (perKm2 x kWoodCore at their
+            // heart), and a few trees alone between them; the textures of
+            // woods: their density everywhere
+            if (!woodImage) {
+                float wood = valueNoise(p.x, p.z, 2500, st.seed) * 0.7f + valueNoise(p.x, p.z, 600, st.seed + 7) * 0.3f;
+                float share = std::clamp((wood - 0.6f) * 5.0f, 0.0f, 1.0f) + kScattered / kWoodCore;
+                if (keep > share)
+                    continue;
+            }
+            if (!free(p.x, p.z))
+                continue;
+            // conifers on the higher ground
+            int sp = species < 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f) ? 0 : 1;
+            r4::Mat4 m = r4::translate(p) * r4::rotate(turn * 6.2831853f, {0, 1, 0});
+            float k = (0.7f + size * 0.6f) * st.treeScale;
+            m = m * r4::scale({k, k * (0.85f + species * 0.3f), k});
+            chunk.trees[sp].push_back(m);
+        }
+    });
+}
+
+std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPalette &palette,
+                                            const std::vector<PaletteRange> &ranges, Lighting lighting) {
+    using namespace r4::assets;
+    auto model = std::make_shared<Model>();
+    const std::string name = std::string(species == 0 ? "conifer" : "broadleaf") + (far ? " far" : "");
+    model->images.push_back(rampImage(palette, ranges));
+    Material m;
+    m.name = "tree, palette ramp";
+    m.shading = Shading::PaletteRamp;
+    m.diffuseImage = 0;
+    m.rampAmbient = lighting.ambient;
+    m.rampLight = lighting.light;
+    model->materials.push_back(m);
+    Mesh mesh;
+    mesh.name = name;
+    mesh.material = 0;
+    // the colors at full light: their ramps darken them (the green ramp from
+    // 64, the brown one from 96)
+    const uint32_t conifer = 64 + 13, leaves = 64 + 18, trunk = 96 + 10;
+    // a triangle with its face normal, turned outward from the center of its solid
+    auto tri = [&](r4::Vec3 a, r4::Vec3 b, r4::Vec3 c, r4::Vec3 center, uint32_t color) {
+        r4::Vec3 n = r4::cross(b - a, c - a);
+        if (r4::dot(n, (a + b + c) / 3.0f - center) < 0) {
+            std::swap(b, c);
+            n = -n;
+        }
+        n = r4::normalize(n);
+        for (r4::Vec3 p : {a, b, c}) {
+            Vertex v;
+            v.position = p;
+            v.normal = n;
+            v.color = (color & 0xff) | 0xff000000u;
+            mesh.vertices.push_back(v);
+            mesh.indices.push_back((uint32_t)mesh.vertices.size() - 1);
+        }
+    };
+    auto ring = [](int sides, float r, float y, float turn) {
+        std::vector<r4::Vec3> p;
+        for (int i = 0; i < sides; i++) {
+            float a = (i + turn) * 6.2831853f / sides;
+            p.push_back({r * std::cos(a), y, r * std::sin(a)});
+        }
+        return p;
+    };
+    // a solid of rings from the bottom to the top (a ring of radius 0: a point)
+    auto solid = [&](const std::vector<std::pair<float, float>> &rings, int sides, uint32_t color, float turn = 0) {
+        r4::Vec3 center{0, (rings.front().second + rings.back().second) / 2, 0};
+        for (size_t k = 0; k + 1 < rings.size(); k++) {
+            auto lo = ring(sides, rings[k].first, rings[k].second, turn);
+            auto hi = ring(sides, rings[k + 1].first, rings[k + 1].second, turn);
+            for (int i = 0; i < sides; i++) {
+                int j = (i + 1) % sides;
+                if (rings[k].first > 0)
+                    tri(lo[i], lo[j], hi[j], center, color);
+                if (rings[k + 1].first > 0)
+                    tri(lo[i], hi[j], hi[i], center, color);
+            }
+        }
+        // the bottom, when it is not a point
+        if (rings.front().first > 0) {
+            auto lo = ring(sides, rings.front().first, rings.front().second, turn);
+            for (int i = 1; i + 1 < sides; i++)
+                tri(lo[0], lo[i], lo[i + 1], center, color);
+        }
+    };
+    if (species == 0) {
+        if (far) {
+            solid({{5.5f, 2}, {0, 25}}, 4, conifer, 0.5f);
+        } else {
+            solid({{0.7f, 0}, {0.7f, 5}}, 5, trunk);
+            solid({{6, 4}, {0, 17}}, 7, conifer);
+            solid({{4.5f, 11}, {0, 25}}, 7, conifer, 0.5f);
+        }
+    } else {
+        if (far) {
+            solid({{0, 5}, {7, 13}, {0, 21}}, 4, leaves);
+        } else {
+            solid({{0.9f, 0}, {0.8f, 8}}, 5, trunk);
+            solid({{0, 5.5f}, {5.5f, 8.5f}, {7, 13}, {5, 18}, {0, 21}}, 7, leaves);
+        }
+    }
+    model->meshes.push_back(std::move(mesh));
+    Node root;
+    root.name = name;
+    root.meshes = {0};
+    model->nodes.push_back(root);
+    return model;
+}
+
 } // namespace r4bridge

@@ -17,6 +17,7 @@
 
 #include "r4/assets/model.h"
 
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -67,6 +68,47 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
 // in that palette color (the GL_DECAL of the game); the images in one atlas.
 // In libRealSpace's axes (Y up). Null when the area has no overlay.
 std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &palette);
+
+// The forests of an area: trees on its green (terrain type 3, the green ramp
+// of the palette), generated: RSArea has none, the game paints them only in
+// some textures (217 on TURKEY).
+// - each triangle of LVL0 whose type is green (that of its highest vertex,
+//   as RSArea) and without water gets trees at random, by its area and a
+//   density: a noise of a few km makes woods and clearings, and the textures
+//   of woods (images) have their own density;
+// - none near the runways (overlays) and the places of keepOut;
+// - the same trees at each load (a seed).
+// The trees by chunks of chunk x chunk (a whole number of cells), each its
+// matrices by species (the species of treeModel), in libRealSpace's axes (Y up).
+struct ForestSettings {
+    float density = 1;                                     // multiplies all the densities
+    // on the green: perKm2 x 25 at the heart of the woods (a noise of a few km),
+    // perKm2 x 0.1 between them
+    float perKm2 = 30;
+    float treeScale = 1.4f;                                // the size of the trees
+    std::map<int, float> images{{217, 250}, {216, 120}};   // per km2 under these textures
+    float chunk = 5000;
+    std::vector<r4::Vec3> keepOut;                         // x, z, radius (libRealSpace)
+    uint32_t seed = 1;
+};
+// The chunks of the map with some green, without their trees: the trees of a
+// chunk are planted when it is needed (plantForest), the same at each time.
+struct ForestChunk {
+    int cx = 0, cz = 0;      // its place in the grid of chunks
+    r4::Vec3 center;         // its bounds, the trees included
+    float radius = 0;
+    std::vector<r4::Mat4> trees[2]; // by species
+};
+std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &settings = {});
+void plantForest(RSArea *area, const ForestSettings &settings, ForestChunk &chunk);
+
+// A tree, low poly with flat faces, in the palette (PaletteRamp, the shades
+// of the green and brown ramps): species 0 a conifer, 1 a broadleaf; far:
+// the simpler one for the distance (a pyramid, an octahedron). About 25 high
+// (the scale of the objects of the game, 2.1 times real), its foot at 0.
+// In libRealSpace's axes (Y up).
+std::shared_ptr<r4::assets::Model> treeModel(int species, bool far, const VGAPalette &palette,
+                                            const std::vector<PaletteRange> &ranges, Lighting lighting = {});
 
 // The matrix of an object of the map: its position, then its 3 x 3
 // orientation as SCRenderer::renderObjects turns it (libRealSpace's axes).
