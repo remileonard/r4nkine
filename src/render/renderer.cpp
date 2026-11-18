@@ -336,7 +336,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
 scene::NodePtr Renderer::upload(const assets::Model &model) {
     std::vector<gpu::TextureHandle> textures(model.images.size());
     for (size_t i = 0; i < model.images.size(); i++)
-        textures[i] = uploadImage(model.images[i]);
+        textures[i] = uploadImage(model.images[i], model.images[i].mipmaps);
     std::vector<std::shared_ptr<MaterialInstance>> materials;
     for (const assets::Material &m : model.materials)
         materials.push_back(createMaterial(
@@ -404,6 +404,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     item.world = world;
     Vec3 c = transformPoint(world, d.mesh->bounds.center);
     item.depth = length(c - eye);
+    item.order = mat->params.drawOrder;
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 |
                (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
@@ -509,13 +510,19 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     frozen_ = options_.freezeCulling;
     cull(root, Mat4(1.0f), Frustum::fromMatrix(cullViewProj_), !options_.frustumCulling, cam.mask, cullEye_);
     auto t1 = clock::now();
+    // by the drawOrder of the materials (their bins), then by state
     if (options_.sortByState)
-        std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) { return a.key < b.key; });
+        std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) {
+            return a.order != b.order ? a.order < b.order : a.key < b.key;
+        });
+    else
+        std::stable_sort(opaque_.begin(), opaque_.end(),
+                         [](const DrawItem &a, const DrawItem &b) { return a.order < b.order; });
     // the transparent ones from back to front, from the eye of the camera
     for (DrawItem &it : transparent_)
         it.depth = length(transformPoint(it.world, it.mesh->bounds.center) - cam.position);
     std::sort(transparent_.begin(), transparent_.end(),
-              [](const DrawItem &a, const DrawItem &b) { return a.depth > b.depth; });
+              [](const DrawItem &a, const DrawItem &b) { return a.order != b.order ? a.order < b.order : a.depth > b.depth; });
     auto t2 = clock::now();
     stats_.opaqueItems = (uint32_t)opaque_.size();
     stats_.transparentItems = (uint32_t)transparent_.size();

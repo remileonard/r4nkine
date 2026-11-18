@@ -11,6 +11,7 @@
 #include "../realspace/RSMission.h"
 #include "../engine/Texture.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <map>
@@ -71,14 +72,19 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
                     d[0] = t.r, d[1] = t.g, d[2] = t.b, d[3] = t.a;
                 }
+            // as SCRenderer::createTextureInGPU: GL_LINEAR, no mipmaps, clamped
             bleedClearTexels(img);
+            img.mipmaps = false;
+            img.clampS = img.clampT = true;
             model->images.push_back(std::move(img));
             Material m;
             m.name = std::string("terrain ") + src->name;
             m.shading = Shading::Unlit;
             m.diffuseImage = (int)model->images.size() - 1;
-            m.alpha = AlphaMode::Mask;
-            m.decal = true; // over the colors: the GL_DECAL of the game
+            // the GL_DECAL of the game: mix(color, texel, alpha of the texel),
+            // the colored triangle under it giving the color
+            m.alpha = AlphaMode::Blend;
+            m.decal = true;
             m.doubleSided = true;
             model->materials.push_back(m);
             material = (int)model->materials.size() - 1;
@@ -231,92 +237,120 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
         return nullptr;
     auto model = std::make_shared<Model>();
     model->source = "overlays";
-    // over the terrain, both faces, as they are (not lit)
-    Material colors;
-    colors.name = "overlay colors";
-    colors.shading = Shading::Unlit;
-    colors.vertexColors = true;
-    colors.diffuse = {1, 1, 1, 1};
-    colors.doubleSided = true;
-    colors.decal = true;
-    model->materials.push_back(colors);
 
-    // a textured triangle of color c: the image c + 255, its clear texels in
-    // the palette color c (the color the game gives it under GL_DECAL)
-    std::map<int, int> textureMaterial;
-    auto textured = [&](int c) {
-        auto it = textureMaterial.find(c);
-        if (it != textureMaterial.end())
-            return it->second;
-        int material = -1;
-        RSImage *src = area->GetImageByID(c + 255);
-        if (src && src->data && src->width && src->height) {
-            // the palette of the game (PALETTE.IFF): the one SCRenderer::init gives
-            // the images (RSImage takes Renderer.getPalette()), not set here
-            const VGAPalette &pal = palette;
-            const Texel &under = palette.colors[c & 0xff];
-            Image img;
-            img.name = std::string(src->name);
-            img.width = (int)src->width;
-            img.height = (int)src->height;
-            img.channels = 4;
-            img.pixels.resize((size_t)img.width * img.height * 4);
-            for (int y = 0; y < img.height; y++)
-                for (int x = 0; x < img.width; x++) {
-                    const Texel &t = pal.colors[src->data[(size_t)y * img.width + x]];
-                    const Texel &o = t.a ? t : under;
-                    uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
-                    d[0] = o.r, d[1] = o.g, d[2] = o.b, d[3] = 255;
-                }
-            model->images.push_back(std::move(img));
-            Material m;
-            m.name = std::string("overlay ") + src->name;
-            m.shading = Shading::Unlit;
-            m.diffuseImage = (int)model->images.size() - 1;
-            m.decal = true;
-            m.doubleSided = true;
-            model->materials.push_back(m);
-            material = (int)model->materials.size() - 1;
+    // the images of the overlays in one atlas, so that the triangles of an
+    // overlay make one mesh, drawn in the order of its drawList: cell 0
+    // white (the colored triangles), then a cell by textured color c (the
+    // image c + 255, its clear texels in the palette color c: the GL_DECAL
+    // of the game); 2 texels of border by cell, its edges repeated (the
+    // GL_CLAMP_TO_EDGE of the game)
+    const int kBorder = 2, kCell = 128 + 2 * kBorder;
+    std::map<int, int> cellOf; // color -> cell
+    std::vector<RSImage *> cellImage{nullptr};
+    std::vector<int> cellColor{-1};
+    for (const AreaOverlay &ov : area->objectOverlay)
+        for (uint16_t j : ov.drawList) {
+            if (j >= 400 || !ov.vertices)
+                continue;
+            int c = ov.trianles[j].color;
+            if (c == 255 || cellOf.count(c))
+                continue;
+            RSImage *src = area->GetImageByID(c + 255);
+            if (!src || !src->data || !src->width || !src->height || src->width > 128 || src->height > 128)
+                continue;
+            cellOf[c] = (int)cellImage.size();
+            cellImage.push_back(src);
+            cellColor.push_back(c);
         }
-        return textureMaterial[c] = material;
+    int columns = (int)std::ceil(std::sqrt((double)cellImage.size()));
+    int rows = ((int)cellImage.size() + columns - 1) / columns;
+    Image atlas;
+    atlas.name = "overlay atlas";
+    atlas.width = columns * kCell;
+    atlas.height = rows * kCell;
+    atlas.channels = 4;
+    atlas.mipmaps = false;
+    atlas.clampS = atlas.clampT = true;
+    std::vector<uint8_t> top((size_t)atlas.width * atlas.height * 4, 255); // rows from the top
+    for (size_t cell = 0; cell < cellImage.size(); cell++) {
+        int x0 = (int)(cell % columns) * kCell, y0 = (int)(cell / columns) * kCell;
+        RSImage *src = cellImage[cell];
+        const Texel &under = palette.colors[cellColor[cell] & 0xff];
+        int w = src ? (int)src->width : 1, h = src ? (int)src->height : 1;
+        for (int y = -kBorder; y < kCell - kBorder; y++)
+            for (int x = -kBorder; x < kCell - kBorder; x++) {
+                uint8_t *d = &top[((size_t)(y0 + kBorder + y) * atlas.width + x0 + kBorder + x) * 4];
+                if (!src) {
+                    d[0] = d[1] = d[2] = d[3] = 255;
+                    continue;
+                }
+                int sx = std::clamp(x, 0, w - 1), sy = std::clamp(y, 0, h - 1);
+                const Texel &t = palette.colors[src->data[(size_t)sy * w + sx]];
+                const Texel &o = t.a ? t : under;
+                d[0] = o.r, d[1] = o.g, d[2] = o.b, d[3] = 255;
+            }
+    }
+    atlas.pixels.resize(top.size());
+    for (int y = 0; y < atlas.height; y++) // R4nkine's images start at the bottom row
+        std::memcpy(&atlas.pixels[(size_t)(atlas.height - 1 - y) * atlas.width * 4], &top[(size_t)y * atlas.width * 4],
+                    (size_t)atlas.width * 4);
+    model->images.push_back(std::move(atlas));
+    const float atlasW = (float)(columns * kCell), atlasH = (float)(rows * kCell);
+    // an uv of a cell (in its image, from its top left) in the atlas
+    auto atlasUV = [&](int cell, float u, float v) {
+        float px = (cell % columns) * kCell + kBorder + u, py = (cell / columns) * kCell + kBorder + v;
+        return r4::Vec2{px / atlasW, 1 - py / atlasH};
     };
 
+    // over the terrain (drawn after it), without depth: each triangle over
+    // the ones before it, as the GL_LEQUAL of SCRenderer::renderMapOverlay
+    Material m;
+    m.name = "overlays";
+    m.shading = Shading::Unlit;
+    m.vertexColors = true;
+    m.diffuse = {1, 1, 1, 1};
+    m.diffuseImage = 0;
+    m.doubleSided = true;
+    m.decal = true;
+    m.alpha = AlphaMode::Blend; // opaque texels: with the transparent ones, without depth
+    m.drawOrder = 1;
+    model->materials.push_back(m);
+
     const float kTriUvScale = 128.0f; // the uvs of the .TRI: 0..125, 128 a whole tile
-    const float kLift = 0.05f;        // a triangle over the ones drawn before it
-    std::map<int, Mesh> meshes;
+    Node root;
+    root.name = "overlays";
     for (const AreaOverlay &ov : area->objectOverlay) {
         if (!ov.vertices || ov.nbTriangles <= 0)
             continue;
-        int rank = 0;
+        Mesh mesh;
+        mesh.name = "overlay";
+        mesh.material = 0;
         for (uint16_t j : ov.drawList) {
             if (j >= 400)
                 continue;
             const AreaOverlayTriangles &tri = ov.trianles[j];
-            int material = tri.color != 255 ? textured(tri.color) : 0;
-            if (material < 0)
-                material = 0;
+            auto it = cellOf.find(tri.color);
+            int cell = tri.color != 255 && it != cellOf.end() ? it->second : 0;
             const Texel &t = palette.colors[tri.color & 0xff];
-            uint32_t color = material == 0 ? (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | 0xff000000u
-                                           : 0xffffffffu;
-            Mesh &m = meshes[material];
+            uint32_t color = cell == 0 ? (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | 0xff000000u
+                                       : 0xffffffffu;
+            RSImage *img = cellImage[cell];
             for (int k = 0; k < 3; k++) {
                 const AoVPoints &p = ov.vertices[tri.verticesIdx[k]];
                 Vertex v;
-                v.position = {(float)p.x, (float)p.y + rank * kLift, (float)p.z};
+                v.position = {(float)p.x, (float)p.y, (float)p.z};
                 v.normal = {0, 1, 0};
-                v.uv = {tri.uv[k].u / kTriUvScale, 1 - tri.uv[k].v / kTriUvScale};
+                // the uv of the game (uv / 128 of the image) in texels of its cell
+                v.uv = img ? atlasUV(cell, tri.uv[k].u / kTriUvScale * img->width,
+                                     tri.uv[k].v / kTriUvScale * img->height)
+                           : atlasUV(0, 64, 64);
                 v.color = color;
-                m.vertices.push_back(v);
-                m.indices.push_back((uint32_t)m.vertices.size() - 1);
+                mesh.vertices.push_back(v);
+                mesh.indices.push_back((uint32_t)mesh.vertices.size() - 1);
             }
-            rank++;
         }
-    }
-    Node root;
-    root.name = "overlays";
-    for (auto &[material, mesh] : meshes) {
-        mesh.material = material;
-        mesh.name = model->materials[material].name;
+        if (mesh.indices.empty())
+            continue;
         mesh.computeBounds();
         root.meshes.push_back((int)model->meshes.size());
         model->meshes.push_back(std::move(mesh));

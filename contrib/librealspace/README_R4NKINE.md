@@ -75,6 +75,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
        - couches *Terrain*, *Map* (objets de la carte) et *Parts* (objets de la mission) ;
        - niveau de détail du terrain ;
        - chiffres : triangles, textures, objets, objets absents du TRE, lumière du monde, temps de chargement ;
+     - le graphe : sous « parts of the mission », un nœud par zone de la mission (entrer dans une zone déclenche ses scènes), puis les scènes de cette zone ;
      - la section **Scenes** : les parts groupées par la scène qui les fait apparaître ; chaque scène s'affiche ou se cache, et « No scene » (les parts amenées par un programme de la mission) est cachée au départ ;
      - les sections **Parts** et **Map Objects** : un clic met la caméra sur l'objet ;
      - `-focus NOM` fait de même au démarrage, et `-distance D` règle le recul de la caméra.
@@ -155,9 +156,13 @@ Pour la lumière du monde, `setObjectLight` reçoit (c0, c1, c2) et en fait (c0,
 
 Le terrain (`WorldScene` et `R4World`) :
 - **Un nœud par bloc** : un `Group` « terrain » contient les 324 blocs (« block x,y »). Chacun est un nœud `LOD` sur les trois niveaux de `RSArea` (LVL0 400 sommets, LVL1 100, LVL2 25), avec ses jointures vers ses voisins de droite et du bas, comme `renderBlock`. Le renderer élimine donc les blocs hors du champ et choisit le niveau de chacun selon sa distance : fin jusqu'à 40 000, grossier au-delà de 100 000, réglable avec « LOD Scale ». Le jeu, lui, dessine tous ses blocs au même niveau (`world_detail`). Le menu « Terrain Detail » propose les deux : « By Distance », ou un niveau forcé partout.
+- **Les couleurs** sont celles des rampes de `RSArea` (`ComputeTriangleColors`). Leurs ombres dépendent de `terrain_shadow_lift` et `terrain_shadow_range` du `config.ini` du jeu : le viewer le lit dans `-data` (`config.ini` ou `assets/config.ini`) ou dans `./assets/config.ini`, et prend les valeurs par défaut sinon.
 - **Des jupes** : des murs de 600 descendent le long des bords de chaque bloc, pour qu'un voisin à un autre niveau ne laisse pas de fente. Le jeu n'en a pas besoin.
-- **Les couleurs** viennent de `RSArea` et ne sont pas éclairées, comme dans le jeu. Les textures sont en décalque (le `GL_DECAL` du jeu), dans **la palette du jeu** (PALETTE.IFF), index 255 transparent. Attention : la palette propre à chaque `RSImage` est celle de `SCRenderer`, qui reste vide tant que `SCRenderer::init` n'a pas été appelé. Le pont ne l'utilise donc pas.
-- **Les overlays** (les pistes et leur sol, `objectOverlay`) : comme `renderMapOverlay`, dans l'ordre de `drawList`. Chaque triangle est surélevé de 0,05 au-dessus des précédents, à la place du `GL_LEQUAL` du jeu. Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128, et leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
+- **Les couleurs** viennent de `RSArea` et ne sont pas éclairées, comme dans le jeu. Les textures se fondent dans la couleur du triangle selon leur alpha, comme le `GL_DECAL` du jeu (`mix(couleur, texel, alpha)`) : une couche en `Blend` par-dessus la couleur, filtrée linéairement sans mipmaps et bornée aux bords, comme `SCRenderer::createTextureInGPU`. Elles sont dans **la palette du jeu** (PALETTE.IFF), index 255 transparent. Attention : la palette propre à chaque `RSImage` est celle de `SCRenderer`, qui reste vide tant que `SCRenderer::init` n'a pas été appelé. Le pont ne l'utilise donc pas.
+- **Les overlays** (les pistes et leur sol, `objectOverlay`) : comme `renderMapOverlay`.
+  - Un mesh par overlay, ses triangles dans l'ordre de `drawList`, dessinés après le terrain (`drawOrder` 1) et sans écrire la profondeur. Chaque triangle recouvre donc les précédents, comme le `GL_LEQUAL` du jeu, sans surélévation.
+  - Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128. Leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
+  - Les images sont réunies dans un atlas, avec des bords répétés (le `GL_CLAMP_TO_EDGE` du jeu).
 - **Pas encore fait** : le ciel, les nuages et le brouillard.
 
 Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :

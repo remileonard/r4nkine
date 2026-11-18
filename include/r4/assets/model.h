@@ -25,6 +25,7 @@ struct Image {
     int width = 0, height = 0, channels = 0; // 1 grey, 2 grey+alpha, 3 RGB, 4 RGBA
     std::vector<uint8_t> pixels;
     bool clampS = false, clampT = false; // the wrap: clamped to the edges, else repeated
+    bool mipmaps = true; // false: filtered without mipmaps (the textures of the old games, the atlases)
     bool valid() const { return width > 0 && height > 0 && channels > 0; }
 };
 
@@ -62,6 +63,11 @@ struct Material {
     // drawn over the coplanar faces before it (decals: runway markings,
     // the subfaces of OpenFlight)
     bool decal = false;
+    // the bin of its draws, as the bins of Performer: the lower ones first,
+    // the opaque then the transparent (Blend, Additive) in each (a decal
+    // drawn without depth after the ground it lies on, the runways after
+    // the terrain)
+    int drawOrder = 0;
     // PaletteRamp: the intensity is rampAmbient + rampLight * max(N.L, 0)
     float rampAmbient = 0.375f, rampLight = 0.625f;
     bool rampTextured = false;

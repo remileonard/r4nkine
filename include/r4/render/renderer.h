@@ -119,6 +119,7 @@ private:
         MaterialInstance *material;
         Mat4 world;
         float depth;
+        int order; // the drawOrder of its material
         uint64_t key;
         gpu::PipelineHandle pipeline;
     };

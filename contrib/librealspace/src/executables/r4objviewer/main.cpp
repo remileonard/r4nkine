@@ -280,11 +280,20 @@ int main(int argc, char **argv) {
 
     // --- 1. libRealSpace : la configuration (RSArea la lit ; sans fichier,
     // ses valeurs par défaut), les TRE, la palette -----------------------------------
-    Config::getInstance();
+    Config &config = Config::getInstance();
     AssetManager &assets = AssetManager::getInstance();
     if (dataDir.back() != '/' && dataDir.back() != '\\')
         dataDir += '/';
     assets.SetBase(dataDir.c_str());
+    // la configuration du jeu, quand elle est là (les ombres du terrain de
+    // RSArea : terrain_shadow_lift, terrain_shadow_range...)
+    for (const std::string &ini : {dataDir + "config.ini", dataDir + "assets/config.ini", std::string("./assets/config.ini")})
+        if (SDL_RWops *f = SDL_RWFromFile(ini.c_str(), "rb")) {
+            SDL_RWclose(f);
+            config.load(ini);
+            std::printf("r4objviewer: configuration %s\n", ini.c_str());
+            break;
+        }
     if (tres.empty()) {
         SDL_RWops *big = SDL_RWFromFile((dataDir + "TOBIGTRE.TRE").c_str(), "rb");
         if (big) {

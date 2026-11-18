@@ -42,13 +42,12 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                                                const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f});
 
 // The overlays of an area: its runways and the ground around them, as
-// SCRenderer::renderMapOverlay draws them over the terrain:
-// - the triangles of each overlay in the order of its drawList, each raised
-//   a little over the ones before (the game draws them over each other with
-//   GL_LEQUAL);
-// - a triangle with a color of 255 has the palette color of its index only;
-//   the others the image GetImageByID(color + 255), its clear texels taking
-//   that palette color (the GL_DECAL of the game), uvs / 128.
+// SCRenderer::renderMapOverlay draws them over the terrain: a mesh by
+// overlay, its triangles in the order of its drawList, drawn without depth
+// after the terrain (drawOrder 1), each over the ones before (the GL_LEQUAL
+// of the game). A triangle of color 255 has the palette color of its index;
+// the others the image GetImageByID(color + 255), uvs / 128, its clear texels
+// in that palette color (the GL_DECAL of the game); the images in one atlas.
 // In libRealSpace's axes (Y up). Null when the area has no overlay.
 std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &palette);
 

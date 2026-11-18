@@ -288,18 +288,35 @@ void WorldScene::placeParts() {
         onGround(part);
     }
 
-    // a layer by scene, and one for the parts of no scene
+    // the graph: a node by area of the mission (entering it starts its
+    // scenes), a layer by scene under its area, and one for the parts of no
+    // scene
+    std::map<int, std::shared_ptr<r4::scene::Group>> areaNodes;
+    auto areaNode = [&](int id) {
+        auto it = areaNodes.find(id);
+        if (it != areaNodes.end())
+            return it->second;
+        auto g = r4::scene::make<r4::scene::Group>();
+        AREA *a = areaOf(id);
+        g->setName(a ? "Area " + std::to_string(id) + ": " + a->AreaName : std::string("No area"));
+        partsLayer_->addChild(g);
+        return areaNodes[id] = g;
+    };
     for (size_t s = 0; s < data.scenes.size(); s++) {
-        AREA *a = areaOf(data.scenes[s]->area_id);
+        int id = data.scenes[s]->area_id;
+        AREA *a = areaOf(id);
         Scene sc;
-        sc.label = "Scene " + std::to_string(s) + (a ? std::string(": ") + a->AreaName : std::string(": no area"));
+        sc.label = (a ? std::string(a->AreaName) : std::string("No area")) + " / Scene " + std::to_string(s);
         scenes_.push_back(sc);
-    }
-    for (size_t s = 0; s <= data.scenes.size(); s++) {
         auto layer = r4::scene::make<r4::scene::Switch>();
-        layer->setName(s < data.scenes.size() ? scenes_[s].label : "no scene");
-        if (s == data.scenes.size())
-            layer->setValue(r4::scene::Switch::kNone);
+        layer->setName("Scene " + std::to_string(s));
+        areaNode(a ? id : -1)->addChild(layer);
+        sceneLayers_.push_back(layer);
+    }
+    {
+        auto layer = r4::scene::make<r4::scene::Switch>();
+        layer->setName("no scene");
+        layer->setValue(r4::scene::Switch::kNone);
         partsLayer_->addChild(layer);
         sceneLayers_.push_back(layer);
     }
