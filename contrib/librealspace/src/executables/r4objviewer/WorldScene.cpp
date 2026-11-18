@@ -198,7 +198,7 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     // the terrain (RSArea reads the PAK in the data folder)
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
-    setTerrainLod(terrainLod_);
+    buildTerrain();
     // the runways and their ground, over the terrain
     if (auto overlays = r4bridge::overlayModel(area_.get(), *palette_.GetColorPalette())) {
         for (const r4::assets::Mesh &m : overlays->meshes)
@@ -338,20 +338,50 @@ void WorldScene::showScene(int scene, bool on) {
         sceneLayers_[i]->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone);
 }
 
-void WorldScene::setTerrainLod(int lod) {
-    terrainLod_ = lod;
+void WorldScene::buildTerrain() {
     terrain_->removeAllChildren();
+    terrainLods_.clear();
     terrainTriangles = terrainTextures = 0;
+    terrainBlocks = 0;
     if (!area_)
         return;
-    auto model = r4bridge::terrainModel(area_.get(), *palette_.GetColorPalette(), lod);
+    auto model = r4bridge::terrainModel(area_.get(), *palette_.GetColorPalette(), kTerrainRanges);
     if (!model)
         return;
-    for (const r4::assets::Mesh &m : model->meshes)
-        if (m.material == 0)
-            terrainTriangles += m.indices.size() / 3;
+    // the triangles of the finest level (each colored triangle once)
+    for (const r4::assets::Node &n : model->nodes)
+        if (n.name.compare(0, 4, "LVL0") == 0)
+            for (int mi : n.meshes)
+                if (model->meshes[mi].material == 0)
+                    terrainTriangles += model->meshes[mi].indices.size() / 3;
     terrainTextures = model->images.size();
-    terrain_->addChild(renderer_.upload(*model));
+    r4::scene::NodePtr node = renderer_.upload(*model);
+    terrain_->addChild(node);
+    // the LOD nodes of the blocks, for setTerrainLod
+    std::vector<r4::scene::Node *> stack{node.get()};
+    while (!stack.empty()) {
+        r4::scene::Node *n = stack.back();
+        stack.pop_back();
+        if (n->type() == r4::scene::NodeType::LOD)
+            terrainLods_.push_back(static_cast<r4::scene::LOD *>(n));
+        for (const auto &c : n->children())
+            stack.push_back(c.get());
+    }
+    terrainBlocks = terrainLods_.size();
+    setTerrainLod(terrainLod_);
+}
+
+void WorldScene::setTerrainLod(int mode) {
+    terrainLod_ = mode;
+    // 0: by distance; 1..3: the level mode - 1 everywhere (the world_detail of the game)
+    std::vector<float> ranges = kTerrainRanges;
+    if (mode > 0) {
+        int level = mode - 1;
+        for (int i = 0; i <= 3; i++)
+            ranges[i] = i <= level ? 0.0f : 1e30f;
+    }
+    for (r4::scene::LOD *lod : terrainLods_)
+        lod->setRanges(ranges);
 }
 
 void WorldScene::showTerrain(bool on) { terrain_->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone); }

@@ -15,6 +15,7 @@
 #include <cstring>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace r4bridge {
 
@@ -27,9 +28,10 @@ uint32_t packColor(const float c[4]) {
 
 } // namespace
 
-std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, int lod) {
+std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette,
+                                               const std::vector<float> &lodRanges) {
     using namespace r4::assets;
-    if (!area || lod < 0 || lod >= NUM_LODS || !area->GetAreaBlockByID(lod, 0))
+    if (!area || !area->GetAreaBlockByID(0, 0))
         return nullptr;
     auto model = std::make_shared<Model>();
     model->source = "terrain";
@@ -53,7 +55,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         int material = -1;
         RSImage *src = area->GetImageByID(imageID);
         if (src && src->data && src->width && src->height) {
-            const VGAPalette &pal = src->palette ? *src->palette : palette;
             Image img;
             img.name = std::string(src->name);
             img.width = (int)src->width;
@@ -62,12 +63,12 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             img.pixels.resize((size_t)img.width * img.height * 4);
             for (int y = 0; y < img.height; y++)
                 for (int x = 0; x < img.width; x++) {
-                    uint8_t index = src->data[(size_t)y * img.width + x];
-                    const Texel &t = pal.colors[index];
+                    // the palette of the game (PALETTE.IFF): the one SCRenderer::init
+                    // gives the images (RSImage takes Renderer.getPalette()); its
+                    // alpha, as Texture::updateContent: index 255 clear
+                    const Texel &t = palette.colors[src->data[(size_t)y * img.width + x]];
                     // R4nkine's images start at the bottom row
                     uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
-                    // the alpha of the palette, as Texture::updateContent: the
-                    // palette of the map textures leaves its unused indices clear
                     d[0] = t.r, d[1] = t.g, d[2] = t.b, d[3] = t.a;
                 }
             bleedClearTexels(img);
@@ -85,7 +86,9 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         return textureMaterial[imageID] = material;
     };
 
-    std::map<int, Mesh> meshes; // by material
+    const float kSkirt = 600; // the depth of the skirts of the blocks
+    // the meshes of a level of a block, by material
+    std::map<int, Mesh> meshes;
     auto add = [&](int material, const MapVertex *v, uint32_t color, r4::Vec2 uv) {
         Mesh &m = meshes[material];
         Vertex out;
@@ -116,46 +119,109 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         triangle(current, bottomRight, bottom, current->lowerColors, current->lowerImageID, current->lowerUV);
         triangle(current, right, bottomRight, current->upperColors, current->upperImageID, current->upperUV);
     };
+    // a node of the meshes made since the last one
+    auto takeMeshes = [&](const std::string &name) {
+        Node node;
+        node.name = name;
+        for (auto &[material, mesh] : meshes) {
+            mesh.material = material;
+            mesh.name = model->materials[material].name;
+            mesh.computeBounds();
+            node.meshes.push_back((int)model->meshes.size());
+            model->meshes.push_back(std::move(mesh));
+        }
+        meshes.clear();
+        return node;
+    };
 
-    // the blocks and their seams, as SCRenderer::renderBlock
+    // the root, a group of the blocks; each block a LOD over its 3 levels
+    model->nodes.push_back(Node{});
+    model->nodes[0].name = "terrain";
     const int last = BLOCK_PER_MAP_SIDE - 1;
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
-        AreaBlock *block = area->GetAreaBlockByID(lod, i);
-        if (!block || block->sideSize < 2)
-            continue;
-        int side = block->sideSize;
-        for (int x = 0; x < side - 1; x++)
-            for (int y = 0; y < side - 1; y++)
-                quad(block->GetVertice(x, y), block->GetVertice(x + 1, y), block->GetVertice(x + 1, y + 1),
-                     block->GetVertice(x, y + 1));
-        AreaBlock *right = i % BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(lod, i + 1) : nullptr;
-        AreaBlock *below = i / BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(lod, i + BLOCK_PER_MAP_SIDE) : nullptr;
-        if (right)
-            for (int y = 0; y < side - 1; y++)
-                quad(block->GetVertice(side - 1, y), right->GetVertice(0, y), right->GetVertice(0, y + 1),
-                     block->GetVertice(side - 1, y + 1));
-        if (below)
-            for (int x = 0; x < side - 1; x++)
-                quad(block->GetVertice(x, side - 1), block->GetVertice(x + 1, side - 1), below->GetVertice(x + 1, 0),
-                     below->GetVertice(x, 0));
-        AreaBlock *corner = right && below ? area->GetAreaBlockByID(lod, i + 1 + BLOCK_PER_MAP_SIDE) : nullptr;
-        if (corner)
-            quad(block->GetVertice(side - 1, side - 1), right->GetVertice(0, side - 1), corner->GetVertice(0, 0),
-                 below->GetVertice(side - 1, 0));
-    }
-
-    Node root;
-    root.name = "terrain";
-    for (auto &[material, mesh] : meshes) {
-        mesh.material = material;
-        mesh.name = model->materials[material].name;
-        mesh.computeBounds();
-        root.meshes.push_back((int)model->meshes.size());
-        model->meshes.push_back(std::move(mesh));
+        Node block;
+        block.name = "block " + std::to_string(i % BLOCK_PER_MAP_SIDE) + "," + std::to_string(i / BLOCK_PER_MAP_SIDE);
+        Node lod;
+        lod.name = "levels of detail";
+        lod.kind = NodeKind::LOD;
+        lod.lodRanges = lodRanges;
+        std::vector<Node> levels;
+        for (int level = 0; level < NUM_LODS; level++) {
+            AreaBlock *b = area->GetAreaBlockByID(level, i);
+            if (b && b->sideSize >= 2) {
+                // the cells of the block, then its seams with the blocks on its
+                // right and below at the same level, as SCRenderer::renderBlock
+                int side = b->sideSize;
+                for (int x = 0; x < side - 1; x++)
+                    for (int y = 0; y < side - 1; y++)
+                        quad(b->GetVertice(x, y), b->GetVertice(x + 1, y), b->GetVertice(x + 1, y + 1),
+                             b->GetVertice(x, y + 1));
+                AreaBlock *right = i % BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(level, i + 1) : nullptr;
+                AreaBlock *below =
+                    i / BLOCK_PER_MAP_SIDE != last ? area->GetAreaBlockByID(level, i + BLOCK_PER_MAP_SIDE) : nullptr;
+                if (right)
+                    for (int y = 0; y < side - 1; y++)
+                        quad(b->GetVertice(side - 1, y), right->GetVertice(0, y), right->GetVertice(0, y + 1),
+                             b->GetVertice(side - 1, y + 1));
+                if (below)
+                    for (int x = 0; x < side - 1; x++)
+                        quad(b->GetVertice(x, side - 1), b->GetVertice(x + 1, side - 1), below->GetVertice(x + 1, 0),
+                             below->GetVertice(x, 0));
+                AreaBlock *corner = right && below ? area->GetAreaBlockByID(level, i + 1 + BLOCK_PER_MAP_SIDE) : nullptr;
+                if (corner)
+                    quad(b->GetVertice(side - 1, side - 1), right->GetVertice(0, side - 1), corner->GetVertice(0, 0),
+                         below->GetVertice(side - 1, 0));
+                // the skirts: walls down from the edges of the block, so that a
+                // neighbor at another level leaves no crack (not in the game,
+                // which draws all its blocks at one level)
+                auto at = [&](int x, int y) -> const MapVertex * {
+                    // the vertex x, y of the block and its seams (x, y up to side)
+                    AreaBlock *src = b;
+                    if (x == side && y == side)
+                        src = corner, x = 0, y = 0;
+                    else if (x == side)
+                        src = right, x = 0;
+                    else if (y == side)
+                        src = below, y = 0;
+                    return src ? src->GetVertice(x, y) : nullptr;
+                };
+                int endX = right ? side : side - 1, endY = below ? side : side - 1;
+                auto skirt = [&](const MapVertex *a, const MapVertex *c) {
+                    if (!a || !c)
+                        return;
+                    MapVertex da = *a, dc = *c;
+                    da.v.y -= kSkirt;
+                    dc.v.y -= kSkirt;
+                    uint32_t ca = packColor(a->color), cc = packColor(c->color);
+                    add(0, a, ca, {0, 0}), add(0, c, cc, {0, 0}), add(0, &dc, cc, {0, 0});
+                    add(0, a, ca, {0, 0}), add(0, &dc, cc, {0, 0}), add(0, &da, ca, {0, 0});
+                };
+                for (int x = 0; x < endX; x++) {
+                    skirt(at(x, 0), at(x + 1, 0));
+                    skirt(at(x, endY), at(x + 1, endY));
+                }
+                for (int y = 0; y < endY; y++) {
+                    skirt(at(0, y), at(0, y + 1));
+                    skirt(at(endX, y), at(endX, y + 1));
+                }
+            }
+            levels.push_back(takeMeshes("LVL" + std::to_string(level) + " (" +
+                                        std::to_string(b ? b->sideSize * b->sideSize : 0) + " vertices)"));
+        }
+        // the nodes: the block, its LOD, the levels
+        int blockIndex = (int)model->nodes.size();
+        model->nodes.push_back(block);
+        model->nodes[0].children.push_back(blockIndex);
+        int lodIndex = (int)model->nodes.size();
+        model->nodes.push_back(lod);
+        model->nodes[blockIndex].children.push_back(lodIndex);
+        for (Node &l : levels) {
+            model->nodes.push_back(l);
+            model->nodes[lodIndex].children.push_back((int)model->nodes.size() - 1);
+        }
     }
     if (model->meshes.empty())
         return nullptr;
-    model->nodes.push_back(root);
     return model;
 }
 
@@ -185,7 +251,9 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
         int material = -1;
         RSImage *src = area->GetImageByID(c + 255);
         if (src && src->data && src->width && src->height) {
-            const VGAPalette &pal = src->palette ? *src->palette : palette;
+            // the palette of the game (PALETTE.IFF): the one SCRenderer::init gives
+            // the images (RSImage takes Renderer.getPalette()), not set here
+            const VGAPalette &pal = palette;
             const Texel &under = palette.colors[c & 0xff];
             Image img;
             img.name = std::string(src->name);

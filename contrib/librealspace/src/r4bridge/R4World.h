@@ -18,6 +18,7 @@
 #include "r4/assets/model.h"
 
 #include <memory>
+#include <vector>
 
 class RSArea;
 struct MapObject;
@@ -26,14 +27,19 @@ struct VGAPalette;
 
 namespace r4bridge {
 
-// The terrain of an area: its 18 x 18 blocks at one level of detail (0 the
-// finest, 400 vertices a block; 1: 100; 2: 25), the seams between the blocks
-// included, as SCRenderer::renderBlock draws them:
+// The terrain of an area: a group of its 18 x 18 blocks ("block x,y"), each
+// a LOD node over its 3 levels of RSArea (LVL0 400 vertices, LVL1 100,
+// LVL2 25), the seams with its neighbors at the same level included, as
+// SCRenderer::renderBlock draws them:
 // - every triangle with its colors (lit by RSArea), unlit, as the game;
 // - the textured ones (TXMPACK, ACCPACK) also with their image over the colors
-//   (the GL_DECAL of the game), clear where their palette is (its alpha).
+//   (the GL_DECAL of the game), in the palette of the game, index 255 clear.
+// lodRanges: those of the LOD nodes (level i from ranges[i] to ranges[i+1]).
+// The game draws all its blocks at one level (world_detail); the default
+// here: the finest up to 2 blocks (40000), the coarsest beyond 5 (100000).
 // In libRealSpace's axes (Y up). Null when the area has no blocks.
-std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, int lod = 0);
+std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette,
+                                               const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f});
 
 // The overlays of an area: its runways and the ground around them, as
 // SCRenderer::renderMapOverlay draws them over the terrain:

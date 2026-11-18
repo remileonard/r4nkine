@@ -707,7 +707,7 @@ int main(int argc, char **argv) {
                     if (gui.toggle("Mission Parts", showParts))
                         world.showParts(showParts);
                     gui.columns(1);
-                    if (gui.menu("Terrain Detail", terrainLod, {"Fine (400 per block)", "Medium (100)", "Coarse (25)"}))
+                    if (gui.menu("Terrain Detail", terrainLod, {"By Distance (LOD)", "Fine (400 per block)", "Medium (100)", "Coarse (25)"}))
                         world.setTerrainLod(terrainLod);
                     size_t missing = 0;
                     for (const auto *list : {&world.parts(), &world.mapObjects()})
@@ -715,7 +715,8 @@ int main(int argc, char **argv) {
                             missing += it.found ? 0 : 1;
                     gui.table({{"World", world.worldName},
                                {"Terrain", world.terrainName},
-                               {"Terrain triangles", fmt("%zu", world.terrainTriangles)},
+                               {"Terrain blocks", fmt("%zu (a LOD each)", world.terrainBlocks)},
+                               {"Terrain triangles (fine + skirts)", fmt("%zu", world.terrainTriangles)},
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
                                {"Runway triangles", fmt("%zu", world.overlayTriangles)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},

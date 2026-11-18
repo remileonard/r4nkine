@@ -44,8 +44,9 @@ public:
 
     // loads an entry; false (and why) when it cannot be
     bool load(const WorldEntry &entry, std::string &error);
-    // the terrain again, at another level of detail (0 finest .. 2)
-    void setTerrainLod(int lod);
+    // the levels of the blocks of the terrain: 0 by the distance (the LOD
+    // nodes), 1..3 the level 0..2 everywhere (the world_detail of the game)
+    void setTerrainLod(int mode);
 
     r4::scene::NodePtr root() const { return root_; }
     // the layers, shown or hidden
@@ -74,7 +75,10 @@ public:
     const std::vector<Item> &parts() const { return parts_; }
     const std::vector<Item> &mapObjects() const { return mapObjects_; }
     std::string worldName, terrainName;
-    size_t terrainTriangles = 0, terrainTextures = 0, overlayTriangles = 0;
+    size_t terrainTriangles = 0, terrainTextures = 0, overlayTriangles = 0, terrainBlocks = 0;
+    // the distances of the levels of the blocks: the finest up to 2 blocks,
+    // the coarsest beyond 5
+    const std::vector<float> kTerrainRanges{0, 40000, 100000, 1e30f};
     double loadMs = 0;
     bool hasLight = false;
     r4::Vec3 lightTowards{0, 0, 1}; // R4nkine's axes, towards the light
@@ -88,6 +92,7 @@ private:
     void clear();
     // the places of the parts, as the game makes them appear: see placeParts()
     void placeParts();
+    void buildTerrain();
 
     AssetManager &assets_;
     RSPalette &palette_;
@@ -103,4 +108,5 @@ private:
     std::vector<Scene> scenes_;
     std::vector<Item> parts_, mapObjects_;
     int terrainLod_ = 0;
+    std::vector<r4::scene::LOD *> terrainLods_;
 };
