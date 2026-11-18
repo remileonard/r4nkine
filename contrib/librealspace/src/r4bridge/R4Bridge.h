@@ -11,6 +11,7 @@
 #pragma once
 
 #include "r4/assets/model.h"
+#include "r4/assets/upscale.h"
 
 #include <memory>
 #include <vector>
@@ -47,6 +48,22 @@ r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<Palette
 // the color of their opaque neighbors: filtered, the edges of the opaque
 // parts then keep their color instead of turning to the black of index 255.
 void bleedClearTexels(r4::assets::Image &image);
+
+// The quality of the textures of the game, for the models made from then on
+// (objects, terrain, runways): SCRenderer filters them linearly, without
+// mipmaps, at their size (the default here). Upscaled once at their making
+// (2xSaI, xBR), and with mipmaps, they stay sharp near and calm far; the
+// anisotropic filtering is the renderer's (RenderOptions::anisotropy).
+struct TextureQuality {
+    r4::assets::Upscale upscale = r4::assets::Upscale::None;
+    bool mipmaps = false;
+};
+TextureQuality &textureQuality();
+
+// A texture of the game made ready: its clear texels bled, then upscaled and
+// its mipmaps as textureQuality(), clamped to its edges (the GL_CLAMP_TO_EDGE
+// of SCRenderer).
+void finishTexture(r4::assets::Image &image);
 
 // An RSEntity as a model of R4nkine, as SCRenderer::drawModel draws it:
 // - the axes: the game has Y up, R4nkine Z up (a turn of 90 degrees about X),

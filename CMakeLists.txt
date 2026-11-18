@@ -43,6 +43,7 @@ add_library(r4nkine
     src/assets/gset_loader.cpp
     src/assets/flt_loader.cpp
     src/assets/image_stb.cpp
+    src/assets/upscale.cpp
     src/assets/gltf_loader.cpp
     src/scene/node.cpp
     src/render/renderer.cpp

@@ -127,6 +127,8 @@ enum : GLenum {
     FRAMEBUFFER_COMPLETE = 0x8CD5,
     DEPTH24_STENCIL8 = 0x88F0,
     NONE_ = 0,
+    TEXTURE_MAX_ANISOTROPY = 0x84FE,
+    MAX_TEXTURE_MAX_ANISOTROPY = 0x84FF,
     DEPTH_COMPONENT = 0x1902,
     DEPTH_COMPONENT24 = 0x81A6,
     DEPTH_ATTACHMENT = 0x8D00,
@@ -171,6 +173,8 @@ enum : GLenum {
     X(void, TexImage2D, (GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border, \
                          GLenum fmt, GLenum type, const void *pixels))                              \
     X(void, TexParameteri, (GLenum target, GLenum pname, GLint param))                              \
+    X(void, TexParameterf, (GLenum target, GLenum pname, GLfloat param))                            \
+    X(void, GetFloatv, (GLenum pname, GLfloat * data))                                              \
     X(void, TexSubImage2D, (GLenum target, GLint level, GLint x, GLint y, GLsizei w, GLsizei h,      \
                             GLenum fmt, GLenum type, const void *pixels))                           \
     X(void, GenFramebuffers, (GLsizei n, GLuint * f))                                               \

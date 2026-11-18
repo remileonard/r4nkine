@@ -94,6 +94,11 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
    - Dans **Render** :
      - **Flat Shading** (ou `-flat`) : les objets prennent la normale de leur face, comme `object_gouraud = false` dans le jeu, et le terrain est recalculé par `RSArea` avec `terrain_flat` ;
      - **Gouraud by Vertex** (ou `-gouraud`) : l'éclairage des objets est calculé aux sommets puis interpolé, comme le jeu (le dos d'une face double prend la normale de la face). Sinon, il est calculé à chaque pixel.
+     - **Texture Upscale** (`-upscale 0..3`) : les textures du jeu agrandies une seule fois, à leur chargement, en 2xSaI, xBR 2x ou xBR 4x (`r4/assets/upscale.h`). Cela concerne les objets, le terrain et les pistes ; dans l'atlas des pistes, chaque image est agrandie avant d'y être rangée. L'alpha compte comme une couleur, donc les trous (index 255) gardent des bords nets. xBR 4x ajoute environ 1 s au chargement de TURKEY.
+     - **Mipmaps** (`-mipmaps`) : avec leurs mipmaps. Le jeu n'en a pas ; avec, les bordures des cellules de l'atlas des pistes passent de 2 à 8 texels.
+     - **Anisotropic Filter** (`-aniso N`, de 2 à 16) : le filtrage anisotrope, quand le GPU le permet.
+
+       Ces trois réglages refont l'objet ou le monde affiché (`r4bridge::textureQuality()`, `finishTexture`). Par défaut, tout est comme le jeu.
 
      Les deux se règlent au départ d'après le `config.ini` du jeu s'il est là.
    - **Sun** (les deux modes) :

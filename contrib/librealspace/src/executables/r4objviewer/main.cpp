@@ -28,6 +28,9 @@
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
 //  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
+//  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
+//  -mipmaps  les textures avec leurs mipmaps
+//  -aniso N  le filtrage anisotrope (1, 2, 4, 8, 16)
 //  -forests N les forêts sur le vert du terrain : 0 aucune, 1 clairsemées,
 //            2 normales (par défaut), 3 denses
 //  -diag DIR avec -mission : les types de terrain et les textures de la carte,
@@ -270,6 +273,9 @@ int main(int argc, char **argv) {
     bool hasStartAt = false;
     bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false, shadowsAtStart = false;
     int forestsAtStart = 2;
+    int upscaleAtStart = 0;
+    bool mipmapsAtStart = false;
+    float anisoAtStart = 1;
     int reliefAtStart = 2;
     float sunAtStart[2] = {1000, 1000}; // -sun cap élévation
     for (int i = 1; i < argc; i++) {
@@ -307,6 +313,12 @@ int main(int argc, char **argv) {
             shadowsAtStart = true;
         else if (a == "-at" && i + 1 < argc) // la cible au départ, en X,Y de R4nkine
             hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
+        else if (a == "-upscale" && i + 1 < argc) // 0..3 : non, 2xSaI, xBR 2x, xBR 4x
+            upscaleAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
+        else if (a == "-mipmaps")
+            mipmapsAtStart = true;
+        else if (a == "-aniso" && i + 1 < argc)
+            anisoAtStart = std::max(1.0f, (float)std::atof(argv[++i]));
         else if (a == "-forests" && i + 1 < argc) // 0..3 : aucune .. denses
             forestsAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
         else if (a == "-diag" && i + 1 < argc) // les types et les textures du terrain
@@ -314,6 +326,10 @@ int main(int argc, char **argv) {
         else if (a == "-distance" && i + 1 < argc)
             startDistance = (float)std::atof(argv[++i]);
     }
+
+    // la qualité des textures du jeu, pour tous les modèles faits par le pont
+    r4bridge::textureQuality().upscale = (r4::assets::Upscale)upscaleAtStart;
+    r4bridge::textureQuality().mipmaps = mipmapsAtStart;
 
     // --- 1. libRealSpace : la configuration (RSArea la lit ; sans fichier,
     // ses valeurs par défaut), les TRE, la palette -----------------------------------
@@ -384,6 +400,7 @@ int main(int argc, char **argv) {
     std::printf("r4objviewer: %s\n", device->name());
     {
         r4::render::Renderer renderer(*device);
+        renderer.options().anisotropy = anisoAtStart;
         r4::render::PostProcess post(*device);
         r4::ui::Context gui(*device);
         r4::render::Environment &env = renderer.environment();
@@ -837,6 +854,28 @@ int main(int argc, char **argv) {
                 }
                 if (gui.toggle("Gouraud by Vertex (as the game)", gouraudByVertex))
                     renderer.options().rampGouraud = gouraudByVertex;
+                // les textures : agrandies une fois, au chargement, puis filtrées ;
+                // l'objet ou le monde est refait
+                r4bridge::TextureQuality &tq = r4bridge::textureQuality();
+                int up = (int)tq.upscale;
+                bool remake = gui.menu("Texture Upscale", up, {"None (as the game)", "2xSaI", "xBR 2x", "xBR 4x"});
+                tq.upscale = (r4::assets::Upscale)up;
+                remake |= gui.toggle("Mipmaps", tq.mipmaps);
+                const float kAniso[] = {1, 2, 4, 8, 16};
+                int an = 0;
+                while (an < 4 && kAniso[an] < renderer.options().anisotropy)
+                    an++;
+                bool anisoOk = device->limits().maxAnisotropy > 1;
+                if (gui.menu("Anisotropic Filter", an, {"Off", "2x", "4x", "8x", "16x"}, anisoOk)) {
+                    renderer.options().anisotropy = kAniso[an];
+                    remake = true;
+                }
+                if (remake) {
+                    if (mode == 1 && currentWorld >= 0)
+                        loadWorld(currentWorld);
+                    else if (current >= 0)
+                        load(current);
+                }
                 gui.columns(2);
                 gui.columns(1);
                 gui.slider("LOD Scale", renderer.options().lodScale, 0.05f, 4, "%.2f", true);

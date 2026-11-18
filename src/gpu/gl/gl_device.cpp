@@ -155,6 +155,13 @@ public:
         v = 1;
         gl.GetIntegerv(MAX_SAMPLES, &v);
         lim.maxSamples = v > 0 ? v : 1;
+        // anisotropic filtering: core in 4.6, an extension before (the same
+        // enums); an error when there is none
+        while (gl.GetError() != NO_ERROR_) {
+        }
+        GLfloat aniso = 1;
+        gl.GetFloatv(MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
+        lim.maxAnisotropy = gl.GetError() == NO_ERROR_ && aniso > 1 ? aniso : 1;
         // the framebuffer of the window: not always 0 (a host, some platforms)
         gl.GetIntegerv(FRAMEBUFFER_BINDING, &v);
         windowFbo = (GLuint)v;
@@ -250,6 +257,8 @@ public:
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, d.magFilter == Filter::Linear ? LINEAR : NEAREST);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, wrapMode(d.wrapS));
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, wrapMode(d.wrapT));
+        if (d.anisotropy > 1 && lim.maxAnisotropy > 1)
+            gl.TexParameterf(TEXTURE_2D, TEXTURE_MAX_ANISOTROPY, std::min(d.anisotropy, lim.maxAnisotropy));
         if (d.mipmaps && pixels)
             gl.GenerateMipmap(TEXTURE_2D);
         gl.BindTexture(TEXTURE_2D, 0);

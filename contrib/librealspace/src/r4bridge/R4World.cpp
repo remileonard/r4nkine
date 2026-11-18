@@ -102,10 +102,8 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
                     d[0] = t.r, d[1] = t.g, d[2] = t.b, d[3] = t.a;
                 }
-            // as SCRenderer::createTextureInGPU: GL_LINEAR, no mipmaps, clamped
-            bleedClearTexels(img);
-            img.mipmaps = false;
-            img.clampS = img.clampT = true;
+            // as SCRenderer::createTextureInGPU (GL_LINEAR, clamped), or better
+            finishTexture(img);
             model->images.push_back(std::move(img));
             Material m;
             m.name = std::string("terrain ") + src->name;
@@ -340,9 +338,8 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     // overlay make one mesh, drawn in the order of its drawList: cell 0
     // white (the colored triangles), then a cell by textured color c (the
     // image c + 255, its clear texels in the palette color c: the GL_DECAL
-    // of the game); 2 texels of border by cell, its edges repeated (the
+    // of the game); a border by cell, its edges repeated (the
     // GL_CLAMP_TO_EDGE of the game)
-    const int kBorder = 2, kCell = 128 + 2 * kBorder;
     std::map<int, int> cellOf; // color -> cell
     std::vector<RSImage *> cellImage{nullptr};
     std::vector<int> cellColor{-1};
@@ -360,6 +357,33 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
             cellImage.push_back(src);
             cellColor.push_back(c);
         }
+    // each cell as an image (its clear texels in its palette color), upscaled
+    // as the textures (textureQuality); a wider border with mipmaps, so that
+    // their smaller levels do not take the neighbor cells
+    const TextureQuality &quality = textureQuality();
+    const int scale = r4::assets::upscaleFactor(quality.upscale);
+    const int kBorder = quality.mipmaps ? 8 : 2, kCell = 128 * scale + 2 * kBorder;
+    std::vector<Image> cells;
+    for (size_t cell = 0; cell < cellImage.size(); cell++) {
+        RSImage *src = cellImage[cell];
+        const Texel &under = palette.colors[cellColor[cell] & 0xff];
+        Image c; // rows from the top, as RSImage
+        c.width = src ? (int)src->width : 1;
+        c.height = src ? (int)src->height : 1;
+        c.channels = 4;
+        c.clampS = c.clampT = true;
+        c.pixels.assign((size_t)c.width * c.height * 4, 255);
+        for (int y = 0; src && y < c.height; y++)
+            for (int x = 0; x < c.width; x++) {
+                const Texel &t = palette.colors[src->data[(size_t)y * c.width + x]];
+                const Texel &o = t.a ? t : under;
+                uint8_t *d = &c.pixels[((size_t)y * c.width + x) * 4];
+                d[0] = o.r, d[1] = o.g, d[2] = o.b, d[3] = 255;
+            }
+        if (src && scale > 1)
+            c = r4::assets::upscale(c, quality.upscale);
+        cells.push_back(std::move(c));
+    }
     int columns = (int)std::ceil(std::sqrt((double)cellImage.size()));
     int rows = ((int)cellImage.size() + columns - 1) / columns;
     Image atlas;
@@ -367,25 +391,18 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     atlas.width = columns * kCell;
     atlas.height = rows * kCell;
     atlas.channels = 4;
-    atlas.mipmaps = false;
+    atlas.mipmaps = quality.mipmaps;
     atlas.clampS = atlas.clampT = true;
     std::vector<uint8_t> top((size_t)atlas.width * atlas.height * 4, 255); // rows from the top
-    for (size_t cell = 0; cell < cellImage.size(); cell++) {
+    for (size_t cell = 0; cell < cells.size(); cell++) {
         int x0 = (int)(cell % columns) * kCell, y0 = (int)(cell / columns) * kCell;
-        RSImage *src = cellImage[cell];
-        const Texel &under = palette.colors[cellColor[cell] & 0xff];
-        int w = src ? (int)src->width : 1, h = src ? (int)src->height : 1;
+        const Image &c = cells[cell];
+        // the cell, its edges repeated into its border
         for (int y = -kBorder; y < kCell - kBorder; y++)
             for (int x = -kBorder; x < kCell - kBorder; x++) {
-                uint8_t *d = &top[((size_t)(y0 + kBorder + y) * atlas.width + x0 + kBorder + x) * 4];
-                if (!src) {
-                    d[0] = d[1] = d[2] = d[3] = 255;
-                    continue;
-                }
-                int sx = std::clamp(x, 0, w - 1), sy = std::clamp(y, 0, h - 1);
-                const Texel &t = palette.colors[src->data[(size_t)sy * w + sx]];
-                const Texel &o = t.a ? t : under;
-                d[0] = o.r, d[1] = o.g, d[2] = o.b, d[3] = 255;
+                int sx = std::clamp(x, 0, c.width - 1), sy = std::clamp(y, 0, c.height - 1);
+                std::memcpy(&top[((size_t)(y0 + kBorder + y) * atlas.width + x0 + kBorder + x) * 4],
+                            &c.pixels[((size_t)sy * c.width + sx) * 4], 4);
             }
     }
     atlas.pixels.resize(top.size());
@@ -394,9 +411,9 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
                     (size_t)atlas.width * 4);
     model->images.push_back(std::move(atlas));
     const float atlasW = (float)(columns * kCell), atlasH = (float)(rows * kCell);
-    // an uv of a cell (in its image, from its top left) in the atlas
+    // an uv of a cell (in texels of its image of the game, from its top left) in the atlas
     auto atlasUV = [&](int cell, float u, float v) {
-        float px = (cell % columns) * kCell + kBorder + u, py = (cell / columns) * kCell + kBorder + v;
+        float px = (cell % columns) * kCell + kBorder + u * scale, py = (cell / columns) * kCell + kBorder + v * scale;
         return r4::Vec2{px / atlasW, 1 - py / atlasH};
     };
 

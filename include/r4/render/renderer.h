@@ -81,6 +81,9 @@ struct RenderOptions {
     // (the Gouraud of the old games), not at each pixel; the back of a
     // two-sided face lit by its face normal, as RealSpace
     bool rampGouraud = false;
+    // the anisotropic filtering of the textures uploaded from then on (1: off;
+    // the device limits it)
+    float anisotropy = 1;
     // the shadows of the sun: one shadow map, an orthographic view from the
     // light over the part of the view up to shadowDistance from the eye;
     // they fade out at its end

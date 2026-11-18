@@ -34,6 +34,10 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   or verbatim, 8 or 16 bits), **PPM/PGM**, the scrambled **5551E**
   images of perfly.face, and **PNG, JPEG, BMP, TGA, GIF** (stb_image). Textures and external references are searched next
   to the model and in the search paths (`addSearchPath`, `-F` in r4fly).
+  `r4/assets/upscale.h` enlarges the small textures of the old games once, at
+  load: **2xSaI**, **xBR 2x** and **xBR 4x** (the alpha counts as a color, the
+  clear holes keep their sharp edges). The renderer adds **anisotropic
+  filtering** (`RenderOptions::anisotropy`, when the GPU has it).
 - `r4::scene`: Group, Geode, Switch, LOD, **Billboard** (axis or point) and
   **Instancer** nodes. An Instancer draws the same geometry at many places
   (forests, villages), culls each instance and picks its level of detail by

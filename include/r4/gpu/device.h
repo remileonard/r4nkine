@@ -54,6 +54,9 @@ struct TextureDesc {
     Filter minFilter = Filter::Linear, magFilter = Filter::Linear;
     bool mipmaps = true;
     Wrap wrapS = Wrap::Repeat, wrapT = Wrap::Repeat;
+    // anisotropic filtering: up to this many samples along the slope (1: off),
+    // limited by Limits::maxAnisotropy
+    float anisotropy = 1;
 };
 
 enum class AttribType { Float, UByte, Short };
@@ -127,6 +130,7 @@ struct Limits {
     uint32_t maxUniformBlockSize = 16384;
     uint32_t maxTextureSize = 2048;
     int maxSamples = 1; // of the render targets
+    float maxAnisotropy = 1; // 1: no anisotropic filtering (GL 4.6 or the extension)
 };
 
 struct FrameStats {

@@ -362,6 +362,7 @@ gpu::TextureHandle Renderer::uploadImage(const assets::Image &image, bool mipmap
     d.mipmaps = mipmaps;
     d.wrapS = image.clampS ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
     d.wrapT = image.clampT ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
+    d.anisotropy = options_.anisotropy;
     // grey images are expanded: the shader reads RGBA
     std::vector<uint8_t> rgba;
     const void *pixels = image.pixels.data();

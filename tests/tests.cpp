@@ -1,6 +1,7 @@
 // tests.cpp - the tests of R4nkine that need no GPU: math, culling, scene
 // graph bounds, loaders. Usage: r4_tests <the tests/data folder>
 #include "r4/assets/model.h"
+#include "r4/assets/upscale.h"
 #include "r4/axes.h"
 #include "r4/render/orbit.h"
 #include "r4/math.h"
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <string>
 
 using namespace r4;
@@ -414,10 +416,64 @@ static void testAxes() {
     CHECK(near(h, -140, 1e-3f) && near(pi, 20, 1e-3f) && near(r, 10, 1e-3f));
 }
 
+// the scalers: the sizes, a flat image stays flat, a hard edge and a clear
+// texel stay as they are, an oblique line gets smoothed
+static void testUpscale() {
+    using namespace r4::assets;
+    auto make = [](int w, int h, auto color) {
+        Image img;
+        img.width = w;
+        img.height = h;
+        img.channels = 4;
+        img.pixels.resize((size_t)w * h * 4);
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++) {
+                uint32_t c = color(x, y);
+                std::memcpy(&img.pixels[((size_t)y * w + x) * 4], &c, 4);
+            }
+        return img;
+    };
+    auto at = [](const Image &img, int x, int y) {
+        uint32_t c;
+        std::memcpy(&c, &img.pixels[((size_t)y * img.width + x) * 4], 4);
+        return c;
+    };
+    Image flat = make(8, 6, [](int, int) { return 0xff3366ccu; });
+    for (Upscale u : {Upscale::SaI2x, Upscale::Xbr2x, Upscale::Xbr4x}) {
+        Image big = upscale(flat, u);
+        int k = upscaleFactor(u);
+        CHECK(big.width == 8 * k && big.height == 6 * k && big.channels == 4);
+        bool same = true;
+        for (int y = 0; y < big.height; y++)
+            for (int x = 0; x < big.width; x++)
+                same = same && at(big, x, y) == 0xff3366ccu;
+        CHECK(same);
+    }
+    // a vertical edge, left white, right clear: xBR keeps it sharp (2xSaI
+    // blends the column next to it)
+    Image edge = make(8, 8, [](int x, int) { return x < 4 ? 0xffffffffu : 0x00000000u; });
+    edge.clampS = edge.clampT = true;
+    Image sharp = upscale(edge, Upscale::Xbr2x);
+    CHECK(at(sharp, 7, 5) == 0xffffffffu && at(sharp, 8, 5) == 0x00000000u);
+    // a diagonal staircase: xBR blends the steps (some texels between the 2 colors)
+    Image stairs = make(8, 8, [](int x, int y) { return x > y ? 0xff000000u : 0xffffffffu; });
+    stairs.clampS = stairs.clampT = true;
+    Image big = upscale(stairs, Upscale::Xbr2x);
+    int between = 0;
+    for (int y = 0; y < big.height; y++)
+        for (int x = 0; x < big.width; x++) {
+            uint32_t c = at(big, x, y);
+            between += c != 0xff000000u && c != 0xffffffffu;
+        }
+    CHECK(between > 0);
+    CHECK(std::string(upscaleName(Upscale::Xbr4x)) == "xBR 4x");
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
     testAxes();
+    testUpscale();
     testBounds();
     testScene();
     testLoaders(dir);

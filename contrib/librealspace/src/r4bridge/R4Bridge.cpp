@@ -120,6 +120,22 @@ void bleedClearTexels(r4::assets::Image &img) {
     }
 }
 
+TextureQuality &textureQuality() {
+    static TextureQuality quality;
+    return quality;
+}
+
+void finishTexture(r4::assets::Image &img) {
+    img.clampS = img.clampT = true;
+    bleedClearTexels(img);
+    const TextureQuality &q = textureQuality();
+    if (q.upscale != r4::assets::Upscale::None) {
+        img = r4::assets::upscale(img, q.upscale);
+        bleedClearTexels(img); // the clear texels it made
+    }
+    img.mipmaps = q.mipmaps;
+}
+
 r4::Mat4 realSpaceToR4() { return r4::axes::fromYUpMatrix(); }
 
 std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palette,
@@ -218,10 +234,8 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 // R4nkine's images start at the bottom row
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
-        bleedClearTexels(img);
-        // as SCRenderer::createTextureInGPU: GL_LINEAR, no mipmaps, GL_CLAMP_TO_EDGE
-        img.mipmaps = false;
-        img.clampS = img.clampT = true;
+        // as SCRenderer::createTextureInGPU (GL_LINEAR, GL_CLAMP_TO_EDGE), or better
+        finishTexture(img);
         model->images.push_back(std::move(img));
         textureImage[i] = (int)model->images.size() - 1;
     }
