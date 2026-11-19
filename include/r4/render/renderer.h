@@ -197,6 +197,8 @@ private:
     gpu::TextureHandle white_;
     uint32_t nextMaterialId_ = 1;
     std::vector<gpu::TextureHandle> ownedTextures_;
+    // the mean color of the opaque texels of each uploaded texture, drawn in its place without textures
+    std::unordered_map<uint32_t, Vec4> textureMeans_;
 };
 
 } // namespace r4::render

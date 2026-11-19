@@ -38,7 +38,8 @@ struct MaterialBlock {
     float emissive[4];
     float flags[4];  // texture, alpha cutoff (0: none), vertex colors, unlit
     float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
-    float flags3[4]; // receives the shadows
+    float flags3[4]; // receives the shadows, drawn over the face of the same depth
+    float textureMean[4];
 };
 
 const char *kVertexShader = R"(#version 330
@@ -72,6 +73,7 @@ layout(std140) uniform Material {
     vec4 flags;
     vec4 flags2;
     vec4 flags3;
+    vec4 textureMean;
 };
 out vec3 vNormal;
 out vec3 vPosition;
@@ -128,6 +130,7 @@ layout(std140) uniform Material {
     vec4 flags;
     vec4 flags2;
     vec4 flags3;
+    vec4 textureMean;
 };
 uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
@@ -220,6 +223,9 @@ void main() {
     }
     bool lit = options.y > 0.5 && dot(vNormal, vNormal) > 1e-12;
     if (flags2.y > 2.5) {
+        if (options.x < 0.5) {
+            discard;
+        }
         float intensity = 1.0;
         if (flags.z > 0.5) {
             intensity = vColor.r;
@@ -241,7 +247,13 @@ void main() {
         if (flags2.y < 1.5) {
             base = vec4(rampShade(int(vColor.r * 255.0 + 0.5), intensity), diffuse.a);
         } else {
-            base *= texture(diffuseMap, uv);
+            if (options.x > 0.5) {
+                base *= texture(diffuseMap, uv);
+            } else if (flags3.y > 0.5) {
+                discard;
+            } else {
+                base *= textureMean;
+            }
             if (flags.y > 0.0 && base.a < flags.y) {
                 discard;
             }
@@ -252,6 +264,8 @@ void main() {
     }
     if (flags.x > 0.5 && options.x > 0.5) {
         base *= texture(diffuseMap, uv);
+    } else if (flags.x > 0.5) {
+        base *= textureMean;
     }
     if (flags.z > 0.5) {
         base *= vColor;
@@ -313,6 +327,27 @@ void main() {}
 void copyMat(float *dst, const Mat4 &m) {
     std::memcpy(dst, dataOf(m), 64);
 }
+Vec4 meanColor(const assets::Image &image) {
+    double sum[3] = {0, 0, 0};
+    size_t count = 0;
+    const int n = image.channels;
+    for (size_t i = 0; i + n <= image.pixels.size(); i += n) {
+        const uint8_t *p = &image.pixels[i];
+        bool opaque = n == 2 ? p[1] >= 128 : (n == 4 ? p[3] >= 128 : true);
+        if (!opaque) {
+            continue;
+        }
+        for (int c = 0; c < 3; c++) {
+            sum[c] += n >= 3 ? p[c] : p[0];
+        }
+        count++;
+    }
+    if (count == 0) {
+        return {1, 1, 1, 1};
+    }
+    return {(float)(sum[0] / count / 255), (float)(sum[1] / count / 255), (float)(sum[2] / count / 255), 1};
+}
+
 void copyVec(float *dst, Vec3 v, float w) {
     dst[0] = v.x;
     dst[1] = v.y;
@@ -468,6 +503,7 @@ gpu::TextureHandle Renderer::uploadImage(const assets::Image &image, bool mipmap
     gpu::TextureHandle t = device_.createTexture(d, pixels);
     if (t) {
         ownedTextures_.push_back(t);
+        textureMeans_[t.id] = meanColor(image);
     }
     return t;
 }
@@ -523,6 +559,13 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
         b.flags2[3] = p.rampLight;
     }
     b.flags3[0] = p.receiveShadows ? 1.0f : 0.0f;
+    b.flags3[1] = p.depthEqual ? 1.0f : 0.0f;
+    Vec4 mean{1, 1, 1, 1};
+    auto it = texture ? textureMeans_.find(texture.id) : textureMeans_.end();
+    if (it != textureMeans_.end()) {
+        mean = it->second;
+    }
+    copyVec(b.textureMean, Vec3{mean.x, mean.y, mean.z}, mean.w);
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -802,7 +845,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.fogParams[0] = env_.fogStart;
     fb.fogParams[1] = env_.fogEnd;
     fb.fogParams[2] = env_.fog ? 1.0f : 0.0f;
-    fb.options[0] = options_.textures ? 1.0f : 0.0f;
+    fb.options[0] = options_.textures && !wireframe_ ? 1.0f : 0.0f;
     fb.options[1] = options_.lighting ? 1.0f : 0.0f;
     fb.options[2] = options_.flatShading ? 1.0f : 0.0f;
     fb.options[3] = options_.rampGouraud ? 1.0f : 0.0f;
