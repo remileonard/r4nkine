@@ -18,6 +18,7 @@ struct VGAPalette;
 // - types.ppm    : le type de terrain de chaque sommet, du ton le plus clair de sa rampe ;
 // - textures.ppm : les triangles texturés, chacun de la couleur moyenne de son image ;
 // - tex_<id>.ppm : chaque image utilisée, à sa taille ;
+// - all_<id>.ppm : toutes les textures du jeu (TXMPACK, ACCPACK), utilisées ou non ;
 // - types.txt, textures.txt : les comptes (sommets par type, triangles par image,
 //   et sur quels types de terrain chaque image est posée).
 // false (et pourquoi) en cas d'erreur.

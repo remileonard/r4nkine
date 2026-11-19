@@ -211,11 +211,24 @@ Le terrain (`WorldScene` et `R4World`) :
     - NICARAGA : environ 11 millions d'arbres, 270 Mo, plantés en environ 1,5 s.
 
     Seuls les arbres visités par le renderer reçoivent une matrice. Pendant le vol, les carrés hors du champ ou au-delà de 6 km sont écartés d'un bloc par leur nœud `LOD`.
-- **Les villes** (`cityModel` dans R4World ; couche **Buildings** du viewer). Une texture de ville du jeu couvre une cellule entière, et des immeubles y sont posés sur ce qu'elle montre :
-  - **229**, le centre-ville de NICARAGA : 14 immeubles relevés à la main sur l'image (des rectangles en texels), de 25 à 200 de haut ;
-  - **231**, les maisons : chaque tache de texels gris clair (un toit) devient une maison de 11 à 16 de haut, soit environ 200 par cellule. Les maisons seulement dessinées en contour ne sont pas reconnues et restent à plat.
+- **Les villes, villages, fermes et ports** (`cityModel` dans R4World ; couche **Buildings** du viewer). Les textures du jeu (TXMPACK) sont les mêmes sur toutes les cartes. Sur chaque cellule dont la texture montre des bâtiments, des immeubles sont posés sur ce que l'image montre :
+  - **relevés à la main** sur les images (`kBuildings`, 143 bâtiments) :
+    - les deux centres-villes (229, 230) ;
+    - le port (223 à 228, en morceaux qui ne couvrent chacun que la moitié d'une cellule) ;
+    - la ferme (233) ;
+    - les villages sur herbe (248, 249) et sur sable (250, 251) ; ces derniers sont sur TURKEY ;
+  - **trouvées sur l'image** : les maisons (231), à leurs toits gris clair. Les maisons dessinées seulement en contour restent à plat.
 
-  Leur toit est l'image elle-même : vue de haut, la ville reste la texture. Leurs murs sont une façade faite par le pont, avec des fenêtres, sur des étages de 8. Ils sont éclairés par le soleil comme les objets et projettent leur ombre. Un nœud par cellule (« city x,y »). Le port (224, 225) n'a pas encore de bâtiments.
+  Le passage d'un texel de l'image au sol se fait par les UV de chaque triangle, ceux que `RSArea` donne : l'image entière sur la cellule, ou une moitié d'image sur un triangle pour les textures 64 × 64 du port.
+
+  **Rendu** :
+  - **toit** : l'image elle-même, donc vue de haut la carte reste la texture ;
+  - **murs** : des façades faites par le pont (bureaux à fenêtres, maisons, bardage des hangars), sur des étages de 8 ;
+  - **éclairage** : par le soleil comme les objets, et ils projettent leur ombre.
+
+  **Aucun bâtiment sur un objet de la carte ou de la mission** : un bâtiment dont l'emprise touche le rayon d'un objet n'est pas posé. Par exemple, les deux silos d'un village de TURKEY laissent la place à l'objet de la carte posé à cet endroit.
+
+  Un nœud par cellule (« city x,y »). NICARAGA en compte environ 2 200, TURKEY 136. `-diag` écrit aussi toutes les textures du jeu (`all_<id>.ppm`), utilisées ou non.
 - **Pas encore fait** : le ciel, les nuages et le brouillard.
 
 Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :

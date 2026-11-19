@@ -137,6 +137,19 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
             }
         }
 
+    // all the textures of the game (TXMPACK then ACCPACK, the same on every
+    // map): all_<id>.ppm, clear texels in magenta
+    for (int id = 0; id < 1024; id++) {
+        RSImage *img = area->GetImageByID(id);
+        if (!img || !img->data || !img->width || !img->height)
+            continue;
+        std::vector<Rgb> px(img->width * img->height);
+        for (size_t i = 0; i < px.size(); i++) {
+            const Texel &t = palette.colors[img->data[i]];
+            px[i] = img->data[i] == 255 ? Rgb{255, 0, 255} : Rgb{t.r, t.g, t.b};
+        }
+        writePpm(dir + "/all_" + std::to_string(id) + ".ppm", (int)img->width, (int)img->height, px);
+    }
     if (!writePpm(dir + "/terrain.ppm", kSide, kSide, terrain) || !writePpm(dir + "/types.ppm", kSide, kSide, types) ||
         !writePpm(dir + "/textures.ppm", side, side, textures)) {
         error = "écriture impossible dans " + dir;

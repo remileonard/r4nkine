@@ -123,18 +123,20 @@ void plantForest(RSArea *area, const ForestSettings &settings, ForestChunk &chun
 std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette,
                                             const std::vector<PaletteRange> &ranges, Lighting lighting = {});
 
-// The buildings of the cities: on the cells whose texture is a city (by its
-// image of TXMPACK, the whole image over the cell), boxes standing on what
-// the image shows, their roofs that image (seen from above they are the
-// texture), their walls a facade made here (windows), lit by the sun
-// (PaletteRamp) and casting shadows:
-// - 229, the downtown of NICARAGA: its 14 buildings read on the image, by hand;
-// - 231, the houses: the light grey roofs of the image, found (a component
-//   of light texels each), low.
-// A node by cell ("city x,y"). In libRealSpace's axes (Y up). Null without
-// any city.
+// The buildings of the cities, villages, farms and harbors: on the cells
+// whose texture shows them (by its image of TXMPACK, the same on every map),
+// boxes standing on what the image shows, their roofs that image (seen from
+// above they are the texture), their walls a facade made here (offices,
+// houses, sheds), lit by the sun (PaletteRamp) and casting shadows:
+// - the downtowns (229, 230), the harbor (223-228, a triangle each half of
+//   the cell), the farm (233), the villages (248-251): their buildings read
+//   on the images, by hand (kBuildings);
+// - the houses (231): their light grey roofs, found on the image.
+// None where an object of the map or of the mission stands: keepOut, x, z
+// and radius each (libRealSpace's axes). A node by cell ("city x,y"). In
+// libRealSpace's axes (Y up). Null without any.
 std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &palette, Lighting lighting = {},
-                                            size_t *buildings = nullptr);
+                                            const std::vector<r4::Vec3> &keepOut = {}, size_t *buildings = nullptr);
 
 // The matrix of an object of the map: its position, then its 3 x 3
 // orientation as SCRenderer::renderObjects turns it (libRealSpace's axes).

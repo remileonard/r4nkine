@@ -211,9 +211,6 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
     buildTerrain();
-    // the buildings of the cities, on their textures
-    if (auto city = r4bridge::cityModel(area_.get(), *palette_.GetColorPalette(), lighting, &buildings))
-        buildings_->addChild(renderer_.upload(*city));
     // the runways and their ground, over the terrain
     if (auto overlays = r4bridge::overlayModel(area_.get(), *palette_.GetColorPalette())) {
         for (const r4::assets::Mesh &m : overlays->meshes)
@@ -243,6 +240,15 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     start = {0, 0, 0};
     if (mission_)
         placeParts();
+    // the buildings of the cities, villages, farms and harbors, on their
+    // textures; none where an object of the map or of the mission stands
+    // (R4nkine's (x, y) is libRealSpace's (x, -z))
+    std::vector<r4::Vec3> keepOut;
+    for (const auto *list : {&parts_, &mapObjects_})
+        for (const Item &it : *list)
+            keepOut.push_back({it.position.x, -it.position.y, std::max(it.radius * 1.2f, 40.0f)});
+    if (auto city = r4bridge::cityModel(area_.get(), *palette_.GetColorPalette(), lighting, keepOut, &buildings))
+        buildings_->addChild(renderer_.upload(*city));
     // the forests, around the objects
     buildForests();
     loadMs = (SDL_GetPerformanceCounter() - t0) * 1000.0 / SDL_GetPerformanceFrequency();

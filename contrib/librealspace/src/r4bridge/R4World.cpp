@@ -15,6 +15,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -790,21 +791,78 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
 
 namespace {
 
-// a building: its rectangle of texels in the image of the city (from its
-// top left, x1 and y1 included) and its height
+// a building: its rectangle of texels in its image (from its top left, x1
+// and y1 included) and its height
 struct Footprint {
     int x0, y0, x1, y1;
     float height;
 };
 
-// the downtown (229): its buildings, read on the image; the dark ones higher
-const std::vector<Footprint> kDowntown{
-    {5, 4, 24, 27, 140},   {25, 3, 41, 12, 30},   {43, 3, 57, 29, 70},   {67, 3, 93, 23, 60},
-    {5, 37, 26, 57, 160},  {26, 37, 46, 57, 90},  {46, 37, 58, 57, 120}, {67, 34, 88, 58, 200},
-    {98, 35, 117, 58, 80}, {8, 67, 55, 91, 35},   {100, 68, 122, 92, 150}, {68, 82, 100, 90, 25},
-    {35, 102, 53, 119, 60}, {76, 99, 119, 121, 50},
+// the buildings of the textures of the game (TXMPACK, the same on every
+// map), read on their images by hand; the dark towers of the downtowns higher
+const std::map<int, std::vector<Footprint>> kBuildings{
+    // 223-228 : the harbor (64 x 64, a triangle each half): sheds on the piers, goods
+    {223, {{16, 13, 63, 16, 16}, {50, 17, 55, 39, 16}, {5, 50, 38, 54, 16}}},
+    {224, {{22, 3, 58, 7, 16}, {8, 34, 19, 52, 12}, {23, 48, 45, 53, 16}}},
+    {225, {{22, 3, 56, 9, 16}, {7, 15, 14, 40, 16}}},
+    {226, {{15, 4, 44, 10, 16}, {4, 18, 12, 38, 16}, {47, 19, 58, 32, 12}, {13, 53, 19, 58, 10},
+          {48, 41, 56, 46, 10}}},
+    {227, {{25, 8, 63, 15, 16}, {6, 45, 46, 54, 16}}},
+    {228, {{47, 9, 56, 46, 16}, {9, 50, 44, 55, 16}}},
+    // 229 : downtown
+    {229, {{5, 4, 24, 27, 140}, {25, 3, 41, 12, 30}, {43, 3, 57, 29, 70}, {67, 3, 93, 23, 60},
+          {5, 37, 26, 57, 160}, {26, 37, 46, 57, 90}, {46, 37, 58, 57, 120}, {67, 34, 88, 58, 200},
+          {98, 35, 117, 58, 80}, {8, 67, 55, 91, 35}, {100, 68, 122, 92, 150}, {68, 82, 100, 90, 25},
+          {35, 102, 53, 119, 60}, {76, 99, 119, 121, 50}}},
+    // 230 : downtown, the other
+    {230, {{5, 5, 27, 24, 90}, {37, 4, 57, 27, 150}, {5, 26, 14, 59, 40}, {13, 46, 29, 58, 40},
+          {38, 29, 57, 59, 180}, {68, 8, 92, 55, 70}, {104, 17, 116, 53, 110}, {4, 68, 25, 94, 60},
+          {34, 67, 59, 88, 130}, {69, 68, 89, 98, 160}, {69, 101, 92, 124, 100}, {100, 77, 122, 119, 25},
+          {44, 99, 60, 115, 25}}},
+    // 233 : a farm
+    {233, {{34, 69, 53, 82, 18}, {74, 74, 80, 80, 14}, {84, 86, 94, 96, 12}, {17, 87, 24, 105, 12},
+          {17, 107, 24, 117, 10}, {56, 80, 61, 84, 8}}},
+    // 248 : a village on green, with its church
+    {248, {{9, 11, 32, 30, 18}, {36, 34, 50, 57, 30}, {51, 44, 59, 57, 12}, {84, 18, 109, 46, 25},
+          {107, 4, 114, 8, 10}, {119, 28, 126, 35, 10}, {3, 53, 9, 58, 10}, {11, 53, 17, 58, 10},
+          {19, 53, 25, 58, 10}, {12, 69, 56, 78, 14}, {47, 81, 54, 87, 10}, {20, 88, 30, 97, 12},
+          {20, 100, 30, 109, 12}, {44, 89, 56, 100, 16}, {44, 103, 56, 113, 16}, {81, 69, 86, 79, 14},
+          {93, 71, 107, 80, 12}, {113, 71, 123, 82, 12}, {69, 73, 77, 79, 10}, {69, 80, 77, 85, 10},
+          {69, 86, 77, 91, 10}, {69, 98, 76, 102, 10}, {69, 104, 76, 108, 10}, {99, 91, 107, 100, 12},
+          {99, 102, 107, 106, 10}, {99, 108, 107, 113, 10}, {69, 115, 104, 124, 14}}},
+    // 249 : a village on green
+    {249, {{33, 24, 44, 33, 12}, {19, 33, 28, 43, 12}, {30, 46, 40, 56, 12}, {49, 35, 56, 45, 10},
+          {50, 48, 57, 56, 10}, {68, 51, 75, 56, 9}, {3, 53, 9, 58, 9}, {11, 53, 17, 58, 9}, {19, 53, 25, 58, 9},
+          {77, 53, 83, 58, 9}, {85, 53, 91, 58, 9}, {93, 53, 99, 58, 9}, {101, 53, 107, 58, 9},
+          {109, 53, 115, 58, 9}, {117, 53, 123, 58, 9}, {78, 69, 122, 78, 14}, {113, 81, 120, 87, 10},
+          {19, 71, 34, 82, 12}, {38, 70, 44, 76, 10}, {47, 70, 54, 80, 12}}},
+    // 250 : a village on sand
+    {250, {{55, 31, 61, 41, 10}, {26, 41, 40, 45, 8}, {26, 48, 40, 53, 8}, {45, 40, 51, 45, 9},
+          {57, 47, 63, 56, 10}, {43, 52, 48, 55, 8}, {73, 44, 90, 49, 8}, {73, 50, 90, 55, 8},
+          {98, 50, 116, 56, 10}, {22, 70, 35, 75, 8}, {38, 76, 42, 92, 7}, {48, 76, 52, 92, 7},
+          {53, 89, 58, 93, 8}, {62, 69, 82, 86, 12}, {76, 84, 82, 95, 10}, {88, 69, 95, 75, 10},
+          {97, 69, 112, 76, 12}, {97, 81, 110, 86, 8}, {98, 92, 105, 98, 10}, {38, 102, 45, 108, 9}}},
+    // 251 : a village on sand, with its silos
+    {251, {{39, 13, 45, 26, 30}, {49, 13, 56, 27, 30}, {5, 25, 13, 37, 12}, {70, 6, 88, 17, 10},
+          {8, 47, 26, 57, 12}, {28, 44, 41, 51, 10}, {28, 52, 42, 59, 10}, {43, 53, 50, 59, 9},
+          {71, 31, 103, 56, 14}, {104, 43, 111, 49, 12}, {51, 42, 57, 47, 10}, {9, 68, 40, 74, 10},
+          {23, 77, 43, 84, 10}, {44, 75, 51, 80, 9}, {45, 81, 52, 86, 10}, {86, 70, 112, 77, 10},
+          {79, 75, 86, 81, 10}, {104, 78, 125, 92, 12}, {15, 90, 42, 117, 12}, {44, 90, 54, 103, 10},
+          {44, 107, 51, 112, 10}, {60, 96, 95, 117, 10}, {99, 98, 120, 117, 12}, {61, 87, 73, 92, 9},
+          {89, 90, 97, 96, 10}, {68, 115, 75, 121, 9}}},
 };
-constexpr int kDowntownImage = 229, kHousesImage = 231;
+// the houses: found on their image, by their light grey roofs
+constexpr int kHousesImage = 231;
+
+// the facade of a texture's buildings
+enum class Facade { Offices, Houses, Industry };
+Facade facadeOf(int image) {
+    if (image == 229 || image == 230)
+        return Facade::Offices;
+    if (image >= 223 && image <= 228)
+        return Facade::Industry;
+    return Facade::Houses;
+}
 
 // the houses: the components of light grey texels (their roofs), 2 x 2 at
 // least; the rings of the outlined houses fall apart and are dropped
@@ -844,28 +902,38 @@ std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
     return houses;
 }
 
-// a facade: a wall color with rows of windows (offices) or one window by
-// floor (houses), a floor of 8 high and 8 wide by repeat of the image
-r4::assets::Image facadeImage(bool office) {
+// a facade, a floor of 8 high and 8 wide by repeat: rows of windows
+// (offices), a window by floor (houses), grey cladding without windows (the
+// sheds of the harbor)
+r4::assets::Image facadeImage(Facade kind) {
     r4::assets::Image img;
-    img.name = office ? "facade, offices" : "facade, houses";
+    img.name = kind == Facade::Offices ? "facade, offices" : kind == Facade::Houses ? "facade, houses" : "facade, industry";
     img.width = img.height = 16;
     img.channels = 4;
     img.pixels.resize(16 * 16 * 4);
     for (int y = 0; y < 16; y++)
         for (int x = 0; x < 16; x++) {
             // R4nkine's images from the bottom row: y 0 is the bottom of the floor
-            bool window = office ? (y >= 5 && y <= 12 && (x % 8) >= 1 && (x % 8) <= 6)
-                                 : (y >= 6 && y <= 11 && x >= 5 && x <= 10);
             uint8_t *d = &img.pixels[((size_t)y * 16 + x) * 4];
-            if (window) {
-                d[0] = 46, d[1] = 58, d[2] = 72;
-            } else if (office) {
-                d[0] = 150, d[1] = 150, d[2] = 146;
-            } else {
-                d[0] = 196, d[1] = 186, d[2] = 160;
+            uint8_t c[3];
+            switch (kind) {
+            case Facade::Offices:
+                if (y >= 5 && y <= 12 && (x % 8) >= 1 && (x % 8) <= 6)
+                    c[0] = 46, c[1] = 58, c[2] = 72;
+                else
+                    c[0] = 150, c[1] = 150, c[2] = 146;
+                break;
+            case Facade::Houses:
+                if (y >= 6 && y <= 11 && x >= 5 && x <= 10)
+                    c[0] = 46, c[1] = 58, c[2] = 72;
+                else
+                    c[0] = 196, c[1] = 186, c[2] = 160;
+                break;
+            default: // vertical ribs
+                c[0] = c[1] = c[2] = (uint8_t)(x % 4 == 0 ? 92 : 118);
+                break;
             }
-            d[3] = 255;
+            d[0] = c[0], d[1] = c[1], d[2] = c[2], d[3] = 255;
         }
     img.mipmaps = true;
     return img;
@@ -874,7 +942,7 @@ r4::assets::Image facadeImage(bool office) {
 } // namespace
 
 std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &palette, Lighting lighting,
-                                            size_t *buildings) {
+                                            const std::vector<r4::Vec3> &keepOut, size_t *buildings) {
     using namespace r4::assets;
     if (buildings)
         *buildings = 0;
@@ -897,29 +965,31 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         model->materials.push_back(m);
         return (int)model->materials.size() - 1;
     };
-    model->images.push_back(facadeImage(true));
-    model->images.push_back(facadeImage(false));
-    const int officeWalls = material("facade, offices", 0), houseWalls = material("facade, houses", 1);
-    // by image of a city: its roofs (the image itself) and its buildings
-    struct City {
+    int walls[3];
+    for (Facade f : {Facade::Offices, Facade::Houses, Facade::Industry}) {
+        model->images.push_back(facadeImage(f));
+        walls[(int)f] = material(model->images.back().name, (int)model->images.size() - 1);
+    }
+    // by texture with buildings: its roofs (the image itself) and its footprints
+    struct Built {
         int roofs = -1;
         std::vector<Footprint> footprints;
         float w = 0, h = 0;
-        bool houses = false;
+        int walls = 0;
     };
-    std::map<int, City> cities;
-    auto cityOf = [&](int id) -> City * {
-        if (id != kDowntownImage && id != kHousesImage)
+    std::map<int, Built> built;
+    auto builtOf = [&](int id) -> Built * {
+        if (id == 0xFF || (id != kHousesImage && !kBuildings.count(id)))
             return nullptr;
-        auto it = cities.find(id);
-        if (it != cities.end())
-            return &it->second;
-        City &c = cities[id];
+        auto it = built.find(id);
+        if (it != built.end())
+            return it->second.roofs >= 0 ? &it->second : nullptr;
+        Built &b = built[id];
         RSImage *src = area->GetImageByID(id);
         if (!src || !src->data || !src->width || !src->height)
-            return &c;
+            return nullptr;
         Image img;
-        img.name = std::string("city ") + std::to_string(id);
+        img.name = "roofs " + std::to_string(id);
         img.width = (int)src->width;
         img.height = (int)src->height;
         img.channels = 4;
@@ -932,91 +1002,136 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
             }
         finishTexture(img);
         model->images.push_back(std::move(img));
-        c.roofs = material("roofs " + std::to_string(id), (int)model->images.size() - 1);
-        c.w = (float)src->width;
-        c.h = (float)src->height;
-        c.houses = id == kHousesImage;
-        c.footprints = c.houses ? housesOf(src, palette) : kDowntown;
-        return &c;
+        b.roofs = material("roofs " + std::to_string(id), (int)model->images.size() - 1);
+        b.w = (float)src->width;
+        b.h = (float)src->height;
+        b.walls = walls[(int)facadeOf(id)];
+        b.footprints = id == kHousesImage ? housesOf(src, palette) : kBuildings.at(id);
+        return &b;
+    };
+    // none on the objects of the map and of the mission: a footprint whose
+    // box comes within the radius of one is left
+    auto free = [&](r4::Vec2 lo, r4::Vec2 hi) {
+        for (const r4::Vec3 &k : keepOut) {
+            float dx = std::max({lo.x - k.x, 0.0f, k.x - hi.x}), dz = std::max({lo.y - k.y, 0.0f, k.y - hi.y});
+            if (dx * dx + dz * dz < k.z * k.z)
+                return false;
+        }
+        return true;
+    };
+    auto quad = [](Mesh &m, const r4::Vec3 (&p)[4], const r4::Vec2 (&uv)[4], r4::Vec3 n) {
+        // turned to face n
+        bool flip = r4::dot(r4::cross(p[1] - p[0], p[2] - p[0]), n) < 0;
+        uint32_t base = (uint32_t)m.vertices.size();
+        for (int k = 0; k < 4; k++) {
+            Vertex v;
+            v.position = p[k];
+            v.normal = n;
+            v.uv = uv[k];
+            v.color = 0xffffffffu;
+            m.vertices.push_back(v);
+        }
+        const uint32_t order[2][6] = {{0, 1, 2, 0, 2, 3}, {0, 2, 1, 0, 3, 2}};
+        for (uint32_t i : order[flip ? 1 : 0])
+            m.indices.push_back(base + i);
     };
 
     for (int y = 0; y + 1 < kMapSide; y++)
         for (int x = 0; x + 1 < kMapSide; x++) {
-            const MapVertex *cur = mapVertex(area, x, y);
-            if (!cur)
+            const MapVertex *cur = mapVertex(area, x, y), *right = mapVertex(area, x + 1, y),
+                            *bottomRight = mapVertex(area, x + 1, y + 1), *bottom = mapVertex(area, x, y + 1);
+            if (!cur || !right || !bottomRight || !bottom)
                 continue;
-            City *city = cityOf(cur->lowerImageID);
-            if (!city)
-                city = cityOf(cur->upperImageID);
-            if (!city || city->roofs < 0)
-                continue;
-            // the image over the cell: its texel (u, v) at the corner + (u, v) / size * cell
-            const float x0 = cur->v.x, z0 = cur->v.z;
-            auto world = [&](float u, float v) { return r4::Vec2{x0 + u / city->w * kCell, z0 + v / city->h * kCell}; };
-            auto ground = [&](r4::Vec2 p) { return area->getY(p.x, p.y) - 5; }; // getY is 5 above
-            Mesh roofs, walls;
-            roofs.material = city->roofs;
-            walls.material = city->houses ? houseWalls : officeWalls;
-            auto quad = [](Mesh &m, const r4::Vec3 (&p)[4], const r4::Vec2 (&uv)[4], r4::Vec3 n) {
-                // turned to face n
-                bool flip = r4::dot(r4::cross(p[1] - p[0], p[2] - p[0]), n) < 0;
-                uint32_t base = (uint32_t)m.vertices.size();
-                for (int k = 0; k < 4; k++) {
-                    Vertex v;
-                    v.position = p[k];
-                    v.normal = n;
-                    v.uv = uv[k];
-                    v.color = 0xffffffffu;
-                    m.vertices.push_back(v);
+            std::map<int, Mesh> meshes; // by material
+            std::set<std::pair<int, size_t>> placed; // image, footprint: once by cell
+            // the two triangles of the cell as RSArea, each its image and uvs
+            // (the whole image over the cell, or a half of it over a triangle)
+            struct Tri {
+                const MapVertex *v[3];
+                int image;
+                const float (*uv)[2];
+            } tris[2] = {{{cur, bottomRight, bottom}, cur->lowerImageID, cur->lowerUV},
+                         {{cur, right, bottomRight}, cur->upperImageID, cur->upperUV}};
+            for (const Tri &t : tris) {
+                Built *b = builtOf(t.image);
+                if (!b)
+                    continue;
+                // a texel of the image on the ground: through the triangle's
+                // uvs (texels, from the top), its barycentric coordinates
+                r4::Vec2 t0{t.uv[0][0] * b->w, t.uv[0][1] * b->h}, t1{t.uv[1][0] * b->w, t.uv[1][1] * b->h},
+                    t2{t.uv[2][0] * b->w, t.uv[2][1] * b->h};
+                float det = (t1.x - t0.x) * (t2.y - t0.y) - (t2.x - t0.x) * (t1.y - t0.y);
+                if (std::abs(det) < 1e-6f)
+                    continue;
+                auto bary = [&](r4::Vec2 p) {
+                    float a = ((p.x - t0.x) * (t2.y - t0.y) - (t2.x - t0.x) * (p.y - t0.y)) / det;
+                    float c = ((t1.x - t0.x) * (p.y - t0.y) - (p.x - t0.x) * (t1.y - t0.y)) / det;
+                    return r4::Vec2{a, c};
+                };
+                r4::Vec2 p0{t.v[0]->v.x, t.v[0]->v.z}, p1{t.v[1]->v.x, t.v[1]->v.z}, p2{t.v[2]->v.x, t.v[2]->v.z};
+                auto world = [&](r4::Vec2 tex) {
+                    r4::Vec2 ab = bary(tex);
+                    return p0 + (p1 - p0) * ab.x + (p2 - p0) * ab.y;
+                };
+                for (size_t fi = 0; fi < b->footprints.size(); fi++) {
+                    const Footprint &f = b->footprints[fi];
+                    // in this triangle: its center within the triangle's texels
+                    r4::Vec2 center{(f.x0 + f.x1 + 1) * 0.5f, (f.y0 + f.y1 + 1) * 0.5f};
+                    r4::Vec2 ab = bary(center);
+                    if (ab.x < -1e-4f || ab.y < -1e-4f || ab.x + ab.y > 1 + 1e-4f || placed.count({t.image, fi}))
+                        continue;
+                    placed.insert({t.image, fi});
+                    const float u[4] = {(float)f.x0, (float)f.x1 + 1, (float)f.x1 + 1, (float)f.x0};
+                    const float v[4] = {(float)f.y0, (float)f.y0, (float)f.y1 + 1, (float)f.y1 + 1};
+                    r4::Vec2 c[4], lo{1e30f, 1e30f}, hi{-1e30f, -1e30f};
+                    for (int k = 0; k < 4; k++) {
+                        c[k] = world({u[k], v[k]});
+                        lo = r4::Vec2{std::min(lo.x, c[k].x), std::min(lo.y, c[k].y)};
+                        hi = r4::Vec2{std::max(hi.x, c[k].x), std::max(hi.y, c[k].y)};
+                    }
+                    if (!free(lo, hi))
+                        continue;
+                    float low = 1e30f, high = -1e30f;
+                    for (int k = 0; k < 4; k++) {
+                        float g = area->getY(c[k].x, c[k].y) - 5; // getY is 5 above
+                        low = std::min(low, g), high = std::max(high, g);
+                    }
+                    // standing on the highest corner, its foot under the lowest
+                    float bottomY = low - 10, top = high + f.height;
+                    r4::Vec3 roof[4], foot[4];
+                    r4::Vec2 roofUV[4];
+                    for (int k = 0; k < 4; k++) {
+                        roof[k] = {c[k].x, top, c[k].y};
+                        foot[k] = {c[k].x, bottomY, c[k].y};
+                        roofUV[k] = {u[k] / b->w, 1 - v[k] / b->h};
+                    }
+                    quad(meshes[b->roofs], roof, roofUV, {0, 1, 0});
+                    r4::Vec2 mid = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
+                    for (int k = 0; k < 4; k++) {
+                        int j = (k + 1) % 4;
+                        r4::Vec2 e = c[j] - c[k];
+                        r4::Vec2 out{e.y, -e.x}; // a normal of the edge, turned outward
+                        if (r4::dot(out, (c[k] + c[j]) * 0.5f - mid) < 0)
+                            out = -out;
+                        r4::Vec3 n = r4::normalize(r4::Vec3{out.x, 0, out.y});
+                        const r4::Vec3 p[4] = {foot[k], foot[j], roof[j], roof[k]};
+                        // a floor of 8: the facade repeated along and up, from the roof down
+                        float len = r4::length(e) / 8, up = (top - bottomY) / 8;
+                        const r4::Vec2 uv[4] = {{0, -up}, {len, -up}, {len, 0}, {0, 0}};
+                        quad(meshes[b->walls], p, uv, n);
+                    }
+                    if (buildings)
+                        ++*buildings;
                 }
-                const uint32_t order[2][6] = {{0, 1, 2, 0, 2, 3}, {0, 2, 1, 0, 3, 2}};
-                for (uint32_t i : order[flip ? 1 : 0])
-                    m.indices.push_back(base + i);
-            };
-            for (const Footprint &f : city->footprints) {
-                const float u[4] = {(float)f.x0, (float)f.x1 + 1, (float)f.x1 + 1, (float)f.x0};
-                const float v[4] = {(float)f.y0, (float)f.y0, (float)f.y1 + 1, (float)f.y1 + 1};
-                r4::Vec2 c[4];
-                float low = 1e30f, high = -1e30f;
-                for (int k = 0; k < 4; k++) {
-                    c[k] = world(u[k], v[k]);
-                    float g = ground(c[k]);
-                    low = std::min(low, g), high = std::max(high, g);
-                }
-                // standing on the highest corner, its foot under the lowest
-                float bottom = low - 10, top = high + f.height;
-                r4::Vec3 roof[4], foot[4];
-                r4::Vec2 roofUV[4];
-                for (int k = 0; k < 4; k++) {
-                    roof[k] = {c[k].x, top, c[k].y};
-                    foot[k] = {c[k].x, bottom, c[k].y};
-                    roofUV[k] = {u[k] / city->w, 1 - v[k] / city->h};
-                }
-                quad(roofs, roof, roofUV, {0, 1, 0});
-                r4::Vec2 mid = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
-                for (int k = 0; k < 4; k++) {
-                    int j = (k + 1) % 4;
-                    r4::Vec2 e = c[j] - c[k];
-                    r4::Vec2 out{e.y, -e.x}; // a normal of the edge, turned outward
-                    if (r4::dot(out, (c[k] + c[j]) * 0.5f - mid) < 0)
-                        out = -out;
-                    r4::Vec3 n = r4::normalize(r4::Vec3{out.x, 0, out.y});
-                    const r4::Vec3 p[4] = {foot[k], foot[j], roof[j], roof[k]};
-                    // a floor of 8: the facade repeated along and up, from the roof down
-                    float len = r4::length(e) / 8, up = (top - bottom) / 8;
-                    const r4::Vec2 uv[4] = {{0, -up}, {len, -up}, {len, 0}, {0, 0}};
-                    quad(walls, p, uv, n);
-                }
-                if (buildings)
-                    ++*buildings;
             }
+            if (meshes.empty())
+                continue;
             Node node;
             node.name = "city " + std::to_string(x) + "," + std::to_string(y);
-            for (Mesh *m : {&roofs, &walls}) {
-                if (m->indices.empty())
-                    continue;
-                m->name = node.name + (m == &roofs ? " roofs" : " walls");
-                model->meshes.push_back(std::move(*m));
+            for (auto &[mat, m] : meshes) {
+                m.material = mat;
+                m.name = node.name + " " + model->materials[mat].name;
+                model->meshes.push_back(std::move(m));
                 node.meshes.push_back((int)model->meshes.size() - 1);
             }
             model->nodes.push_back(node);
