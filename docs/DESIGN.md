@@ -235,6 +235,10 @@ behaviors are kept, translated into the neutral format:
   `indexImage`, an image of palette indices: each texel is shaded along its
   own ramp, then filtered (bilinear, done in the shader); the intensity is
   the red of the vertex colors with `vertexColors`, else the light.
+  With `indexAtlasColumns` and `indexAtlasRows`, `indexImage` is an atlas of
+  equal cells: the green and blue of the vertex colors give the cell, its
+  alpha the log2 of the width and height of the image in it, and the filter
+  stays inside that image.
 - **Without textures** (the textures option off, and always in wireframe), a
   texture is replaced by the mean color of its opaque texels, so the lines
   keep the color of their faces; the layers drawn over a face of the same

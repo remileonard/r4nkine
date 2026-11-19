@@ -217,6 +217,29 @@ Outside outside(const Border &border, float x, float z) {
 
 } // namespace
 
+std::set<int> terrainImages(RSArea *area) {
+    std::set<int> images;
+    if (!area) {
+        return images;
+    }
+    for (int level = 0; level < NUM_LODS; level++) {
+        for (int i = 0; i < BLOCKS_PER_MAP; i++) {
+            AreaBlock *b = area->GetAreaBlockByID(level, i);
+            if (!b) {
+                continue;
+            }
+            for (int v = 0; v < b->sideSize * b->sideSize; v++) {
+                for (int id : {(int)b->vertice[v].lowerImageID, (int)b->vertice[v].upperImageID}) {
+                    if (id != TEXTURE_NONE) {
+                        images.insert(id);
+                    }
+                }
+            }
+        }
+    }
+    return images;
+}
+
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, const std::vector<float> &lodRanges, const TerrainLight &light) {
     using namespace r4::assets;
     if (!area || !area->GetAreaBlockByID(0, 0)) {
@@ -267,32 +290,88 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         return h->type;
     };
 
-    std::map<int, int> textureMaterial;
-    auto textured = [&](int imageID) {
-        auto it = textureMaterial.find(imageID);
-        if (it != textureMaterial.end()) {
-            return it->second;
-        }
-        int material = -1;
+    std::map<int, int> atlasCell;
+    std::vector<uint32_t> cellSizeBits;
+    int atlasMaterial = -1;
+    std::vector<r4::assets::Image> cells;
+    int cellSize = 0;
+    for (int imageID : terrainImages(area)) {
         RSImage *src = area->GetImageByID(imageID);
-        if (src && src->data && src->width && src->height) {
-            Material m;
-            m.name = std::string("terrain ") + src->name;
-            m.shading = Shading::PALETTE_RAMP;
-            m.vertexColors = !dynamic;
-            m.rampAmbient = light.lighting.ambient;
-            m.rampLight = light.lighting.light;
-            m.diffuseImage = ramp();
-            model->images.push_back(indexTexture(*src, palette));
-            m.indexImage = (int)model->images.size() - 1;
-            m.alpha = AlphaMode::BLEND;
-            m.decal = true;
-            m.doubleSided = true;
-            model->materials.push_back(m);
-            material = (int)model->materials.size() - 1;
+        if (!src || !src->data || !src->width || !src->height) {
+            continue;
         }
-        return textureMaterial[imageID] = material;
+        atlasCell[imageID] = (int)cells.size();
+        cells.push_back(indexTexture(*src, palette));
+        cellSize = std::max({cellSize, cells.back().width, cells.back().height});
+    }
+    auto log2Of = [](int size) {
+        int bits = 0;
+        while ((1 << (bits + 1)) <= size) {
+            bits++;
+        }
+        return (1 << bits) == size ? bits : -1;
     };
+    int cellBits = log2Of(cellSize);
+    if (cellBits < 0) {
+        cellBits = 0;
+        while ((1 << cellBits) < cellSize) {
+            cellBits++;
+        }
+        cellSize = 1 << cellBits;
+    }
+    for (const Image &cell : cells) {
+        int w = log2Of(cell.width);
+        int h = log2Of(cell.height);
+        if (w < 0 || h < 0) {
+            w = cellBits;
+            h = cellBits;
+        }
+        cellSizeBits.push_back((uint32_t)(w | h << 4));
+    }
+    if (!cells.empty()) {
+        const int columns = (int)std::ceil(std::sqrt((double)cells.size()));
+        const int rows = ((int)cells.size() + columns - 1) / columns;
+        Image atlas;
+        atlas.name = "terrain textures";
+        atlas.width = columns * cellSize;
+        atlas.height = rows * cellSize;
+        atlas.channels = 2;
+        atlas.clampS = true;
+        atlas.clampT = true;
+        atlas.mipmaps = false;
+        atlas.pixels.assign((size_t)atlas.width * atlas.height * 2, 0);
+        for (size_t k = 0; k < cells.size(); k++) {
+            const Image &cell = cells[k];
+            const int x0 = (int)(k % columns) * cellSize;
+            const int y0 = (int)(k / columns) * cellSize;
+            const int w = 1 << (cellSizeBits[k] & 15);
+            const int h = 1 << (cellSizeBits[k] >> 4);
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    const uint8_t *from = &cell.pixels[((size_t)(y * cell.height / h) * cell.width + x * cell.width / w) * 2];
+                    uint8_t *to = &atlas.pixels[((size_t)(y0 + y) * atlas.width + x0 + x) * 2];
+                    to[0] = from[0];
+                    to[1] = from[1];
+                }
+            }
+        }
+        Material m;
+        m.diffuseImage = ramp();
+        model->images.push_back(std::move(atlas));
+        m.name = "terrain textures";
+        m.shading = Shading::PALETTE_RAMP;
+        m.vertexColors = !dynamic;
+        m.rampAmbient = light.lighting.ambient;
+        m.rampLight = light.lighting.light;
+        m.indexImage = (int)model->images.size() - 1;
+        m.indexAtlasColumns = columns;
+        m.indexAtlasRows = rows;
+        m.alpha = AlphaMode::BLEND;
+        m.decal = true;
+        m.doubleSided = true;
+        model->materials.push_back(m);
+        atlasMaterial = (int)model->materials.size() - 1;
+    }
 
     const float kSkirt = 600;
     const int last = BLOCK_PER_MAP_SIDE - 1;
@@ -385,10 +464,11 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         if (imageID == TEXTURE_NONE) {
             return;
         }
-        int material = textured(imageID);
-        if (material < 0) {
+        auto cell = atlasCell.find(imageID);
+        if (atlasMaterial < 0 || cell == atlasCell.end()) {
             return;
         }
+        const uint32_t cellBits = (uint32_t)(cell->second & 0xff) << 8 | (uint32_t)(cell->second >> 8 & 0xff) << 16 | cellSizeBits[cell->second] << 24;
         float intensity[3];
         for (int k = 0; k < 3; k++) {
             intensity[k] = corner[k]->flag / 255.0f;
@@ -399,7 +479,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         }
         for (int k = 0; k < 3; k++) {
             uint32_t level = (uint32_t)(intensity[k] * 255 + 0.5f);
-            add(material, corner[k], level | 0xffffff00u, {uv[k][0], 1 - uv[k][1]});
+            add(atlasMaterial, corner[k], level | cellBits, {uv[k][0], 1 - uv[k][1]});
         }
     };
     auto quad = [&](const MapVertex *current, const MapVertex *right, const MapVertex *bottomRight, const MapVertex *bottom) {

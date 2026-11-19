@@ -412,7 +412,7 @@ void WorldScene::buildTerrain() {
             }
         }
     }
-    terrainTextures = model->images.size();
+    terrainTextures = r4bridge::terrainImages(area_.get()).size();
     r4::scene::NodePtr node = renderer_.upload(*model);
     terrain_->addChild(node);
     std::vector<r4::scene::Node *> stack{node.get()};

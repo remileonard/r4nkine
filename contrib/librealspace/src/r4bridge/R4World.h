@@ -35,6 +35,9 @@ struct TerrainLight {
     // multiplies the heights for the normals only
     float relief = 1;
 };
+// the images of the textured triangles of an area, at all its levels
+std::set<int> terrainImages(RSArea *area);
+
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f}, const TerrainLight &light = {});
 
 // The runways of an area, as SCRenderer::renderMapOverlay: a mesh by overlay drawn without depth after the terrain, in drawList order. Null without overlay.

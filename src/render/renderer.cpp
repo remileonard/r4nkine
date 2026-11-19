@@ -38,7 +38,7 @@ struct MaterialBlock {
     float emissive[4];
     float flags[4];  // texture, alpha cutoff (0: none), vertex colors, unlit
     float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
-    float flags3[4]; // receives the shadows, drawn over the face of the same depth
+    float flags3[4]; // receives the shadows, drawn over the face of the same depth, index atlas columns and rows
     float textureMean[4];
 };
 
@@ -176,17 +176,25 @@ vec3 rampShade(int index, float intensity) {
     int k = int(min(floor(t), 30.0));
     return mix(texelFetch(diffuseMap, ivec2(index, k), 0).rgb, texelFetch(diffuseMap, ivec2(index, k + 1), 0).rgb, t - float(k));
 }
-vec4 shadedIndexTexel(ivec2 p, ivec2 size, float intensity) {
-    vec4 t = texelFetch(indexMap, clamp(p, ivec2(0), size - 1), 0);
+vec4 shadedIndexTexel(ivec2 p, ivec2 origin, ivec2 size, float intensity) {
+    vec4 t = texelFetch(indexMap, origin + clamp(p, ivec2(0), size - 1), 0);
     return vec4(rampShade(int(t.r * 255.0 + 0.5), intensity) * t.a, t.a);
 }
 vec4 shadedIndexTexture(vec2 uv, float intensity) {
     ivec2 size = textureSize(indexMap, 0);
+    ivec2 origin = ivec2(0);
+    if (flags3.z > 0.5) {
+        ivec2 grid = ivec2(int(flags3.z + 0.5), int(flags3.w + 0.5));
+        int cell = int(vColor.g * 255.0 + 0.5) + 256 * int(vColor.b * 255.0 + 0.5);
+        origin = ivec2(cell % grid.x, cell / grid.x) * (size / grid);
+        int log2Size = int(vColor.a * 255.0 + 0.5);
+        size = ivec2(1 << (log2Size & 15), 1 << (log2Size >> 4));
+    }
     vec2 st = uv * vec2(size) - 0.5;
     ivec2 p = ivec2(floor(st));
     vec2 f = st - floor(st);
-    vec4 a = mix(shadedIndexTexel(p, size, intensity), shadedIndexTexel(p + ivec2(1, 0), size, intensity), f.x);
-    vec4 b = mix(shadedIndexTexel(p + ivec2(0, 1), size, intensity), shadedIndexTexel(p + ivec2(1, 1), size, intensity), f.x);
+    vec4 a = mix(shadedIndexTexel(p, origin, size, intensity), shadedIndexTexel(p + ivec2(1, 0), origin, size, intensity), f.x);
+    vec4 b = mix(shadedIndexTexel(p + ivec2(0, 1), origin, size, intensity), shadedIndexTexel(p + ivec2(1, 1), origin, size, intensity), f.x);
     vec4 c = mix(a, b, f.y);
     if (c.a <= 0.0) {
         return vec4(0.0);
@@ -559,6 +567,8 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     }
     b.flags3[0] = p.receiveShadows ? 1.0f : 0.0f;
     b.flags3[1] = p.depthEqual ? 1.0f : 0.0f;
+    b.flags3[2] = (float)p.indexAtlasColumns;
+    b.flags3[3] = (float)p.indexAtlasRows;
     Vec4 mean{1, 1, 1, 1};
     auto it = texture ? textureMeans_.find(texture.id) : textureMeans_.end();
     if (it != textureMeans_.end()) {
