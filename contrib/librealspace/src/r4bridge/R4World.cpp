@@ -531,6 +531,9 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             strip(chain, outsidePoint(kCollarEdge, zs), outsidePoint(kCollarEdge, ze));
         }
     };
+    std::vector<r4::Vec3> blockCenter(BLOCKS_PER_MAP, r4::Vec3{0, 0, 0});
+    std::vector<int> blockNode(BLOCKS_PER_MAP, -1);
+    std::vector<int> coarsestNode(BLOCKS_PER_MAP, -1);
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
         Node block;
         block.name = "block " + std::to_string(i % BLOCK_PER_MAP_SIDE) + "," + std::to_string(i / BLOCK_PER_MAP_SIDE);
@@ -539,14 +542,14 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         lod.kind = NodeKind::LOD;
         lod.lodRanges = lodRanges;
         AreaBlock *finest = area->GetAreaBlockByID(0, i);
-        bool onBorder = i % n == 0 || i % n == n - 1 || i / n == 0 || i / n == n - 1;
-        if (onBorder && finest && finest->sideSize >= 2) {
+        if (finest && finest->sideSize >= 2) {
             r4::Box box;
             for (int v = 0; v < finest->sideSize * finest->sideSize; v++) {
                 const MapVertex *p = &finest->vertice[v];
                 box.extend({p->v.x, p->v.y, p->v.z});
             }
-            lod.lodCenter = box.center();
+            blockCenter[i] = box.center();
+            lod.lodCenter = blockCenter[i];
             lod.hasLodCenter = true;
         }
         std::vector<Node> levels;
@@ -624,14 +627,100 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         }
         int blockIndex = (int)model->nodes.size();
         model->nodes.push_back(block);
-        model->nodes[0].children.push_back(blockIndex);
+        blockNode[i] = blockIndex;
         int lodIndex = (int)model->nodes.size();
         model->nodes.push_back(lod);
         model->nodes[blockIndex].children.push_back(lodIndex);
         for (Node &l : levels) {
             model->nodes.push_back(l);
             model->nodes[lodIndex].children.push_back((int)model->nodes.size() - 1);
+            coarsestNode[i] = (int)model->nodes.size() - 1;
         }
+    }
+    const float coarsestFrom = lodRanges.size() >= NUM_LODS ? lodRanges[NUM_LODS - 1] : 0;
+    auto buildQuad = [&](auto &self, int x0, int y0, int size) -> int {
+        if (x0 >= n || y0 >= n) {
+            return -1;
+        }
+        if (size == 1) {
+            return blockNode[y0 * n + x0];
+        }
+        const int half = size / 2;
+        std::vector<int> children;
+        for (int dy = 0; dy < 2; dy++) {
+            for (int dx = 0; dx < 2; dx++) {
+                int child = self(self, x0 + dx * half, y0 + dy * half, half);
+                if (child >= 0) {
+                    children.push_back(child);
+                }
+            }
+        }
+        if (children.empty()) {
+            return -1;
+        }
+        const int x1 = std::min(n, x0 + size);
+        const int y1 = std::min(n, y0 + size);
+        r4::Vec3 center{0, 0, 0};
+        int count = 0;
+        std::map<int, Mesh> merged;
+        for (int by = y0; by < y1; by++) {
+            for (int bx = x0; bx < x1; bx++) {
+                const int i = by * n + bx;
+                center += blockCenter[i];
+                count++;
+                if (coarsestNode[i] < 0) {
+                    continue;
+                }
+                for (int mi : model->nodes[coarsestNode[i]].meshes) {
+                    const Mesh &src = model->meshes[mi];
+                    Mesh &dst = merged[src.material];
+                    const uint32_t base = (uint32_t)dst.vertices.size();
+                    dst.vertices.insert(dst.vertices.end(), src.vertices.begin(), src.vertices.end());
+                    for (uint32_t index : src.indices) {
+                        dst.indices.push_back(base + index);
+                    }
+                }
+            }
+        }
+        center /= (float)count;
+        float reach = 0;
+        for (int by = y0; by < y1; by++) {
+            for (int bx = x0; bx < x1; bx++) {
+                reach = std::max(reach, r4::length(blockCenter[by * n + bx] - center));
+            }
+        }
+        Node nearNode;
+        nearNode.name = "blocks";
+        nearNode.children = children;
+        Node farNode;
+        farNode.name = "LVL" + std::to_string(NUM_LODS - 1) + " merged";
+        for (auto &[material, mesh] : merged) {
+            mesh.material = material;
+            mesh.name = model->materials[material].name;
+            mesh.computeBounds();
+            farNode.meshes.push_back((int)model->meshes.size());
+            model->meshes.push_back(std::move(mesh));
+        }
+        Node lod;
+        lod.name = "quad " + std::to_string(x0) + "," + std::to_string(y0) + " (" + std::to_string(x1 - x0) + " x " + std::to_string(y1 - y0) + " blocks)";
+        lod.kind = NodeKind::LOD;
+        lod.lodRanges = {0, coarsestFrom + reach, 1e30f};
+        lod.lodCenter = center;
+        lod.hasLodCenter = true;
+        model->nodes.push_back(nearNode);
+        lod.children.push_back((int)model->nodes.size() - 1);
+        model->nodes.push_back(farNode);
+        lod.children.push_back((int)model->nodes.size() - 1);
+        model->nodes.push_back(lod);
+        return (int)model->nodes.size() - 1;
+    };
+    int side = 1;
+    while (side < n) {
+        side *= 2;
+    }
+    const int quadRoot = buildQuad(buildQuad, 0, 0, side);
+    if (quadRoot >= 0) {
+        model->nodes[0].children.push_back(quadRoot);
     }
     if (model->meshes.empty()) {
         return nullptr;

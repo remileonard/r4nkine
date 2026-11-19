@@ -388,6 +388,7 @@ void WorldScene::showScene(int scene, bool on) {
 void WorldScene::buildTerrain() {
     terrain_->removeAllChildren();
     terrainLods_.clear();
+    terrainQuads_.clear();
     terrainTriangles = terrainTextures = 0;
     terrainBlocks = 0;
     if (!area_) {
@@ -419,7 +420,12 @@ void WorldScene::buildTerrain() {
         r4::scene::Node *n = stack.back();
         stack.pop_back();
         if (n->type() == r4::scene::NodeType::LOD) {
-            terrainLods_.push_back(static_cast<r4::scene::LOD *>(n));
+            auto *lod = static_cast<r4::scene::LOD *>(n);
+            if (lod->children().size() == 2) {
+                terrainQuads_.push_back({lod, lod->ranges()});
+            } else {
+                terrainLods_.push_back(lod);
+            }
         }
         for (const auto &c : n->children()) {
             stack.push_back(c.get());
@@ -551,6 +557,15 @@ void WorldScene::setTerrainLod(int mode) {
     }
     for (r4::scene::LOD *lod : terrainLods_) {
         lod->setRanges(ranges);
+    }
+    for (auto &[lod, byDistance] : terrainQuads_) {
+        if (mode == 0) {
+            lod->setRanges(byDistance);
+        } else if (mode == NUM_LODS) {
+            lod->setRanges({0, 0, 1e30f});
+        } else {
+            lod->setRanges({0, 1e30f, 1e30f});
+        }
     }
 }
 

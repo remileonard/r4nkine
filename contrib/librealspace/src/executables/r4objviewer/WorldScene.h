@@ -157,6 +157,8 @@ private:
     r4bridge::ForestMode forestMode_ = r4bridge::ForestMode::NOISE;
     int terrainLod_ = 0;
     std::vector<r4::scene::LOD *> terrainLods_;
+    // the quadtree over the blocks: its LODs and their ranges by distance
+    std::vector<std::pair<r4::scene::LOD *, std::vector<float>>> terrainQuads_;
     struct ForestNode {
         r4bridge::ForestChunk chunk;
         std::shared_ptr<r4::scene::Instancer> trees[r4bridge::TREE_SPECIES_COUNT];
