@@ -15,6 +15,7 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
+//  -nofog    sans le brouillard, qui commence 120 km et finit 450 km au-delà de la cible
 //  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
 //  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
 //  -mipmaps  les textures avec leurs mipmaps
@@ -290,6 +291,7 @@ int main(int argc, char **argv) {
     bool gouraudAtStart = false;
     bool litTerrainAtStart = false;
     bool shadowsAtStart = false;
+    bool fogAtStart = true;
     int forestsAtStart = 2;
     std::string gameAtStart;
     int woodsAtStart = 0;
@@ -331,6 +333,8 @@ int main(int argc, char **argv) {
             gouraudAtStart = true;
         } else if (a == "-shadows") {
             shadowsAtStart = true;
+        } else if (a == "-nofog") {
+            fogAtStart = false;
         } else if (a == "-at" && i + 1 < argc) {
             hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
         } else if (a == "-upscale" && i + 1 < argc) {
@@ -715,6 +719,9 @@ int main(int argc, char **argv) {
             bool openSun = false;
             bool openNav = true;
             bool shadows = shadowsAtStart;
+            bool fog = fogAtStart;
+            float fogStartKm = 120;
+            float fogEndKm = 450;
             int shadowRange = 0;
             const float kShadowRanges[] = {0, 500, 2000, 10000, 50000};
             std::deque<float> frameMs;
@@ -1002,6 +1009,9 @@ int main(int argc, char **argv) {
                     if (gui.color("Sky", sky)) {
                         env.clearColor = {sky, 1};
                     }
+                    gui.toggle("Fog", fog);
+                    gui.slider("Fog Start (km)", fogStartKm, 10, 600, "%.0f");
+                    gui.slider("Fog End (km)", fogEndKm, 20, 1200, "%.0f");
                     float heading;
                     float pitch;
                     float roll;
@@ -1192,9 +1202,16 @@ int main(int argc, char **argv) {
                 orbit.distance = distance;
                 bool showWorld = mode == 1 && currentWorld >= 0;
                 if (showWorld) {
-                    orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f), distance + 1500000.0f);
+                    float fogEnd = std::max(fogEndKm, fogStartKm + 1) * 1000.0f;
+                    env.fog = fog;
+                    env.fogColor = {env.clearColor.x, env.clearColor.y, env.clearColor.z};
+                    env.fogStart = distance + fogStartKm * 1000.0f;
+                    env.fogEnd = distance + fogEnd;
+                    float farPlane = fog ? env.fogEnd * 1.05f : distance + 1500000.0f;
+                    orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f), farPlane);
                     env.lightDirection = -sunTowards();
                 } else {
+                    env.fog = false;
                     orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f, distance + bounds.radius * 400);
                     env.lightDirection = -sunTowards();
                 }

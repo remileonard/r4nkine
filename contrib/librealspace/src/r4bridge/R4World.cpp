@@ -108,119 +108,111 @@ r4::assets::Image indexTexture(const RSImage &src, const VGAPalette &palette) {
     return img;
 }
 
-// RSArea::BuildSkirts at one level: the border of the map, clockwise, each vertex joined to the edge of the world (twice the map on each side) at height 0;
-// the colors smoothed along the ring, the outer ones their mean
-struct SkirtRing {
-    std::vector<const MapVertex *> inner;
-    std::vector<r4::Vec2> outer;
-    std::vector<int> block;
-    std::vector<uint32_t> color;
-    uint32_t outerColor = 0;
+// the land outside the map: a collar of one block around it, joined to the border of each level, then two rings of tiles to the edge of the world
+constexpr float kMapHalf = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE / 2.0f;
+constexpr float kCollarEdge = kMapHalf + BLOCK_WIDTH;
+constexpr float kInnerRingEdge = kMapHalf * 2;
+constexpr float kWorldEdge = kMapHalf * 4;
+constexpr float kFade = kMapHalf * 5 / 6;
+
+// the LVL0 border of the map, its heights and colors smoothed along it as RSArea::BuildSkirts does
+struct Border {
+    std::vector<r4::Vec2> position;
+    std::vector<float> height;
+    std::vector<r4::Vec3> color;
+    std::vector<uint8_t> type;
+    r4::Vec3 meanColor{0, 0, 0};
+    uint8_t mainType = 0;
+    r4::Vec2 min{0, 0};
+    r4::Vec2 max{0, 0};
 };
 
-SkirtRing skirtRing(RSArea *area, int level) {
-    SkirtRing ring;
-    const int n = BLOCK_PER_MAP_SIDE;
-    const float worldHalf = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE * 2.0f;
-    std::vector<r4::Vec3> colors;
-    auto push = [&](int blockIndex, const MapVertex *p, float ox, float oz) {
-        ring.inner.push_back(p);
-        ring.outer.push_back({ox, oz});
-        ring.block.push_back(blockIndex);
-        colors.push_back({p->color[0], p->color[1], p->color[2]});
-    };
-    auto blockAt = [&](int index) {
-        return area->GetAreaBlockByID(level, index);
-    };
-    for (int index = 0; index < BLOCKS_PER_MAP; index++) {
-        AreaBlock *b = blockAt(index);
-        if (!b || b->sideSize < 2) {
-            return ring;
-        }
-    }
-    for (int bx = 0; bx < n; bx++) {
-        AreaBlock *b = blockAt(bx);
-        for (int x = 0; x < b->sideSize; x++) {
-            if (bx == 0 && x == 0) {
-                continue;
-            }
-            if (bx == n - 1 && x == b->sideSize - 1) {
-                break;
-            }
-            const MapVertex *p = b->GetVertice(x, 0);
-            push(bx, p, p->v.x, -worldHalf);
-        }
-    }
-    AreaBlock *topRight = blockAt(n - 1);
-    push(n - 1, topRight->GetVertice(topRight->sideSize - 1, 0), worldHalf, -worldHalf);
-    for (int by = 0; by < n; by++) {
-        int index = by * n + n - 1;
-        AreaBlock *b = blockAt(index);
-        for (int y = 0; y < b->sideSize; y++) {
-            if (by == 0 && y == 0) {
-                continue;
-            }
-            if (by == n - 1 && y == b->sideSize - 1) {
-                break;
-            }
-            const MapVertex *p = b->GetVertice(b->sideSize - 1, y);
-            push(index, p, worldHalf, p->v.z);
-        }
-    }
-    AreaBlock *bottomRight = blockAt(n * n - 1);
-    push(n * n - 1, bottomRight->GetVertice(bottomRight->sideSize - 1, bottomRight->sideSize - 1), worldHalf, worldHalf);
-    for (int bx = n - 1; bx >= 0; bx--) {
-        int index = (n - 1) * n + bx;
-        AreaBlock *b = blockAt(index);
-        for (int x = b->sideSize - 1; x >= 0; x--) {
-            if (bx == n - 1 && x == b->sideSize - 1) {
-                continue;
-            }
-            if (bx == 0 && x == 0) {
-                break;
-            }
-            const MapVertex *p = b->GetVertice(x, b->sideSize - 1);
-            push(index, p, p->v.x, worldHalf);
-        }
-    }
-    AreaBlock *bottomLeft = blockAt((n - 1) * n);
-    push((n - 1) * n, bottomLeft->GetVertice(0, bottomLeft->sideSize - 1), -worldHalf, worldHalf);
-    for (int by = n - 1; by >= 0; by--) {
-        int index = by * n;
-        AreaBlock *b = blockAt(index);
-        for (int y = b->sideSize - 1; y >= 0; y--) {
-            if (by == n - 1 && y == b->sideSize - 1) {
-                continue;
-            }
-            if (by == 0 && y == 0) {
-                break;
-            }
-            const MapVertex *p = b->GetVertice(0, y);
-            push(index, p, -worldHalf, p->v.z);
-        }
-    }
-    push(0, blockAt(0)->GetVertice(0, 0), -worldHalf, -worldHalf);
+struct Outside {
+    float height = 0;
+    r4::Vec3 color{0, 0, 0};
+    uint8_t type = 0;
+};
 
-    const size_t m = ring.inner.size();
-    r4::Vec3 mean{0, 0, 0};
-    for (const r4::Vec3 &c : colors) {
-        mean += c;
-    }
-    mean /= (float)m;
-    auto pack = [](r4::Vec3 c) {
-        const float rgba[4] = {c.x, c.y, c.z, 1};
-        return packColor(rgba);
+Border mapBorder(RSArea *area) {
+    Border border;
+    const int side = BLOCK_PER_MAP_SIDE * BLOCK_SIDE_LVL0;
+    std::vector<const MapVertex *> ring;
+    auto vertexAt = [&](int gx, int gz) {
+        AreaBlock *b = area->GetAreaBlockByID(0, (gz / BLOCK_SIDE_LVL0) * BLOCK_PER_MAP_SIDE + gx / BLOCK_SIDE_LVL0);
+        return b ? b->GetVertice(gx % BLOCK_SIDE_LVL0, gz % BLOCK_SIDE_LVL0) : nullptr;
     };
-    ring.outerColor = pack(mean);
-    const int halfWidth = 8;
-    for (size_t i = 0; i < m; i++) {
-        r4::Vec3 sum{0, 0, 0};
-        for (int k = -halfWidth; k <= halfWidth; k++) {
-            sum += colors[(i + m + k) % m];
-        }
-        ring.color.push_back(pack(sum / (float)(2 * halfWidth + 1)));
+    for (int gx = 0; gx < side; gx++) {
+        ring.push_back(vertexAt(gx, 0));
     }
-    return ring;
+    for (int gz = 1; gz < side; gz++) {
+        ring.push_back(vertexAt(side - 1, gz));
+    }
+    for (int gx = side - 2; gx >= 0; gx--) {
+        ring.push_back(vertexAt(gx, side - 1));
+    }
+    for (int gz = side - 2; gz > 0; gz--) {
+        ring.push_back(vertexAt(0, gz));
+    }
+    for (const MapVertex *v : ring) {
+        if (!v) {
+            return Border{};
+        }
+    }
+    const size_t m = ring.size();
+    const int halfWidth = 8;
+    std::map<uint8_t, int> typeCount;
+    for (size_t i = 0; i < m; i++) {
+        float height = 0;
+        r4::Vec3 color{0, 0, 0};
+        for (int k = -halfWidth; k <= halfWidth; k++) {
+            const MapVertex *v = ring[(i + m + k) % m];
+            height += v->v.y;
+            color += r4::Vec3{v->color[0], v->color[1], v->color[2]};
+        }
+        border.position.push_back({ring[i]->v.x, ring[i]->v.z});
+        border.height.push_back(height / (2 * halfWidth + 1));
+        border.color.push_back(color / (float)(2 * halfWidth + 1));
+        border.type.push_back(ring[i]->type);
+        border.meanColor += border.color.back();
+        typeCount[ring[i]->type]++;
+    }
+    border.meanColor /= (float)m;
+    int best = -1;
+    for (const auto &[type, count] : typeCount) {
+        if (count > best) {
+            best = count;
+            border.mainType = type;
+        }
+    }
+    border.min = {ring[0]->v.x, ring[0]->v.z};
+    border.max = {vertexAt(side - 1, side - 1)->v.x, vertexAt(side - 1, side - 1)->v.z};
+    return border;
+}
+
+// the border carried outwards, fading to its mean color at height 0 over kFade
+Outside outside(const Border &border, float x, float z) {
+    Outside out;
+    if (border.position.empty()) {
+        return out;
+    }
+    r4::Vec2 p{std::clamp(x, border.min.x, border.max.x), std::clamp(z, border.min.y, border.max.y)};
+    size_t nearest = 0;
+    float best = -1;
+    for (size_t i = 0; i < border.position.size(); i++) {
+        r4::Vec2 d = border.position[i] - p;
+        float d2 = d.x * d.x + d.y * d.y;
+        if (best < 0 || d2 < best) {
+            best = d2;
+            nearest = i;
+        }
+    }
+    float distance = std::max(std::max(border.min.x - x, x - border.max.x), std::max(border.min.y - z, z - border.max.y));
+    float t = std::clamp(distance / kFade, 0.0f, 1.0f);
+    t = t * t * (3 - 2 * t);
+    out.height = border.height[nearest] * (1 - t);
+    out.color = border.color[nearest] + (border.meanColor - border.color[nearest]) * t;
+    out.type = t < 0.5f ? border.type[nearest] : border.mainType;
+    return out;
 }
 
 } // namespace
@@ -430,46 +422,113 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
 
     model->nodes.push_back(Node{});
     model->nodes[0].name = "terrain";
-    Material skirtMaterial;
-    skirtMaterial.name = "terrain skirts";
-    skirtMaterial.shading = Shading::UNLIT;
-    skirtMaterial.vertexColors = true;
-    skirtMaterial.diffuse = {1, 1, 1, 1};
-    skirtMaterial.doubleSided = true;
-    skirtMaterial.castShadows = false;
-    model->materials.push_back(skirtMaterial);
-    const int skirts = (int)model->materials.size() - 1;
-    std::vector<SkirtRing> rings;
-    std::vector<std::map<int, std::vector<size_t>>> ringOfBlock(NUM_LODS);
-    for (int level = 0; level < NUM_LODS; level++) {
-        rings.push_back(skirtRing(area, level));
-        for (size_t k = 0; k < rings[level].block.size(); k++) {
-            ringOfBlock[level][rings[level].block[k]].push_back(k);
-        }
-    }
-    auto addSkirt = [&](int level, int blockIndex) {
-        const SkirtRing &ring = rings[level];
-        const size_t m = ring.inner.size();
-        auto found = ringOfBlock[level].find(blockIndex);
-        if (found == ringOfBlock[level].end()) {
+    const Border border = mapBorder(area);
+    auto outsideColor = [&](const Outside &o) {
+        const float rgba[4] = {o.color.x, o.color.y, o.color.z, 1};
+        return packColor(rgba);
+    };
+    auto outsidePoint = [&](float x, float z) {
+        MapVertex v{};
+        v.v.x = x;
+        v.v.y = outside(border, x, z).height;
+        v.v.z = z;
+        return v;
+    };
+    auto strip = [&](const std::vector<const MapVertex *> &chain, const MapVertex &o0, const MapVertex &o1) {
+        if (chain.size() < 2 || border.position.empty()) {
             return;
         }
-        for (size_t i : found->second) {
-            size_t j = (i + 1) % m;
-            MapVertex outerA = *ring.inner[i];
-            MapVertex outerB = *ring.inner[j];
-            outerA.v.x = ring.outer[i].x;
-            outerA.v.y = 0;
-            outerA.v.z = ring.outer[i].y;
-            outerB.v.x = ring.outer[j].x;
-            outerB.v.y = 0;
-            outerB.v.z = ring.outer[j].y;
-            add(skirts, ring.inner[i], ring.color[i], {0, 0});
-            add(skirts, ring.inner[j], ring.color[j], {0, 0});
-            add(skirts, &outerB, ring.outerColor, {0, 0}, ring.inner[j]);
-            add(skirts, ring.inner[i], ring.color[i], {0, 0});
-            add(skirts, &outerB, ring.outerColor, {0, 0}, ring.inner[j]);
-            add(skirts, &outerA, ring.outerColor, {0, 0}, ring.inner[i]);
+        const size_t count = chain.size();
+        const Outside a = outside(border, o0.v.x, o0.v.z);
+        const Outside b = outside(border, o1.v.x, o1.v.z);
+        std::vector<MapVertex> outer(count);
+        for (size_t k = 0; k < count; k++) {
+            float t = (float)k / (float)(count - 1);
+            outer[k].v.x = o0.v.x + (o1.v.x - o0.v.x) * t;
+            outer[k].v.y = o0.v.y + (o1.v.y - o0.v.y) * t;
+            outer[k].v.z = o0.v.z + (o1.v.z - o0.v.z) * t;
+        }
+        auto outerColor = [&](size_t k) {
+            float t = (float)k / (float)(count - 1);
+            Outside o;
+            o.color = a.color + (b.color - a.color) * t;
+            return outsideColor(o);
+        };
+        auto triangle = [&](const MapVertex *p0, uint32_t c0, const MapVertex *p1, uint32_t c1, const MapVertex *p2, uint32_t c2) {
+            if (dynamic) {
+                uint32_t tone = topTone(outside(border, (p0->v.x + p1->v.x + p2->v.x) / 3, (p0->v.z + p1->v.z + p2->v.z) / 3).type);
+                c0 = tone;
+                c1 = tone;
+                c2 = tone;
+            }
+            add(0, p0, c0, {0, 0});
+            add(0, p1, c1, {0, 0});
+            add(0, p2, c2, {0, 0});
+        };
+        for (size_t k = 0; k + 1 < count; k++) {
+            uint32_t inner0 = packColor(chain[k]->color);
+            uint32_t inner1 = packColor(chain[k + 1]->color);
+            triangle(chain[k], inner0, chain[k + 1], inner1, &outer[k + 1], outerColor(k + 1));
+            triangle(chain[k], inner0, &outer[k + 1], outerColor(k + 1), &outer[k], outerColor(k));
+        }
+    };
+    const int n = BLOCK_PER_MAP_SIDE;
+    auto addCollar = [&](int level, int i) {
+        const int bx = i % n;
+        const int by = i / n;
+        AreaBlock *b = area->GetAreaBlockByID(level, i);
+        if (!b || b->sideSize < 2) {
+            return;
+        }
+        const int side = b->sideSize;
+        const float x0 = -kMapHalf + bx * BLOCK_WIDTH;
+        const float z0 = -kMapHalf + by * BLOCK_WIDTH;
+        const float xs = bx == 0 ? -kCollarEdge : x0;
+        const float xe = bx == n - 1 ? kCollarEdge : x0 + BLOCK_WIDTH;
+        const float zs = by == 0 ? -kCollarEdge : z0;
+        const float ze = by == n - 1 ? kCollarEdge : z0 + BLOCK_WIDTH;
+        AreaBlock *next = bx < n - 1 ? area->GetAreaBlockByID(level, i + 1) : nullptr;
+        AreaBlock *below = by < n - 1 ? area->GetAreaBlockByID(level, i + n) : nullptr;
+        std::vector<const MapVertex *> chain;
+        if (by == 0) {
+            chain.clear();
+            for (int x = 0; x < side; x++) {
+                chain.push_back(b->GetVertice(x, 0));
+            }
+            if (next) {
+                chain.push_back(next->GetVertice(0, 0));
+            }
+            strip(chain, outsidePoint(xs, -kCollarEdge), outsidePoint(xe, -kCollarEdge));
+        }
+        if (by == n - 1) {
+            chain.clear();
+            for (int x = 0; x < side; x++) {
+                chain.push_back(b->GetVertice(x, side - 1));
+            }
+            if (next) {
+                chain.push_back(next->GetVertice(0, side - 1));
+            }
+            strip(chain, outsidePoint(xs, kCollarEdge), outsidePoint(xe, kCollarEdge));
+        }
+        if (bx == 0) {
+            chain.clear();
+            for (int y = 0; y < side; y++) {
+                chain.push_back(b->GetVertice(0, y));
+            }
+            if (below) {
+                chain.push_back(below->GetVertice(0, 0));
+            }
+            strip(chain, outsidePoint(-kCollarEdge, zs), outsidePoint(-kCollarEdge, ze));
+        }
+        if (bx == n - 1) {
+            chain.clear();
+            for (int y = 0; y < side; y++) {
+                chain.push_back(b->GetVertice(side - 1, y));
+            }
+            if (below) {
+                chain.push_back(below->GetVertice(side - 1, 0));
+            }
+            strip(chain, outsidePoint(kCollarEdge, zs), outsidePoint(kCollarEdge, ze));
         }
     };
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
@@ -480,7 +539,8 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         lod.kind = NodeKind::LOD;
         lod.lodRanges = lodRanges;
         AreaBlock *finest = area->GetAreaBlockByID(0, i);
-        if (ringOfBlock[0].count(i) && finest && finest->sideSize >= 2) {
+        bool onBorder = i % n == 0 || i % n == n - 1 || i / n == 0 || i / n == n - 1;
+        if (onBorder && finest && finest->sideSize >= 2) {
             r4::Box box;
             for (int v = 0; v < finest->sideSize * finest->sideSize; v++) {
                 const MapVertex *p = &finest->vertice[v];
@@ -559,7 +619,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     skirt(at(endX, y), at(endX, y + 1));
                 }
             }
-            addSkirt(level, i);
+            addCollar(level, i);
             levels.push_back(takeMeshes("LVL" + std::to_string(level) + " (" + std::to_string(b ? b->sideSize * b->sideSize : 0) + " vertices)"));
         }
         int blockIndex = (int)model->nodes.size();
@@ -576,6 +636,72 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     if (model->meshes.empty()) {
         return nullptr;
     }
+    if (border.position.empty()) {
+        return model;
+    }
+    auto tile = [&](float xa, float za, float xb, float zb, float cell) {
+        currentLevel = 0;
+        const int nx = std::max(1, (int)std::lround((xb - xa) / cell));
+        const int nz = std::max(1, (int)std::lround((zb - za) / cell));
+        std::vector<MapVertex> grid((size_t)(nx + 1) * (nz + 1));
+        for (int z = 0; z <= nz; z++) {
+            for (int x = 0; x <= nx; x++) {
+                grid[(size_t)z * (nx + 1) + x] = outsidePoint(xa + (xb - xa) * x / nx, za + (zb - za) * z / nz);
+            }
+        }
+        auto at = [&](int x, int z) {
+            return &grid[(size_t)z * (nx + 1) + x];
+        };
+        auto triangle = [&](const MapVertex *a, const MapVertex *b, const MapVertex *c) {
+            const MapVertex *corner[3] = {a, b, c};
+            uint32_t tone = dynamic ? topTone(outside(border, (a->v.x + b->v.x + c->v.x) / 3, (a->v.z + b->v.z + c->v.z) / 3).type) : 0;
+            for (const MapVertex *v : corner) {
+                add(0, v, dynamic ? tone : outsideColor(outside(border, v->v.x, v->v.z)), {0, 0});
+            }
+        };
+        for (int z = 0; z < nz; z++) {
+            for (int x = 0; x < nx; x++) {
+                triangle(at(x, z), at(x + 1, z + 1), at(x, z + 1));
+                triangle(at(x, z), at(x + 1, z), at(x + 1, z + 1));
+            }
+        }
+        return takeMeshes("tile " + std::to_string((int)(xa / 1000)) + "," + std::to_string((int)(za / 1000)) + " km");
+    };
+    auto ring = [&](const std::string &name, float inner, float outer, float cell) {
+        Node group;
+        group.name = name;
+        int groupIndex = (int)model->nodes.size();
+        model->nodes.push_back(group);
+        model->nodes[0].children.push_back(groupIndex);
+        const float edges[4] = {-outer, -inner, inner, outer};
+        for (int zi = 0; zi < 3; zi++) {
+            for (int xi = 0; xi < 3; xi++) {
+                if (xi == 1 && zi == 1) {
+                    continue;
+                }
+                float xa = edges[xi];
+                float xb = edges[xi + 1];
+                float za = edges[zi];
+                float zb = edges[zi + 1];
+                std::vector<std::pair<float, float>> spans{{xa, xb}};
+                if (xi == 1) {
+                    spans = {{xa, 0}, {0, xb}};
+                }
+                std::vector<std::pair<float, float>> zspans{{za, zb}};
+                if (zi == 1) {
+                    zspans = {{za, 0}, {0, zb}};
+                }
+                for (const auto &[x0, x1] : spans) {
+                    for (const auto &[z0, z1] : zspans) {
+                        model->nodes.push_back(tile(x0, z0, x1, z1, cell));
+                        model->nodes[groupIndex].children.push_back((int)model->nodes.size() - 1);
+                    }
+                }
+            }
+        }
+    };
+    ring("outside, inner ring", kCollarEdge, kInnerRingEdge, BLOCK_WIDTH);
+    ring("outside, outer ring", kInnerRingEdge, kWorldEdge, kWorldEdge);
     return model;
 }
 
