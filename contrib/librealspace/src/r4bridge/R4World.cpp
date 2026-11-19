@@ -32,6 +32,82 @@ uint32_t packColor(const float c[4]) {
     return b(c[0]) | b(c[1]) << 8 | b(c[2]) << 16 | b(c[3]) << 24;
 }
 
+uint32_t texelColor(const VGAPalette &palette, uint8_t index) {
+    const Texel &t = palette.colors[index];
+    return (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | (uint32_t)t.a << 24;
+}
+
+uint8_t nearestIndex(const VGAPalette &palette, const std::vector<uint8_t> &candidates, uint32_t color) {
+    int r = (int)(color & 0xff);
+    int g = (int)(color >> 8 & 0xff);
+    int b = (int)(color >> 16 & 0xff);
+    bool opaque = (color >> 24) >= 128;
+    uint8_t best = candidates.front();
+    int bestDistance = -1;
+    for (uint8_t i : candidates) {
+        const Texel &t = palette.colors[i];
+        if ((t.a >= 128) != opaque) {
+            continue;
+        }
+        int d = (t.r - r) * (t.r - r) + (t.g - g) * (t.g - g) + (t.b - b) * (t.b - b);
+        if (bestDistance < 0 || d < bestDistance) {
+            best = i;
+            bestDistance = d;
+        }
+    }
+    return best;
+}
+
+// the palette indices of an image in red and its alpha, upscaled as textureQuality() then brought back to the indices it uses
+r4::assets::Image indexTexture(const RSImage &src, const VGAPalette &palette) {
+    r4::assets::Image img;
+    img.name = std::string(src.name);
+    img.width = (int)src.width;
+    img.height = (int)src.height;
+    img.clampS = true;
+    img.clampT = true;
+    img.mipmaps = false;
+    std::vector<uint8_t> indices((size_t)img.width * img.height);
+    for (int y = 0; y < img.height; y++) {
+        for (int x = 0; x < img.width; x++) {
+            indices[(size_t)(img.height - 1 - y) * img.width + x] = src.data[(size_t)y * img.width + x];
+        }
+    }
+    const r4::assets::Upscale upscale = textureQuality().upscale;
+    if (upscale != r4::assets::Upscale::NONE) {
+        r4::assets::Image rgba = img;
+        rgba.channels = 4;
+        rgba.pixels.resize(indices.size() * 4);
+        std::map<uint32_t, uint8_t> exact;
+        for (size_t i = 0; i < indices.size(); i++) {
+            uint32_t c = texelColor(palette, indices[i]);
+            std::memcpy(&rgba.pixels[i * 4], &c, 4);
+            exact.emplace(c, indices[i]);
+        }
+        std::vector<uint8_t> used;
+        for (const auto &[color, index] : exact) {
+            used.push_back(index);
+        }
+        rgba = r4::assets::upscale(rgba, upscale);
+        img.width = rgba.width;
+        img.height = rgba.height;
+        indices.resize((size_t)img.width * img.height);
+        for (size_t i = 0; i < indices.size(); i++) {
+            uint32_t c = 0;
+            std::memcpy(&c, &rgba.pixels[i * 4], 4);
+            auto it = exact.find(c);
+            indices[i] = it != exact.end() ? it->second : nearestIndex(palette, used, c);
+        }
+    }
+    img.channels = 2;
+    img.pixels.resize(indices.size() * 2);
+    for (size_t i = 0; i < indices.size(); i++) {
+        img.pixels[i * 2] = indices[i];
+        img.pixels[i * 2 + 1] = palette.colors[indices[i]].a;
+    }
+    return img;
+}
+
 } // namespace
 
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, const std::vector<float> &lodRanges, const TerrainLight &light) {
@@ -43,13 +119,23 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     auto model = std::make_shared<Model>();
     model->source = "terrain";
 
+    const std::vector<PaletteRange> noRanges;
+    const std::vector<PaletteRange> &ranges = light.ranges ? *light.ranges : noRanges;
+    int rampIndex = -1;
+    auto ramp = [&]() {
+        if (rampIndex < 0) {
+            model->images.push_back(rampImage(palette, ranges, RampFirst::ITSELF));
+            rampIndex = (int)model->images.size() - 1;
+        }
+        return rampIndex;
+    };
+
     Material colors;
     colors.name = "terrain colors";
     colors.doubleSided = true;
     if (dynamic) {
-        model->images.push_back(rampImage(palette, *light.ranges));
         colors.shading = Shading::PALETTE_RAMP;
-        colors.diffuseImage = 0;
+        colors.diffuseImage = ramp();
         colors.rampAmbient = light.lighting.ambient;
         colors.rampLight = light.lighting.light;
     } else {
@@ -59,7 +145,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     }
     model->materials.push_back(colors);
     auto topTone = [&](uint8_t type) -> uint32_t {
-        const std::vector<PaletteRange> &r = *light.ranges;
+        const std::vector<PaletteRange> &r = ranges;
         const PaletteRange &range = type < r.size() ? r[type] : r[0];
         return (uint32_t)std::min(255, range.first + range.shades) | 0xff000000u;
     };
@@ -83,34 +169,15 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         int material = -1;
         RSImage *src = area->GetImageByID(imageID);
         if (src && src->data && src->width && src->height) {
-            Image img;
-            img.name = std::string(src->name);
-            img.width = (int)src->width;
-            img.height = (int)src->height;
-            img.channels = 4;
-            img.pixels.resize((size_t)img.width * img.height * 4);
-            for (int y = 0; y < img.height; y++) {
-                for (int x = 0; x < img.width; x++) {
-                    const Texel &t = palette.colors[src->data[(size_t)y * img.width + x]];
-                    uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
-                    d[0] = t.r;
-                    d[1] = t.g;
-                    d[2] = t.b;
-                    d[3] = t.a;
-                }
-            }
-            finishTexture(img);
-            model->images.push_back(std::move(img));
             Material m;
             m.name = std::string("terrain ") + src->name;
-            m.shading = Shading::UNLIT;
-            if (dynamic) {
-                m.shading = Shading::PALETTE_RAMP;
-                m.rampTextured = true;
-                m.rampAmbient = light.lighting.ambient;
-                m.rampLight = light.lighting.light;
-            }
-            m.diffuseImage = (int)model->images.size() - 1;
+            m.shading = Shading::PALETTE_RAMP;
+            m.vertexColors = !dynamic;
+            m.rampAmbient = light.lighting.ambient;
+            m.rampLight = light.lighting.light;
+            m.diffuseImage = ramp();
+            model->images.push_back(indexTexture(*src, palette));
+            m.indexImage = (int)model->images.size() - 1;
             m.alpha = AlphaMode::BLEND;
             m.decal = true;
             m.doubleSided = true;
@@ -215,8 +282,17 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         if (material < 0) {
             return;
         }
+        float intensity[3];
         for (int k = 0; k < 3; k++) {
-            add(material, corner[k], 0xffffffffu, {uv[k][0], 1 - uv[k][1]});
+            intensity[k] = corner[k]->flag / 255.0f;
+        }
+        if (area->isTerrainFlat()) {
+            float average = (intensity[0] + intensity[1] + intensity[2]) / 3;
+            std::fill(intensity, intensity + 3, average);
+        }
+        for (int k = 0; k < 3; k++) {
+            uint32_t level = (uint32_t)(intensity[k] * 255 + 0.5f);
+            add(material, corner[k], level | 0xffffff00u, {uv[k][0], 1 - uv[k][1]});
         }
     };
     auto quad = [&](const MapVertex *current, const MapVertex *right, const MapVertex *bottomRight, const MapVertex *bottom) {

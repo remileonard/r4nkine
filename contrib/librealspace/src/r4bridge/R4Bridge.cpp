@@ -29,7 +29,7 @@ uint32_t rgba(const Texel &t, uint8_t alpha = 255) {
 }
 
 // SCRenderer::shadeAlongRamp, as a color
-uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &ranges, int colour, float intensity) {
+uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &ranges, int colour, float intensity, RampFirst first) {
     const PaletteRange *range = nullptr;
     for (const PaletteRange &r : ranges) {
         if (r.first <= colour && colour <= r.first + r.fog) {
@@ -48,6 +48,9 @@ uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &range
         return pack(c.r * intensity, c.g * intensity, c.b * intensity);
     }
     int n = colour - range->first;
+    if (n == 0 && first == RampFirst::ITSELF) {
+        return pack(c.r, c.g, c.b);
+    }
     if (n == 0) {
         n = range->shades;
     }
@@ -69,7 +72,7 @@ r4::Vec3 toAxes(const Vector3D &v, Axes axes) {
 
 } // namespace
 
-r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<PaletteRange> &ranges) {
+r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<PaletteRange> &ranges, RampFirst first) {
     r4::assets::Image img;
     img.name = "palette ramps";
     img.width = 256;
@@ -79,7 +82,7 @@ r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<Palette
     img.pixels.resize(256 * 32 * 4);
     for (int k = 0; k < 32; k++) {
         for (int i = 0; i < 256; i++) {
-            uint32_t c = shade(palette, ranges, i, k / 31.0f);
+            uint32_t c = shade(palette, ranges, i, k / 31.0f, first);
             std::memcpy(&img.pixels[((size_t)k * 256 + i) * 4], &c, 4);
         }
     }

@@ -32,8 +32,14 @@ enum class Axes {
 // (x, y, z) -> (x, -z, y), as r4::axes::fromYUpMatrix()
 r4::Mat4 realSpaceToR4();
 
+// the first color of a ramp: the whole ramp as for the faces of the objects, or that color itself as for the texels
+enum class RampFirst {
+    WHOLE_RAMP,
+    ITSELF
+};
+
 // 256 colors x 32 intensities, as SCRenderer::shadeAlongRamp: the image the PaletteRamp material reads
-r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<PaletteRange> &ranges);
+r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<PaletteRange> &ranges, RampFirst first = RampFirst::WHOLE_RAMP);
 
 // the clear texels take the color of their opaque neighbors, so that filtering does not darken the edges
 void bleedClearTexels(r4::assets::Image &image);

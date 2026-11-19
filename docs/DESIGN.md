@@ -231,7 +231,10 @@ behaviors are kept, translated into the neutral format:
   the face, in the red of the vertex colors, and the intensity pick the shade
   in a table of 256 colors × 32 intensities given as the image of the
   material (made by the loader from the ramps of the palette). With
-  `rampTextured`, a texture is multiplied by the intensity instead.
+  `rampTextured`, a texture is multiplied by the intensity instead. With
+  `indexImage`, an image of palette indices: each texel is shaded along its
+  own ramp, then filtered (bilinear, done in the shader); the intensity is
+  the red of the vertex colors with `vertexColors`, else the light.
 
 ## Roadmap
 

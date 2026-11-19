@@ -72,6 +72,8 @@ struct Material {
     float rampAmbient = 0.375f;
     float rampLight = 0.625f;
     bool rampTextured = false;
+    // PALETTE_RAMP: an image of palette indices (red) and alpha, each texel shaded along the ramp of diffuseImage; the intensity is the red of the vertex colors with vertexColors
+    int indexImage = -1;
 };
 
 enum class Primitive {

@@ -131,6 +131,7 @@ layout(std140) uniform Material {
 };
 uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
+uniform sampler2D indexMap;
 in vec4 vShadow;
 in vec3 vNormal;
 in vec3 vPosition;
@@ -167,6 +168,44 @@ float shadowFactor() {
     vec2 e = abs(p.xy * 2.0 - 1.0);
     return mix(s, 1.0, smoothstep(0.85, 1.0, max(e.x, e.y)));
 }
+vec3 rampShade(int index, float intensity) {
+    float t = intensity * 31.0;
+    int k = int(min(floor(t), 30.0));
+    return mix(texelFetch(diffuseMap, ivec2(index, k), 0).rgb, texelFetch(diffuseMap, ivec2(index, k + 1), 0).rgb, t - float(k));
+}
+vec4 shadedIndexTexel(ivec2 p, ivec2 size, float intensity) {
+    vec4 t = texelFetch(indexMap, clamp(p, ivec2(0), size - 1), 0);
+    return vec4(rampShade(int(t.r * 255.0 + 0.5), intensity) * t.a, t.a);
+}
+vec4 shadedIndexTexture(vec2 uv, float intensity) {
+    ivec2 size = textureSize(indexMap, 0);
+    vec2 st = uv * vec2(size) - 0.5;
+    ivec2 p = ivec2(floor(st));
+    vec2 f = st - floor(st);
+    vec4 a = mix(shadedIndexTexel(p, size, intensity), shadedIndexTexel(p + ivec2(1, 0), size, intensity), f.x);
+    vec4 b = mix(shadedIndexTexel(p + ivec2(0, 1), size, intensity), shadedIndexTexel(p + ivec2(1, 1), size, intensity), f.x);
+    vec4 c = mix(a, b, f.y);
+    if (c.a <= 0.0) {
+        return vec4(0.0);
+    }
+    return vec4(c.rgb / c.a, c.a);
+}
+float rampIntensity(float shadow) {
+    vec3 n = seenNormal();
+    float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w * shadow, 0.0, 1.0);
+    bool back = dot(faceDirection, faceDirection) > 0.0 && dot(vNormal, faceDirection) < 0.0;
+    if (options.w > 0.5 && options.z < 0.5 && !back) {
+        intensity = flags2.z + (vRampIntensity - flags2.z) * shadow;
+    }
+    return intensity;
+}
+vec3 fogged(vec3 color) {
+    if (fogParams.z > 0.5) {
+        float f = clamp((length(vPosition) - fogParams.x) / max(fogParams.y - fogParams.x, 1e-6), 0.0, 1.0);
+        color = mix(color, fogColor.rgb, f);
+    }
+    return color;
+}
 void main() {
     faceDirection = cross(dFdx(vPosition), dFdy(vPosition));
     float shadow = shadowFactor();
@@ -179,21 +218,28 @@ void main() {
         float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
         uv = r.xy / m + 0.5;
     }
-    if (flags2.y > 0.5 && options.y > 0.5 && dot(vNormal, vNormal) > 1e-12) {
-        vec3 n = seenNormal();
-        float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w * shadow, 0.0, 1.0);
-        bool back = dot(faceDirection, faceDirection) > 0.0 && dot(vNormal, faceDirection) < 0.0;
-        if (options.w > 0.5 && options.z < 0.5 && !back) {
-            intensity = flags2.z + (vRampIntensity - flags2.z) * shadow;
+    bool lit = options.y > 0.5 && dot(vNormal, vNormal) > 1e-12;
+    if (flags2.y > 2.5) {
+        float intensity = 1.0;
+        if (flags.z > 0.5) {
+            intensity = vColor.r;
+        } else if (lit) {
+            intensity = rampIntensity(shadow);
         }
-        vec3 c;
+        base = shadedIndexTexture(uv, intensity);
+        if (flags.z > 0.5 && options.y > 0.5) {
+            base.rgb *= mix(1.0, shadow, shadowParams.w);
+        }
+        if (flags.y > 0.0 && base.a < flags.y) {
+            discard;
+        }
+        fragColor = vec4(fogged(base.rgb), base.a);
+        return;
+    }
+    if (flags2.y > 0.5 && lit) {
+        float intensity = rampIntensity(shadow);
         if (flags2.y < 1.5) {
-            int index = int(vColor.r * 255.0 + 0.5);
-            float t = intensity * 31.0;
-            int k = int(min(floor(t), 30.0));
-            c = mix(texelFetch(diffuseMap, ivec2(index, k), 0).rgb, texelFetch(diffuseMap, ivec2(index, k + 1), 0).rgb,
-                    t - float(k));
-            base = vec4(c, diffuse.a);
+            base = vec4(rampShade(int(vColor.r * 255.0 + 0.5), intensity), diffuse.a);
         } else {
             base *= texture(diffuseMap, uv);
             if (flags.y > 0.0 && base.a < flags.y) {
@@ -201,12 +247,7 @@ void main() {
             }
             base.rgb *= intensity;
         }
-        vec3 color = base.rgb;
-        if (fogParams.z > 0.5) {
-            float f = clamp((length(vPosition) - fogParams.x) / max(fogParams.y - fogParams.x, 1e-6), 0.0, 1.0);
-            color = mix(color, fogColor.rgb, f);
-        }
-        fragColor = vec4(color, base.a);
+        fragColor = vec4(fogged(base.rgb), base.a);
         return;
     }
     if (flags.x > 0.5 && options.x > 0.5) {
@@ -236,11 +277,7 @@ void main() {
         color = emissive.rgb + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) +
                 specular.rgb * lightColor.rgb * spec;
     }
-    if (fogParams.z > 0.5) {
-        float f = clamp((length(vPosition) - fogParams.x) / max(fogParams.y - fogParams.x, 1e-6), 0.0, 1.0);
-        color = mix(color, fogColor.rgb, f);
-    }
-    fragColor = vec4(color, base.a);
+    fragColor = vec4(fogged(color), base.a);
 }
 )";
 
@@ -339,7 +376,7 @@ bool Renderer::createShaders() {
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
     d.uniformBlocks = {{"Frame", FRAME_SLOT}, {"Material", MATERIAL_SLOT}};
-    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}};
+    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
     if (!shader_) {
@@ -457,7 +494,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     return m;
 }
 
-std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture) {
+std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture) {
     gpu::Device *dev = &device_;
     auto m = std::shared_ptr<MaterialInstance>(new MaterialInstance, [dev](MaterialInstance *mi) {
         dev->destroyBuffer(mi->uniforms);
@@ -465,6 +502,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     });
     m->params = p;
     m->texture = texture;
+    m->indexTexture = indexTexture;
     m->id = nextMaterialId_++;
     MaterialBlock b{};
     b.diffuse[0] = p.diffuse.x;
@@ -480,7 +518,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.flags[3] = p.shading == assets::Shading::UNLIT ? 1.0f : 0.0f;
     b.flags2[0] = p.sphereMap ? 1.0f : 0.0f;
     if (p.shading == assets::Shading::PALETTE_RAMP && texture) {
-        b.flags2[1] = p.rampTextured ? 2.0f : 1.0f;
+        b.flags2[1] = indexTexture ? 3.0f : (p.rampTextured ? 2.0f : 1.0f);
         b.flags2[2] = p.rampAmbient;
         b.flags2[3] = p.rampLight;
     }
@@ -496,7 +534,9 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     }
     std::vector<std::shared_ptr<MaterialInstance>> materials;
     for (const assets::Material &m : model.materials) {
-        materials.push_back(createMaterial(m, m.diffuseImage >= 0 && m.diffuseImage < (int)textures.size() ? textures[m.diffuseImage] : gpu::TextureHandle{}));
+        gpu::TextureHandle texture = m.diffuseImage >= 0 && m.diffuseImage < (int)textures.size() ? textures[m.diffuseImage] : gpu::TextureHandle{};
+        gpu::TextureHandle indexTexture = m.indexImage >= 0 && m.indexImage < (int)textures.size() ? textures[m.indexImage] : gpu::TextureHandle{};
+        materials.push_back(createMaterial(m, texture, indexTexture));
     }
     std::vector<std::shared_ptr<GpuMesh>> meshes;
     for (const assets::Mesh &m : model.meshes) {
@@ -819,6 +859,9 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
             if (it.material != lastMaterial) {
                 device_.bindUniformBuffer(MATERIAL_SLOT, it.material->uniforms, 0, sizeof(MaterialBlock));
                 device_.bindTexture(0, it.material->texture ? it.material->texture : white_);
+                if (it.material->indexTexture) {
+                    device_.bindTexture(2, it.material->indexTexture);
+                }
                 lastMaterial = it.material;
             }
             if (it.mesh != lastMesh) {
