@@ -17,19 +17,24 @@
 
 using namespace r4;
 
-static int failures = 0, checks = 0;
+static int failures = 0;
+static int checks = 0;
 
-#define CHECK(cond)                                                              \
-    do {                                                                         \
-        checks++;                                                                \
-        if (!(cond)) {                                                           \
-            failures++;                                                          \
+#define CHECK(cond)                                                                       \
+    do {                                                                                  \
+        checks++;                                                                         \
+        if (!(cond)) {                                                                    \
+            failures++;                                                                   \
             std::fprintf(stderr, "%s:%d: CHECK failed: %s\n", __FILE__, __LINE__, #cond); \
-        }                                                                        \
+        }                                                                                 \
     } while (0)
 
-static bool near(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) <= eps; }
-static bool near(Vec3 a, Vec3 b, float eps = 1e-4f) { return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps); }
+static bool near(float a, float b, float eps = 1e-4f) {
+    return std::fabs(a - b) <= eps;
+}
+static bool near(Vec3 a, Vec3 b, float eps = 1e-4f) {
+    return near(a.x, b.x, eps) && near(a.y, b.y, eps) && near(a.z, b.z, eps);
+}
 
 static void testMath() {
     Mat4 m = translate({1, 2, 3}) * rotate(radians(90), {0, 0, 1}) * scale({2, 2, 2});
@@ -45,7 +50,8 @@ static void testMath() {
 }
 
 static void testBounds() {
-    Sphere a{{0, 0, 0}, 1}, b{{4, 0, 0}, 1};
+    Sphere a{{0, 0, 0}, 1};
+    Sphere b{{4, 0, 0}, 1};
     a.extend(b);
     CHECK(near(a.center, {2, 0, 0}) && near(a.radius, 3));
     Sphere c{{0, 0, 0}, 5};
@@ -55,10 +61,10 @@ static void testBounds() {
     Mat4 vp = perspective(radians(90), 1, 1, 100) * lookAt({0, 0, 0}, {0, 1, 0}, {0, 0, 1});
     Frustum f = Frustum::fromMatrix(vp);
     CHECK(f.test({{0, 10, 0}, 1}) == Frustum::Inside);
-    CHECK(f.test({{0, -10, 0}, 1}) == Frustum::Outside);   // behind
-    CHECK(f.test({{0, 200, 0}, 1}) == Frustum::Outside);   // past far
+    CHECK(f.test({{0, -10, 0}, 1}) == Frustum::Outside);    // behind
+    CHECK(f.test({{0, 200, 0}, 1}) == Frustum::Outside);    // past far
     CHECK(f.test({{0, 100, 0}, 2}) == Frustum::Intersects); // on far
-    CHECK(f.test({{30, 10, 0}, 1}) == Frustum::Outside);   // right of 45 degrees
+    CHECK(f.test({{30, 10, 0}, 1}) == Frustum::Outside);    // right of 45 degrees
 }
 
 static void testScene() {
@@ -106,11 +112,13 @@ static void testLoaders(const std::string &dir) {
     CHECK(cube.indices.size() == 36 && cube.vertices.size() == 24);
     bool flat = true;
     for (size_t i = 0; i < cube.indices.size(); i += 3) {
-        const assets::Vertex &a = cube.vertices[cube.indices[i]], &b = cube.vertices[cube.indices[i + 1]],
-                             &c = cube.vertices[cube.indices[i + 2]];
+        const assets::Vertex &a = cube.vertices[cube.indices[i]];
+        const assets::Vertex &b = cube.vertices[cube.indices[i + 1]];
+        const assets::Vertex &c = cube.vertices[cube.indices[i + 2]];
         Vec3 face = normalize(cross(b.position - a.position, c.position - a.position));
-        for (const assets::Vertex *v : {&a, &b, &c})
+        for (const assets::Vertex *v : {&a, &b, &c}) {
             flat = flat && near(v->normal, face);
+        }
         // and out of the cube: the face's normal is along its center
         flat = flat && dot(face, a.position + b.position + c.position) > 0;
     }
@@ -127,15 +135,17 @@ static void testLoaders(const std::string &dir) {
             v.position = {std::cos(a), std::sin(a), -std::tan(radians(20.0f))};
             cone.vertices.push_back(v);
         }
-        for (uint32_t i = 0; i < 8; i++)
+        for (uint32_t i = 0; i < 8; i++) {
             cone.indices.insert(cone.indices.end(), {0, 1 + i, 1 + (i + 1) % 8});
+        }
         cone.computeNormals();
         int poles = 0;
-        for (const assets::Vertex &v : cone.vertices)
+        for (const assets::Vertex &v : cone.vertices) {
             if (near(v.position, {0, 0, 0})) {
                 poles++;
                 CHECK(near(v.normal, {0, 0, 1}));
             }
+        }
         CHECK(poles == 1);
     }
     CHECK(near(cube.bounds.min, {-1, -1, -1}) && near(cube.bounds.max, {1, 1, 1}));
@@ -204,8 +214,9 @@ static void testLegacyFormats(const std::string &dir) {
     // flip: one quad with its normals
     auto b = assets::loadModel(dir + "/square.bin", &err);
     CHECK(b && b->meshes.size() == 1 && b->meshes[0].indices.size() == 6);
-    if (b)
+    if (b) {
         CHECK(near(b->meshes[0].vertices[2].position, {1, 1, 0}) && near(b->meshes[0].vertices[0].normal, {0, 0, 1}));
+    }
 
     // Performer binary: two triangles, an overall color
     auto p = assets::loadModel(dir + "/quad.pfb", &err);
@@ -236,8 +247,9 @@ static void testLegacyFormats(const std::string &dir) {
         CHECK((f->meshes[0].vertices[0].color & 0xffffff) == 0xff0000); // blue
         CHECK(f->materials[f->meshes[0].material].shading == assets::Shading::Unlit);
         bool named = false;
-        for (const auto &n : f->nodes)
+        for (const auto &n : f->nodes) {
             named = named || n.name == "g1";
+        }
         CHECK(named);
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
@@ -245,8 +257,7 @@ static void testLegacyFormats(const std::string &dir) {
 
     // gset: one line strip of 3 points: 2 segments
     auto g = assets::loadModel(dir + "/lines.gset", &err);
-    CHECK(g && g->meshes.size() == 1 && g->meshes[0].primitive == assets::Primitive::Lines &&
-          g->meshes[0].indices.size() == 4);
+    CHECK(g && g->meshes.size() == 1 && g->meshes[0].primitive == assets::Primitive::Lines && g->meshes[0].indices.size() == 4);
 }
 
 // step 2: billboards, instancers, PNG, glTF
@@ -362,9 +373,11 @@ static void testRaster() {
     txt.clear(0);
     int w = txt.text(Font::builtin(13), 0, 0, "R4", 15);
     int lit = 0;
-    for (int y = 0; y < 20; y++)
-        for (int x = 0; x < 60; x++)
+    for (int y = 0; y < 20; y++) {
+        for (int x = 0; x < 60; x++) {
             lit += txt.get(x, y) == 15;
+        }
+    }
     CHECK(w > 10 && lit > 20 && Font::builtin(40).height > Font::builtin(13).height);
     // true colors, blended
     Surface c(8, 8, Format::RGBA8);
@@ -403,15 +416,16 @@ static void testAxes() {
     // a Y-up transform, in R4nkine's axes: a turn about the Y-up up is a
     // turn about kUp
     Mat4 yUpTurn = rotate(radians(30.0f), {0, 1, 0});
-    CHECK(near(transformPoint(transformFromYUp(yUpTurn), kForward),
-               transformPoint(rotate(radians(30.0f), kUp), kForward)));
+    CHECK(near(transformPoint(transformFromYUp(yUpTurn), kForward), transformPoint(rotate(radians(30.0f), kUp), kForward)));
     // the angles
     CHECK(near(headingOf(kForward), 0) && near(headingOf(-kRight), 90) && near(headingOf(kRight), -90));
     CHECK(near(pitchOf(kUp), 90) && near(pitchOf(kForward), 0) && near(heightOf({4, 5, 6}), 6));
     // the orbit gives back its angles
     render::Orbit orbit;
     orbit.setAngles(-140, 20, 10);
-    float h, pi, r;
+    float h;
+    float pi;
+    float r;
     orbit.angles(h, pi, r);
     CHECK(near(h, -140, 1e-3f) && near(pi, 20, 1e-3f) && near(r, 10, 1e-3f));
 }
@@ -426,11 +440,12 @@ static void testUpscale() {
         img.height = h;
         img.channels = 4;
         img.pixels.resize((size_t)w * h * 4);
-        for (int y = 0; y < h; y++)
+        for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 uint32_t c = color(x, y);
                 std::memcpy(&img.pixels[((size_t)y * w + x) * 4], &c, 4);
             }
+        }
         return img;
     };
     auto at = [](const Image &img, int x, int y) {
@@ -438,33 +453,42 @@ static void testUpscale() {
         std::memcpy(&c, &img.pixels[((size_t)y * img.width + x) * 4], 4);
         return c;
     };
-    Image flat = make(8, 6, [](int, int) { return 0xff3366ccu; });
+    Image flat = make(8, 6, [](int, int) {
+        return 0xff3366ccu;
+    });
     for (Upscale u : {Upscale::SaI2x, Upscale::Xbr2x, Upscale::Xbr4x}) {
         Image big = upscale(flat, u);
         int k = upscaleFactor(u);
         CHECK(big.width == 8 * k && big.height == 6 * k && big.channels == 4);
         bool same = true;
-        for (int y = 0; y < big.height; y++)
-            for (int x = 0; x < big.width; x++)
+        for (int y = 0; y < big.height; y++) {
+            for (int x = 0; x < big.width; x++) {
                 same = same && at(big, x, y) == 0xff3366ccu;
+            }
+        }
         CHECK(same);
     }
     // a vertical edge, left white, right clear: xBR keeps it sharp (2xSaI
     // blends the column next to it)
-    Image edge = make(8, 8, [](int x, int) { return x < 4 ? 0xffffffffu : 0x00000000u; });
+    Image edge = make(8, 8, [](int x, int) {
+        return x < 4 ? 0xffffffffu : 0x00000000u;
+    });
     edge.clampS = edge.clampT = true;
     Image sharp = upscale(edge, Upscale::Xbr2x);
     CHECK(at(sharp, 7, 5) == 0xffffffffu && at(sharp, 8, 5) == 0x00000000u);
     // a diagonal staircase: xBR blends the steps (some texels between the 2 colors)
-    Image stairs = make(8, 8, [](int x, int y) { return x > y ? 0xff000000u : 0xffffffffu; });
+    Image stairs = make(8, 8, [](int x, int y) {
+        return x > y ? 0xff000000u : 0xffffffffu;
+    });
     stairs.clampS = stairs.clampT = true;
     Image big = upscale(stairs, Upscale::Xbr2x);
     int between = 0;
-    for (int y = 0; y < big.height; y++)
+    for (int y = 0; y < big.height; y++) {
         for (int x = 0; x < big.width; x++) {
             uint32_t c = at(big, x, y);
             between += c != 0xff000000u && c != 0xffffffffu;
         }
+    }
     CHECK(between > 0);
     CHECK(std::string(upscaleName(Upscale::Xbr4x)) == "xBR 4x");
 }

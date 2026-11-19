@@ -13,15 +13,17 @@ namespace r4::assets {
 std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error) {
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return nullptr;
     }
     std::vector<unsigned char> d;
     unsigned char buf[65536];
     size_t n;
-    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0)
+    while ((n = std::fread(buf, 1, sizeof buf, f)) > 0) {
         d.insert(d.end(), buf, buf + n);
+    }
     std::fclose(f);
     auto be32 = [&](size_t at) {
         return (uint32_t)d[at] << 24 | (uint32_t)d[at + 1] << 16 | (uint32_t)d[at + 2] << 8 | d[at + 3];
@@ -33,14 +35,16 @@ std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error) 
         return v;
     };
     if (d.size() < 12 || be32(0) != 0x5423) {
-        if (error)
+        if (error) {
             *error = path + ": not a flip object (bad magic)";
+        }
         return nullptr;
     }
     uint32_t points = be32(4);
     if (points == 0 || 12 + (size_t)points * 24 > d.size()) {
-        if (error)
+        if (error) {
             *error = path + ": truncated flip object";
+        }
         return nullptr;
     }
     auto model = std::make_shared<Model>();
@@ -55,8 +59,9 @@ std::shared_ptr<Model> loadFlipBin(const std::string &path, std::string *error) 
         v.position = {fl(at + 12), fl(at + 16), fl(at + 20)};
         mesh.vertices.push_back(v);
     }
-    for (uint32_t q = 0; q + 3 < points; q += 4)
+    for (uint32_t q = 0; q + 3 < points; q += 4) {
         mesh.indices.insert(mesh.indices.end(), {q, q + 1, q + 2, q, q + 2, q + 3});
+    }
     mesh.computeBounds();
     Material m;
     m.name = "flip";

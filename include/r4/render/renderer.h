@@ -24,7 +24,8 @@ namespace r4::render {
 
 // a mesh on the GPU
 struct GpuMesh {
-    gpu::BufferHandle vertices, indices;
+    gpu::BufferHandle vertices;
+    gpu::BufferHandle indices;
     uint32_t indexCount = 0;
     assets::Primitive primitive = assets::Primitive::Triangles;
     Sphere bounds;
@@ -41,9 +42,11 @@ struct MaterialInstance {
 
 struct Camera {
     Vec3 position;
-    Mat4 view, projection;
+    Mat4 view;
+    Mat4 projection;
     uint32_t mask = 0xffffffffu;
-    float znear = 0.1f, zfar = 1000.0f;
+    float znear = 0.1f;
+    float zfar = 1000.0f;
     void lookAt(Vec3 eye, Vec3 center, Vec3 up = axes::kUp) {
         position = eye;
         view = glm::lookAt(eye, center, up);
@@ -62,18 +65,19 @@ struct Environment {
     Vec4 clearColor{0.08f, 0.09f, 0.14f, 1};
     bool fog = false;
     Vec3 fogColor{0.6f, 0.65f, 0.75f};
-    float fogStart = 100, fogEnd = 1000;
+    float fogStart = 100;
+    float fogEnd = 1000;
 };
 
 // the switches of the renderer, for the viewers and the measures
 struct RenderOptions {
-    bool frustumCulling = true;  // off: everything is drawn
-    bool freezeCulling = false;  // the culling and the LODs keep the eye of the moment it was set
-    bool sortByState = true;     // off: the opaque items in the order of the graph
-    bool instancing = true;      // off: one draw per item
+    bool frustumCulling = true; // off: everything is drawn
+    bool freezeCulling = false; // the culling and the LODs keep the eye of the moment it was set
+    bool sortByState = true;    // off: the opaque items in the order of the graph
+    bool instancing = true;     // off: one draw per item
     bool textures = true;
-    bool lighting = true;        // off: everything unlit
-    float lodScale = 1;          // the distances of the LODs and instancers are multiplied by it
+    bool lighting = true; // off: everything unlit
+    float lodScale = 1;   // the distances of the LODs and instancers are multiplied by it
     // the normal of the face instead of the normals of the vertices: the flat
     // shading of the old games
     bool flatShading = false;
@@ -103,12 +107,19 @@ struct RenderOptions {
 };
 
 struct RenderStats {
-    uint32_t nodesVisited = 0, nodesCulled = 0, drawables = 0;
-    uint32_t instancesVisited = 0, instancesCulled = 0; // of the instancers
-    uint32_t opaqueItems = 0, transparentItems = 0;
+    uint32_t nodesVisited = 0;
+    uint32_t nodesCulled = 0;
+    uint32_t drawables = 0;
+    uint32_t instancesVisited = 0; // of the instancers
+    uint32_t instancesCulled = 0;
+    uint32_t opaqueItems = 0;
+    uint32_t transparentItems = 0;
     uint32_t shadowCasters = 0; // the items drawn in the shadow map
-    double shadowMs = 0; // CPU time of the shadow pass (its cull included)
-    double cullMs = 0, sortMs = 0, uploadMs = 0, drawMs = 0; // CPU times of the frame
+    double shadowMs = 0;        // CPU time of the shadow pass (its cull included)
+    double cullMs = 0;          // CPU times of the frame
+    double sortMs = 0;
+    double uploadMs = 0;
+    double drawMs = 0;
     gpu::FrameStats gpu;
 };
 
@@ -119,7 +130,9 @@ public:
     Renderer(const Renderer &) = delete;
     Renderer &operator=(const Renderer &) = delete;
 
-    gpu::Device &device() { return device_; }
+    gpu::Device &device() {
+        return device_;
+    }
 
     // the GPU objects of a model, as a subgraph (nodes, geodes, drawables);
     // its parts for an Instancer: scene::collectParts(*upload(model))
@@ -131,16 +144,32 @@ public:
     // draws the graph from the camera in the viewport (pixels, from the bottom left)
     void render(scene::Node &root, const Camera &camera, int x, int y, int width, int height);
 
-    Environment &environment() { return env_; }
-    RenderOptions &options() { return options_; }
-    void setWireframe(bool on) { wireframe_ = on; }
+    Environment &environment() {
+        return env_;
+    }
+    RenderOptions &options() {
+        return options_;
+    }
+    void setWireframe(bool on) {
+        wireframe_ = on;
+    }
     // where render() draws: a render target (a post process), or the window
     // when the handle is null
-    void setTarget(gpu::RenderTargetHandle target) { target_ = target; }
-    gpu::RenderTargetHandle target() const { return target_; }
-    bool wireframe() const { return wireframe_; }
-    const RenderStats &stats() const { return stats_; }
-    const std::string &error() const { return error_; }
+    void setTarget(gpu::RenderTargetHandle target) {
+        target_ = target;
+    }
+    gpu::RenderTargetHandle target() const {
+        return target_;
+    }
+    bool wireframe() const {
+        return wireframe_;
+    }
+    const RenderStats &stats() const {
+        return stats_;
+    }
+    const std::string &error() const {
+        return error_;
+    }
 
 private:
     struct DrawItem {
@@ -152,8 +181,7 @@ private:
         uint64_t key;
         gpu::PipelineHandle pipeline;
     };
-    void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state,
-              Vec3 eye);
+    void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state, Vec3 eye);
     void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye);
     void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
     gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
@@ -175,10 +203,13 @@ private:
     bool wireframe_ = false;
     gpu::ShaderHandle shader_;
     std::unordered_map<uint32_t, gpu::PipelineHandle> pipelines_;
-    gpu::BufferHandle frameUniforms_, instanceBuffer_;
+    gpu::BufferHandle frameUniforms_;
+    gpu::BufferHandle instanceBuffer_;
     size_t instanceCapacity_ = 0;
     std::vector<float> instanceData_;
-    std::vector<DrawItem> opaque_, transparent_, casters_;
+    std::vector<DrawItem> opaque_;
+    std::vector<DrawItem> transparent_;
+    std::vector<DrawItem> casters_;
     gpu::ShaderHandle shadowShader_;
     gpu::PipelineHandle shadowPipeline_;
     gpu::RenderTargetHandle shadowMap_;

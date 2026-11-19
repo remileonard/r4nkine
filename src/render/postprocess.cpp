@@ -45,7 +45,10 @@ void main() {
     vec3 rgbSE = texture(source, vUV + vec2(1.0, 1.0) * inv).rgb;
     vec4 center = texture(source, vUV);
     vec3 luma = vec3(0.299, 0.587, 0.114);
-    float lNW = dot(rgbNW, luma), lNE = dot(rgbNE, luma), lSW = dot(rgbSW, luma), lSE = dot(rgbSE, luma);
+    float lNW = dot(rgbNW, luma);
+    float lNE = dot(rgbNE, luma);
+    float lSW = dot(rgbSW, luma);
+    float lSE = dot(rgbSE, luma);
     float lM = dot(center.rgb, luma);
     float lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE)));
     float lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
@@ -113,8 +116,9 @@ void main() {
     // the palette
     if (misc.y > 0.5) {
         col = clamp(col, 0.0, 1.0);
-        if (misc.z > 0.5)
+        if (misc.z > 0.5) {
             col = clamp(col + (bayer4(ivec2(floor(suv * cells))) - 0.5) * 0.09, 0.0, 1.0);
+        }
         ivec3 q = ivec3(col * 31.0 + 0.5);
         col = texelFetch(lut, ivec2(q.r + 32 * q.b, q.g), 0).rgb;
     }
@@ -123,8 +127,9 @@ void main() {
         float line = fract(uv.y * misc.w / max(crt.y, 1.0));
         col *= 1.0 - crt.x * (0.5 - 0.5 * cos(6.2831853 * line));
     }
-    if (misc.x > 0.0)
+    if (misc.x > 0.0) {
         col *= 1.0 - misc.x * smoothstep(0.25, 0.75, length(uv - 0.5));
+    }
     fragColor = vec4(col, 1.0);
 }
 )";
@@ -142,17 +147,23 @@ struct Block {
 
 struct PostProcess::Impl {
     gpu::Device &device;
-    gpu::ShaderHandle fxaaShader, finalShader;
-    gpu::PipelineHandle fxaaPipeline, finalPipeline;
+    gpu::ShaderHandle fxaaShader;
+    gpu::ShaderHandle finalShader;
+    gpu::PipelineHandle fxaaPipeline;
+    gpu::PipelineHandle finalPipeline;
     gpu::BufferHandle ubo;
-    gpu::RenderTargetHandle scene, temp;
-    int width = 0, height = 0, samples = 1;
+    gpu::RenderTargetHandle scene;
+    gpu::RenderTargetHandle temp;
+    int width = 0;
+    int height = 0;
+    int samples = 1;
     gpu::TextureHandle lut;
     raster::Palette lutPalette;
     int lutSize = -1;
     bool begun = false;
 
-    explicit Impl(gpu::Device &d) : device(d) {}
+    explicit Impl(gpu::Device &d) : device(d) {
+    }
 
     gpu::PipelineHandle pipeline(gpu::ShaderHandle s) {
         gpu::PipelineDesc pd;
@@ -163,23 +174,29 @@ struct PostProcess::Impl {
     }
 
     void freeTargets() {
-        if (scene)
+        if (scene) {
             device.destroyRenderTarget(scene);
-        if (temp)
+        }
+        if (temp) {
             device.destroyRenderTarget(temp);
+        }
         scene = temp = {};
     }
 
     // the nearest color of the palette for each of 32 x 32 x 32 colors
     void buildLut(const raster::Palette &p, int count) {
         std::vector<uint32_t> px(1024 * 32);
-        for (int g = 0; g < 32; g++)
-            for (int b = 0; b < 32; b++)
+        for (int g = 0; g < 32; g++) {
+            for (int b = 0; b < 32; b++) {
                 for (int r = 0; r < 32; r++) {
-                    auto level = [](int v) { return (uint8_t)(v * 255 / 31); };
+                    auto level = [](int v) {
+                        return (uint8_t)(v * 255 / 31);
+                    };
                     int i = p.nearest(level(r), level(g), level(b), count);
                     px[(size_t)g * 1024 + b * 32 + r] = p.colors[i] | 0xff000000u;
                 }
+            }
+        }
         if (!lut) {
             gpu::TextureDesc td;
             td.width = 1024;
@@ -205,8 +222,9 @@ PostProcess::PostProcess(gpu::Device &device) : d(new Impl(device)) {
         sd.fragment = fragment;
         sd.uniformBlocks = {{"Post", 0}};
         sd.samplers = {{"source", 0}};
-        if (withLut)
+        if (withLut) {
             sd.samplers.push_back({"lut", 1});
+        }
         return device.createShader(sd);
     };
     d->fxaaShader = make(kFxaa, "r4::PostProcess fxaa", false);
@@ -220,8 +238,9 @@ PostProcess::PostProcess(gpu::Device &device) : d(new Impl(device)) {
 PostProcess::~PostProcess() {
     gpu::Device &dev = d->device;
     d->freeTargets();
-    if (d->lut)
+    if (d->lut) {
         dev.destroyTexture(d->lut);
+    }
     dev.destroyBuffer(d->ubo);
     dev.destroyPipeline(d->fxaaPipeline);
     dev.destroyPipeline(d->finalPipeline);
@@ -232,15 +251,14 @@ PostProcess::~PostProcess() {
 
 bool PostProcess::active() const {
     const PostSettings &s = settings;
-    return s.msaa > 1 || s.fxaa || s.pixelate > 1 || s.brightness != 0 || s.contrast != 1 || s.saturation != 1 ||
-           s.gamma != 1 || s.tint != Vec3(1) || s.fade > 0 || s.quantize || s.scanlines || s.curvature > 0 ||
-           s.aberration > 0 || s.vignette > 0;
+    return s.msaa > 1 || s.fxaa || s.pixelate > 1 || s.brightness != 0 || s.contrast != 1 || s.saturation != 1 || s.gamma != 1 || s.tint != Vec3(1) || s.fade > 0 || s.quantize || s.scanlines || s.curvature > 0 || s.aberration > 0 || s.vignette > 0;
 }
 
 gpu::RenderTargetHandle PostProcess::begin(int width, int height) {
     d->begun = false;
-    if (!active() || width <= 0 || height <= 0)
+    if (!active() || width <= 0 || height <= 0) {
         return {};
+    }
     int samples = std::max(1, std::min(settings.msaa, d->device.limits().maxSamples));
     if (width != d->width || height != d->height || samples != d->samples || !d->scene) {
         d->freeTargets();
@@ -265,8 +283,9 @@ gpu::RenderTargetHandle PostProcess::begin(int width, int height) {
 }
 
 void PostProcess::end(int x, int y, int width, int height, int windowWidth, int windowHeight) {
-    if (!d->begun)
+    if (!d->begun) {
         return;
+    }
     d->begun = false;
     (void)windowWidth;
     gpu::Device &dev = d->device;
@@ -312,15 +331,16 @@ void PostProcess::end(int x, int y, int width, int height, int windowWidth, int 
         dev.endPass();
         source = dev.renderTargetTexture(d->temp);
     }
-    if (s.quantize && (d->lutSize != s.paletteSize || std::memcmp(d->lutPalette.colors.data(),
-                                                                  s.palette.colors.data(), 256 * 4) != 0))
+    if (s.quantize && (d->lutSize != s.paletteSize || std::memcmp(d->lutPalette.colors.data(), s.palette.colors.data(), 256 * 4) != 0)) {
         d->buildLut(s.palette, s.paletteSize);
+    }
     dev.beginPass(gpu::RenderTargetHandle{}, x, windowHeight - y - height, width, height, none);
     dev.bindPipeline(d->finalPipeline);
     dev.bindUniformBuffer(0, d->ubo, 0, sizeof b);
     dev.bindTexture(0, source);
-    if (d->lut)
+    if (d->lut) {
         dev.bindTexture(1, d->lut);
+    }
     dev.draw(6);
     dev.endPass();
 }

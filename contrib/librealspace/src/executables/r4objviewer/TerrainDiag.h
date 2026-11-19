@@ -22,5 +22,4 @@ struct VGAPalette;
 // - types.txt, textures.txt : les comptes (sommets par type, triangles par image,
 //   et sur quels types de terrain chaque image est posée).
 // false (et pourquoi) en cas d'erreur.
-bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vector<PaletteRange> &ranges,
-                       const std::string &dir, std::string &error);
+bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, const std::string &dir, std::string &error);

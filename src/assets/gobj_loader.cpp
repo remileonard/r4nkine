@@ -30,24 +30,44 @@ namespace r4::assets {
 namespace {
 
 enum GeomType {
-    LPV = 5, LPU = 6, LPS = 7, CPV = 10, CPU = 11, CSECT = 12, LTV = 25,
-    CLS = 18, CDV = 22, CDU = 23, CDS = 24, IMV = 31, IMU = 32, IPV = 33, IPU = 34, TLPU = 100,
+    LPV = 5,
+    LPU = 6,
+    LPS = 7,
+    CPV = 10,
+    CPU = 11,
+    CSECT = 12,
+    LTV = 25,
+    CLS = 18,
+    CDV = 22,
+    CDU = 23,
+    CDS = 24,
+    IMV = 31,
+    IMU = 32,
+    IPV = 33,
+    IPU = 34,
+    TLPU = 100,
 };
 
 constexpr uint32_t kCull = 0x80000000u;
 constexpr uint32_t kEightView = 0x10000000u;
-constexpr uint32_t kBackface = 0x1, kTransparent = 0x2, kNoZWrite = 0x4;
+constexpr uint32_t kBackface = 0x1;
+constexpr uint32_t kTransparent = 0x2;
+constexpr uint32_t kNoZWrite = 0x4;
 
 // the materials flight defines for the files without M section (light.c)
 struct FlightMaterial {
     int id;
-    float amb[3], dif[3], spec[3], shininess, alpha;
+    float amb[3];
+    float dif[3];
+    float spec[3];
+    float shininess;
+    float alpha;
 };
 const FlightMaterial kFlightMaterials[] = {
-    {1, {0.3f, 0.6f, 0.3f}, {0.3f, 0.6f, 0.3f}, {0, 0, 0}, 0, 1},              // swamp
-    {2, {0.7f, 0.7f, 0.7f}, {0.7f, 0.7f, 0.7f}, {1, 1, 1}, 30, 1},             // plane
-    {3, {0.44f, 0.37f, 0.19f}, {0.44f, 0.37f, 0.19f}, {0, 0, 0}, 0, 1},        // dirt
-    {4, {0.88f, 0.88f, 0.88f}, {0.88f, 0.88f, 0.88f}, {0, 0, 0}, 0, 1},        // gray 0
+    {1, {0.3f, 0.6f, 0.3f}, {0.3f, 0.6f, 0.3f}, {0, 0, 0}, 0, 1},       // swamp
+    {2, {0.7f, 0.7f, 0.7f}, {0.7f, 0.7f, 0.7f}, {1, 1, 1}, 30, 1},      // plane
+    {3, {0.44f, 0.37f, 0.19f}, {0.44f, 0.37f, 0.19f}, {0, 0, 0}, 0, 1}, // dirt
+    {4, {0.88f, 0.88f, 0.88f}, {0.88f, 0.88f, 0.88f}, {0, 0, 0}, 0, 1}, // gray 0
     {5, {0.82f, 0.82f, 0.82f}, {0.82f, 0.82f, 0.82f}, {0, 0, 0}, 0, 1},
     {6, {0.75f, 0.75f, 0.75f}, {0.75f, 0.75f, 0.75f}, {0, 0, 0}, 0, 1},
     {7, {0.69f, 0.69f, 0.69f}, {0.69f, 0.69f, 0.69f}, {0, 0, 0}, 0, 1},
@@ -59,28 +79,28 @@ const FlightMaterial kFlightMaterials[] = {
     {13, {0.31f, 0.31f, 0.31f}, {0.31f, 0.31f, 0.31f}, {0, 0, 0}, 0, 1},
     {14, {0.25f, 0.25f, 0.25f}, {0.25f, 0.25f, 0.25f}, {0, 0, 0}, 0, 1},
     {15, {0.19f, 0.19f, 0.19f}, {0.19f, 0.19f, 0.19f}, {0, 0, 0}, 0, 1},
-    {16, {0.13f, 0.13f, 0.13f}, {0.13f, 0.13f, 0.13f}, {0, 0, 0}, 0, 1},       // gray 12
-    {17, {0.2f, 0.2f, 0.2f}, {0.2f, 0.2f, 0.2f}, {0.3f, 0.3f, 0.3f}, 5, 1},    // thruster
-    {18, {0.4f, 0.4f, 0.5f}, {0.5f, 0.5f, 0.6f}, {0.9f, 0.9f, 1}, 30, 0.3f},  // glass
-    {19, {0.3f, 0.3f, 0.3f}, {0.3f, 0.3f, 0.3f}, {0, 0, 0}, 0, 0.5f},          // propeller
-    {20, {0.5f, 0.25f, 0}, {0.5f, 0.25f, 0}, {0, 0, 0}, 0, 1},                 // building orange
-    {21, {0.4f, 0.5f, 0.35f}, {0.4f, 0.5f, 0.35f}, {0, 0, 0}, 0, 1},           // lime
-    {22, {0.42f, 0.3f, 0.25f}, {0.42f, 0.3f, 0.25f}, {0, 0, 0}, 0, 1},         // tan
-    {23, {0.6f, 0.6f, 0.6f}, {0.6f, 0.6f, 0.6f}, {0, 0, 0}, 0, 1},             // gray
-    {24, {0.6f, 0, 0.6f}, {0.6f, 0, 0.6f}, {0, 0, 0}, 0, 1},                   // purple
-    {25, {0.7f, 0, 0.7f}, {0.7f, 0, 0.7f}, {0, 0, 0}, 0, 1},                   // light purple
-    {26, {0.7f, 0.7f, 0.7f}, {0.7f, 0.7f, 0.7f}, {0, 0, 0}, 0, 0.8f},          // missile trail
-    {50, {0.1f, 0.1f, 0.1f}, {0.1f, 0.1f, 0.1f}, {0.3f, 0.3f, 0.3f}, 30, 1},   // F-14 black
-    {51, {0.9f, 0.7f, 0}, {0.9f, 0.7f, 0}, {0.8f, 0.8f, 0.8f}, 30, 1},         // F-14 yellow
-    {52, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, 30, 1},                              // white
+    {16, {0.13f, 0.13f, 0.13f}, {0.13f, 0.13f, 0.13f}, {0, 0, 0}, 0, 1},     // gray 12
+    {17, {0.2f, 0.2f, 0.2f}, {0.2f, 0.2f, 0.2f}, {0.3f, 0.3f, 0.3f}, 5, 1},  // thruster
+    {18, {0.4f, 0.4f, 0.5f}, {0.5f, 0.5f, 0.6f}, {0.9f, 0.9f, 1}, 30, 0.3f}, // glass
+    {19, {0.3f, 0.3f, 0.3f}, {0.3f, 0.3f, 0.3f}, {0, 0, 0}, 0, 0.5f},        // propeller
+    {20, {0.5f, 0.25f, 0}, {0.5f, 0.25f, 0}, {0, 0, 0}, 0, 1},               // building orange
+    {21, {0.4f, 0.5f, 0.35f}, {0.4f, 0.5f, 0.35f}, {0, 0, 0}, 0, 1},         // lime
+    {22, {0.42f, 0.3f, 0.25f}, {0.42f, 0.3f, 0.25f}, {0, 0, 0}, 0, 1},       // tan
+    {23, {0.6f, 0.6f, 0.6f}, {0.6f, 0.6f, 0.6f}, {0, 0, 0}, 0, 1},           // gray
+    {24, {0.6f, 0, 0.6f}, {0.6f, 0, 0.6f}, {0, 0, 0}, 0, 1},                 // purple
+    {25, {0.7f, 0, 0.7f}, {0.7f, 0, 0.7f}, {0, 0, 0}, 0, 1},                 // light purple
+    {26, {0.7f, 0.7f, 0.7f}, {0.7f, 0.7f, 0.7f}, {0, 0, 0}, 0, 0.8f},        // missile trail
+    {50, {0.1f, 0.1f, 0.1f}, {0.1f, 0.1f, 0.1f}, {0.3f, 0.3f, 0.3f}, 30, 1}, // F-14 black
+    {51, {0.9f, 0.7f, 0}, {0.9f, 0.7f, 0}, {0.8f, 0.8f, 0.8f}, 30, 1},       // F-14 yellow
+    {52, {1, 1, 1}, {1, 1, 1}, {1, 1, 1}, 30, 1},                            // white
 };
 
 // the 8 first colors of the IRIS color map; the others a grey ramp
 uint32_t indexColor(long c) {
-    static const uint32_t base[8] = {0xff000000, 0xff0000ff, 0xff00ff00, 0xff00ffff,
-                                     0xffff0000, 0xffff00ff, 0xffffff00, 0xffffffff};
-    if (c >= 0 && c < 8)
+    static const uint32_t base[8] = {0xff000000, 0xff0000ff, 0xff00ff00, 0xff00ffff, 0xffff0000, 0xffff00ff, 0xffffff00, 0xffffffff};
+    if (c >= 0 && c < 8) {
         return base[c];
+    }
     unsigned g = (unsigned)(c & 0xff);
     return 0xff000000u | g << 16 | g << 8 | g;
 }
@@ -102,44 +122,52 @@ struct Polygon {
 
 struct Geometry {
     int type = 0;
-    long material = 0, color = 0;
+    long material = 0;
+    long color = 0;
     Vec3 normal;
-    std::vector<Vec3> v, n;
+    std::vector<Vec3> v;
+    std::vector<Vec3> n;
     std::vector<Vec2> uv;
     std::vector<long> vcolor;
     std::vector<Polygon> polys;
 };
 
 struct Branch {
-    uint32_t state = 0, mode = 0;
+    uint32_t state = 0;
+    uint32_t mode = 0;
     std::vector<int> trans;
     std::vector<std::pair<bool, int>> children; // geometry?, index
 };
 
 struct Transform {
-    int type = 0, angle = 0;
+    int type = 0;
+    int angle = 0;
     Vec3 v;
 };
 
 class Reader {
 public:
-    explicit Reader(FILE *f) : f_(f) {}
+    explicit Reader(FILE *f) : f_(f) {
+    }
     // the next line that is not empty nor a comment
     bool next() {
         char buf[1024];
         while (std::fgets(buf, sizeof buf, f_)) {
             line_++;
-            if (buf[0] == '\0' || buf[0] == '#' || buf[0] == '\n' || buf[0] == '\r')
+            if (buf[0] == '\0' || buf[0] == '#' || buf[0] == '\n' || buf[0] == '\r') {
                 continue;
+            }
             cur_ = buf;
             // the lines ending with a backslash go on
             while (true) {
                 size_t e = cur_.find_last_not_of(" \t\r\n");
-                if (e == std::string::npos || cur_[e] != '\\')
+                if (e == std::string::npos || cur_[e] != '\\') {
                     break;
+                }
                 cur_.erase(e);
-                if (!std::fgets(buf, sizeof buf, f_))
+                if (!std::fgets(buf, sizeof buf, f_)) {
                     break;
+                }
                 line_++;
                 cur_ += buf;
             }
@@ -147,8 +175,12 @@ public:
         }
         return false;
     }
-    const char *str() const { return cur_.c_str(); }
-    int line() const { return line_; }
+    const char *str() const {
+        return cur_.c_str();
+    }
+    int line() const {
+        return line_;
+    }
 
     // the numbers of the line until a comment: ints, hex with %i, or floats;
     // B/G letters marked in kinds
@@ -164,17 +196,19 @@ public:
             if (*p == '-' || *p == '+' || *p == '.' || (*p >= '0' && *p <= '9')) {
                 char *end;
                 double v;
-                if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X'))
+                if (p[0] == '0' && (p[1] == 'x' || p[1] == 'X')) {
                     v = (double)std::strtoul(p, &end, 16);
-                else
+                } else {
                     v = std::strtod(p, &end);
+                }
                 if (end == p) {
                     p++;
                     continue;
                 }
                 out.push_back(v);
-                if (kinds)
+                if (kinds) {
                     kinds->push_back(kind);
+                }
                 kind = 0;
                 p = end;
                 continue;
@@ -191,12 +225,14 @@ private:
 };
 
 bool readVertices(Reader &r, Geometry &g, int perVertex) {
-    if (!r.next())
+    if (!r.next()) {
         return false;
+    }
     int count = std::atoi(r.str());
     for (int i = 0; i < count; i++) {
-        if (!r.next())
+        if (!r.next()) {
             return false;
+        }
         std::vector<double> n = r.numbers();
         n.resize(std::max<size_t>(n.size(), 6), 0);
         switch (perVertex) {
@@ -227,12 +263,14 @@ bool readVertices(Reader &r, Geometry &g, int perVertex) {
 // the polygons: each line has `prefix` numbers before the indices
 // (0: none, 1: a color, 2: type and color, 3: a normal, -1: a type)
 bool readPolygons(Reader &r, Geometry &g, int prefix) {
-    if (!r.next())
+    if (!r.next()) {
         return false;
+    }
     int count = std::atoi(r.str());
     for (int i = 0; i < count; i++) {
-        if (!r.next())
+        if (!r.next()) {
             return false;
+        }
         std::vector<double> n = r.numbers();
         Polygon p;
         size_t k = 0;
@@ -255,8 +293,9 @@ bool readPolygons(Reader &r, Geometry &g, int prefix) {
         }
         for (; k < n.size(); k++) {
             int idx = (int)n[k];
-            if (idx >= 0 && idx < (int)g.v.size())
+            if (idx >= 0 && idx < (int)g.v.size()) {
                 p.v.push_back(idx);
+            }
         }
         g.polys.push_back(std::move(p));
     }
@@ -265,8 +304,9 @@ bool readPolygons(Reader &r, Geometry &g, int prefix) {
 
 bool readGeometry(Reader &r, Geometry &g) {
     auto header = [&](long &value) {
-        if (!r.next())
+        if (!r.next()) {
             return false;
+        }
         value = (long)std::strtoul(r.str(), nullptr, 0);
         return true;
     };
@@ -279,8 +319,9 @@ bool readGeometry(Reader &r, Geometry &g) {
     case TLPU: // textured, a normal per polygon
         return header(g.material) && readVertices(r, g, 2) && readPolygons(r, g, 3);
     case LPS: { // one normal for all
-        if (!header(g.material) || !r.next())
+        if (!header(g.material) || !r.next()) {
             return false;
+        }
         std::vector<double> n = r.numbers();
         n.resize(3, 0);
         g.normal = {(float)n[0], (float)n[1], (float)n[2]};
@@ -309,48 +350,55 @@ bool readGeometry(Reader &r, Geometry &g) {
 }
 
 struct Loader {
-    explicit Loader(Model &m) : model(m) {}
+    explicit Loader(Model &m) : model(m) {
+    }
     Model &model;
     std::vector<Branch> branches;
     std::vector<Transform> transforms;
     std::vector<Geometry> geoms;
     std::vector<int> objectMaterials; // the M section: indices in model.materials
     bool hasM = false;
-    std::map<std::pair<long, uint32_t>, int> litMaterials;   // (material, mode)
-    std::map<uint32_t, int> colorMaterials;                   // mode
+    std::map<std::pair<long, uint32_t>, int> litMaterials;           // (material, mode)
+    std::map<uint32_t, int> colorMaterials;                          // mode
     std::map<std::pair<int, uint32_t>, std::vector<int>> geomMeshes; // (geometry, mode)
 
     void applyMode(Material &m, uint32_t mode) {
         m.doubleSided = !(mode & kBackface);
         if (mode & kTransparent) {
             m.alpha = AlphaMode::Blend;
-            if (m.diffuse.w >= 1)
+            if (m.diffuse.w >= 1) {
                 m.diffuse.w = 0.5f;
+            }
         }
-        if (mode & kNoZWrite)
+        if (mode & kNoZWrite) {
             m.depthWrite = false;
+        }
     }
 
     int litMaterial(long id, uint32_t mode) {
         auto key = std::make_pair(id, mode);
         auto it = litMaterials.find(key);
-        if (it != litMaterials.end())
+        if (it != litMaterials.end()) {
             return it->second;
+        }
         Material m;
         if (hasM) {
-            if (id >= 0 && id < (long)objectMaterials.size())
+            if (id >= 0 && id < (long)objectMaterials.size()) {
                 m = model.materials[objectMaterials[id]];
+            }
         } else {
-            for (const FlightMaterial &f : kFlightMaterials)
+            for (const FlightMaterial &f : kFlightMaterials) {
                 if (f.id == id) {
                     m.name = "flight " + std::to_string(id);
                     m.ambient = {f.amb[0], f.amb[1], f.amb[2]};
                     m.diffuse = {f.dif[0], f.dif[1], f.dif[2], f.alpha};
                     m.specular = {f.spec[0], f.spec[1], f.spec[2]};
                     m.shininess = f.shininess;
-                    if (f.alpha < 1)
+                    if (f.alpha < 1) {
                         m.alpha = AlphaMode::Blend;
+                    }
                 }
+            }
         }
         // the ambient of IRIS materials is relative to the ambient light
         applyMode(m, mode);
@@ -362,8 +410,9 @@ struct Loader {
 
     int colorMaterial(uint32_t mode) {
         auto it = colorMaterials.find(mode);
-        if (it != colorMaterials.end())
+        if (it != colorMaterials.end()) {
             return it->second;
+        }
         Material m;
         m.name = "colors";
         m.shading = Shading::Unlit;
@@ -380,64 +429,76 @@ struct Loader {
     std::vector<int> meshesOf(int gi, uint32_t mode) {
         auto key = std::make_pair(gi, mode);
         auto it = geomMeshes.find(key);
-        if (it != geomMeshes.end())
+        if (it != geomMeshes.end()) {
             return it->second;
+        }
         const Geometry &g = geoms[gi];
         bool lit = g.type == LPV || g.type == LPU || g.type == LPS || g.type == LTV || g.type == TLPU;
         bool indexed = g.type >= IMV && g.type <= IPU;
-        Mesh tris, lines, points;
+        Mesh tris;
+        Mesh lines;
+        Mesh points;
         tris.primitive = Primitive::Triangles;
         lines.primitive = Primitive::Lines;
         points.primitive = Primitive::Points;
         auto colorOf = [&](const Polygon &p, int corner) -> uint32_t {
             long c;
-            if (!g.vcolor.empty())
+            if (!g.vcolor.empty()) {
                 c = g.vcolor[p.v[corner]];
-            else if (p.hasColor)
+            } else if (p.hasColor) {
                 c = p.color;
-            else
+            } else {
                 c = g.color;
+            }
             return indexed ? indexColor(c) : packColor(c);
         };
         auto vertexOf = [&](const Polygon &p, int corner, Vec3 flatNormal) {
             Vertex v;
             int i = p.v[corner];
             v.position = g.v[i];
-            if (!g.n.empty())
+            if (!g.n.empty()) {
                 v.normal = g.n[i];
-            else
+            } else {
                 v.normal = flatNormal;
-            if (!g.uv.empty())
+            }
+            if (!g.uv.empty()) {
                 v.uv = g.uv[i];
-            if (!lit)
+            }
+            if (!lit) {
                 v.color = colorOf(p, corner);
+            }
             return v;
         };
         for (const Polygon &p : g.polys) {
             int n = (int)p.v.size();
-            if (!n)
+            if (!n) {
                 continue;
+            }
             // what the polygon draws
             int kind; // 0 points, 1 line, 2 polygon, 3 closed line, 5 strip
-            if (g.type == CLS)
+            if (g.type == CLS) {
                 kind = 1;
-            else if (g.type == CDS || g.type == CDV || g.type == CDU)
+            } else if (g.type == CDS || g.type == CDV || g.type == CDU) {
                 kind = 0;
-            else if (g.type == IMU || g.type == IMV)
+            } else if (g.type == IMU || g.type == IMV) {
                 kind = p.type == 4 ? 2 : p.type;
-            else if (g.type == LTV)
+            } else if (g.type == LTV) {
                 kind = 5;
-            else
+            } else {
                 kind = 2;
+            }
             Vec3 normal = p.hasNormal ? p.normal : g.normal;
-            if (lit && !p.hasNormal && g.type != LPS && g.n.empty() && n >= 3)
+            if (lit && !p.hasNormal && g.type != LPS && g.n.empty() && n >= 3) {
                 normal = normalize(cross(g.v[p.v[1]] - g.v[p.v[0]], g.v[p.v[2]] - g.v[p.v[0]]));
+            }
             if (kind == 2 || kind == 5) {
-                if (n < 3)
+                if (n < 3) {
                     continue;
+                }
                 uint32_t base = (uint32_t)tris.vertices.size();
-                for (int c = 0; c < n; c++)
+                for (int c = 0; c < n; c++) {
                     tris.vertices.push_back(vertexOf(p, c, normal));
+                }
                 for (int c = 1; c + 1 < n; c++) {
                     if (kind == 2) { // a fan
                         tris.indices.insert(tris.indices.end(), {base, base + c, base + c + 1});
@@ -449,12 +510,15 @@ struct Loader {
                 }
             } else if (kind == 1 || kind == 3) {
                 uint32_t base = (uint32_t)lines.vertices.size();
-                for (int c = 0; c < n; c++)
+                for (int c = 0; c < n; c++) {
                     lines.vertices.push_back(vertexOf(p, c, normal));
-                for (int c = 0; c + 1 < n; c++)
+                }
+                for (int c = 0; c + 1 < n; c++) {
                     lines.indices.insert(lines.indices.end(), {base + c, base + c + 1});
-                if (kind == 3 && n > 2)
+                }
+                if (kind == 3 && n > 2) {
                     lines.indices.insert(lines.indices.end(), {base + n - 1, base});
+                }
             } else {
                 for (int c = 0; c < n; c++) {
                     points.indices.push_back((uint32_t)points.vertices.size());
@@ -465,12 +529,15 @@ struct Loader {
         std::vector<int> out;
         int material = lit ? litMaterial(g.material, mode) : colorMaterial(mode);
         for (Mesh *m : {&tris, &lines, &points}) {
-            if (m->indices.empty())
+            if (m->indices.empty()) {
                 continue;
+            }
             m->material = m == &tris ? material : (lit ? colorMaterial(mode) : material);
-            if (lit && m != &tris)
-                for (Vertex &v : m->vertices)
+            if (lit && m != &tris) {
+                for (Vertex &v : m->vertices) {
                     v.color = 0xffffffffu;
+                }
+            }
             m->name = "G" + std::to_string(gi);
             m->computeBounds();
             out.push_back((int)model.meshes.size());
@@ -486,15 +553,17 @@ struct Loader {
 std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return nullptr;
     }
     int c = std::fgetc(f);
     if (c == 0) {
         std::fclose(f);
-        if (error)
+        if (error) {
             *error = path + ": binary gobj files (memory dumps of IRIX structures) are not supported";
+        }
         return nullptr;
     }
     std::rewind(f);
@@ -520,16 +589,18 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
                 break;
             }
             std::vector<double> t = r.numbers();
-            for (size_t k = 1; k < t.size(); k++)
+            for (size_t k = 1; k < t.size(); k++) {
                 b.trans.push_back((int)t[k]);
+            }
             if (!r.next()) {
                 err = "truncated branch";
                 break;
             }
             std::vector<char> kinds;
             std::vector<double> s = r.numbers(&kinds);
-            for (size_t k = 1; k < s.size(); k++)
+            for (size_t k = 1; k < s.size(); k++) {
                 b.children.push_back({kinds[k] == 'G', (int)s[k]});
+            }
             L.branches.push_back(b);
         }
     };
@@ -543,10 +614,11 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
             n.resize(4, 0);
             Transform t;
             t.type = (int)n[0];
-            if (t.type <= 2)
+            if (t.type <= 2) {
                 t.angle = (int)n[1];
-            else
+            } else {
                 t.v = {(float)n[1], (float)n[2], (float)n[3]};
+            }
             L.transforms.push_back(t);
         }
     };
@@ -581,10 +653,12 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
             m.name = "M" + std::to_string(i);
             m.ambient = {(float)v[0][0], (float)v[0][1], (float)v[0][2]};
             m.diffuse = {(float)v[1][0], (float)v[1][1], (float)v[1][2], (float)v[1][3]};
-            if (m.diffuse.w <= 0)
+            if (m.diffuse.w <= 0) {
                 m.diffuse.w = 1;
-            if (m.diffuse.w < 1)
+            }
+            if (m.diffuse.w < 1) {
                 m.alpha = AlphaMode::Blend;
+            }
             m.specular = {(float)v[2][0], (float)v[2][1], (float)v[2][2]};
             m.shininess = (float)v[3][0];
             m.emissive = {(float)v[4][0], (float)v[4][1], (float)v[4][2]};
@@ -595,20 +669,37 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
     while (err.empty() && r.next()) {
         const char *s = r.str();
         switch (s[0]) {
-        case 'B': readBranches(std::atoi(s + 1)); break;
-        case 'T': readTransforms(std::atoi(s + 1)); break;
-        case 'G': readGeometries(std::atoi(s + 1)); break;
-        case 'M': readMaterials(std::atoi(s + 1)); break;
-        case 'R': break;
+        case 'B':
+            readBranches(std::atoi(s + 1));
+            break;
+        case 'T':
+            readTransforms(std::atoi(s + 1));
+            break;
+        case 'G':
+            readGeometries(std::atoi(s + 1));
+            break;
+        case 'M':
+            readMaterials(std::atoi(s + 1));
+            break;
+        case 'R':
+            break;
         default:
             if (s[0] >= '0' && s[0] <= '9') {
                 // the old files: the counts in the order B, T, G
                 int count = std::atoi(s);
                 switch (oldOrder++) {
-                case 0: readBranches(count); break;
-                case 1: readTransforms(count); break;
-                case 2: readGeometries(count); break;
-                default: err = "syntax error"; break;
+                case 0:
+                    readBranches(count);
+                    break;
+                case 1:
+                    readTransforms(count);
+                    break;
+                case 2:
+                    readGeometries(count);
+                    break;
+                default:
+                    err = "syntax error";
+                    break;
                 }
             } else {
                 err = "unknown section";
@@ -617,9 +708,9 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
     }
     std::fclose(f);
     if (!err.empty() || L.branches.empty()) {
-        if (error)
-            *error = path + ": " + (err.empty() ? std::string("no branch node") : err) + " (line " +
-                     std::to_string(r.line()) + ")";
+        if (error) {
+            *error = path + ": " + (err.empty() ? std::string("no branch node") : err) + " (line " + std::to_string(r.line()) + ")";
+        }
         return nullptr;
     }
 
@@ -632,15 +723,26 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
         const Branch &b = L.branches[i];
         Mat4 m;
         for (int ti : b.trans) {
-            if (ti < 0 || ti >= (int)L.transforms.size())
+            if (ti < 0 || ti >= (int)L.transforms.size()) {
                 continue;
+            }
             const Transform &t = L.transforms[ti];
             switch (t.type) {
-            case 0: m = m * rotate(radians(t.angle / 10.0f), {1, 0, 0}); break;
-            case 1: m = m * rotate(radians(t.angle / 10.0f), {0, 1, 0}); break;
-            case 2: m = m * rotate(radians(t.angle / 10.0f), {0, 0, 1}); break;
-            case 3: m = m * translate(t.v); break;
-            case 4: m = m * scale(t.v); break;
+            case 0:
+                m = m * rotate(radians(t.angle / 10.0f), {1, 0, 0});
+                break;
+            case 1:
+                m = m * rotate(radians(t.angle / 10.0f), {0, 1, 0});
+                break;
+            case 2:
+                m = m * rotate(radians(t.angle / 10.0f), {0, 0, 1});
+                break;
+            case 3:
+                m = m * translate(t.v);
+                break;
+            case 4:
+                m = m * scale(t.v);
+                break;
             }
         }
         // filled after: model->nodes may grow (the views of an eight view node)
@@ -652,17 +754,20 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
         const Branch &b = L.branches[i];
         size_t first = (b.state & kCull) ? 1 : 0; // a culling volume, not drawn
         bool eight = (b.mode & kEightView) != 0;
-        if (eight)
+        if (eight) {
             model->nodes[1 + i].kind = NodeKind::Switch, model->nodes[1 + i].switchValue = 0;
+        }
         for (size_t k = first; k < b.children.size(); k++) {
             auto [isGeom, index] = b.children[k];
             if (!isGeom) {
-                if (index >= 0 && index < (int)L.branches.size())
+                if (index >= 0 && index < (int)L.branches.size()) {
                     model->nodes[1 + i].children.push_back(1 + index);
+                }
                 continue;
             }
-            if (index < 0 || index >= (int)L.geoms.size())
+            if (index < 0 || index >= (int)L.geoms.size()) {
                 continue;
+            }
             std::vector<int> ms = L.meshesOf(index, b.mode & 0xff);
             if (eight) {
                 Node view;

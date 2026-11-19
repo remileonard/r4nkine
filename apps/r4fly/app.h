@@ -27,14 +27,18 @@ using namespace r4;
 // the right button moves the center in the plane of the view
 struct Trackball {
     Vec3 center;
-    float radius = 1, distance = 3;
+    float radius = 1;
+    float distance = 3;
     // the sliders: heading (yaw about Z), pitch (the eye above), roll (about
     // the line of sight), read from the orbit and written back when moved
-    float heading = 30, pitch = 25, roll = 0;
+    float heading = 30;
+    float pitch = 25;
+    float roll = 0;
     Vec3 pan;
     float fov = 45;
     bool autoClip = true;
-    float znear = 0.1f, zfar = 1000;
+    float znear = 0.1f;
+    float zfar = 1000;
     render::Orbit orbit; // the orientation
     // the mouse: in the axes of the screen (trackball, as perfly), or about
     // the vertical of the world (turntable: never a roll)
@@ -51,8 +55,12 @@ struct Trackball {
         orbit.setAngles(h, p, r);
         readAngles();
     }
-    void readAngles() { orbit.angles(heading, pitch, roll); }
-    void writeAngles() { orbit.setAngles(heading, pitch, roll); }
+    void readAngles() {
+        orbit.angles(heading, pitch, roll);
+    }
+    void writeAngles() {
+        orbit.setAngles(heading, pitch, roll);
+    }
     // the left button: dx turns about the up of the screen, dy about its right
     void turn(float dx, float dy) {
         if (turntable) {
@@ -65,8 +73,12 @@ struct Trackball {
             readAngles();
         }
     }
-    Vec3 target() const { return center + pan; }
-    Vec3 eye() const { return target() - orbit.forward() * distance; }
+    Vec3 target() const {
+        return center + pan;
+    }
+    Vec3 eye() const {
+        return target() - orbit.forward() * distance;
+    }
     void apply(render::Camera &cam, float aspect) {
         orbit.target = target();
         orbit.distance = distance;
@@ -87,7 +99,9 @@ struct LoadedFile {
     std::string path;
     std::shared_ptr<assets::Model> model;
     scene::NodePtr node;
-    size_t triangles = 0, lines = 0, points = 0;
+    size_t triangles = 0;
+    size_t lines = 0;
+    size_t points = 0;
 };
 
 struct App {
@@ -97,7 +111,9 @@ struct App {
     std::unique_ptr<render::PostProcess> post; // effects on the frame
     render::Camera camera;
     Trackball ball;
-    float viewH = 30, viewP = 25, viewZ = 1;
+    float viewH = 30;
+    float viewP = 25;
+    float viewZ = 1;
 
     std::shared_ptr<scene::Group> top;    // the models and the overlay
     std::shared_ptr<scene::Group> models; // what is shown
@@ -106,21 +122,32 @@ struct App {
 
     // the light: over the shoulder of the viewer, or fixed in the world
     bool headlight = true;
-    float lightAzimuth = 45, lightElevation = 50;
+    float lightAzimuth = 45;
+    float lightElevation = 50;
 
     // the GUI
     std::unique_ptr<ui::Context> ui;
-    ui::Input input;          // the mouse of the frame
-    bool sceneDrag = false;   // a drag that started in the view
+    ui::Input input;        // the mouse of the frame
+    bool sceneDrag = false; // a drag that started in the view
     bool quit = false;
-    bool showGui = true, showGraph = true, showPerf = true;
+    bool showGui = true;
+    bool showGraph = true;
+    bool showPerf = true;
     // the tree drawn over the view, as the "Show Tree" of perfly
-    bool showTree = false, openTree = false;
-    float treePanX = 0, treePanY = 0, treeScale = -1; // < 0: fitted to the view
-    float treeDepth = 6;                              // the levels drawn
+    bool showTree = false;
+    bool openTree = false;
+    float treePanX = 0; // < 0: fitted to the view
+    float treePanY = 0;
+    float treeScale = -1;
+    float treeDepth = 6; // the levels drawn
     // the open sections of the panel, the open nodes of the tree
-    bool openCamera = true, openLight = false, openEnv = false, openRender = false, openCull = false,
-         openOptim = false, openPost = false;
+    bool openCamera = true;
+    bool openLight = false;
+    bool openEnv = false;
+    bool openRender = false;
+    bool openCull = false;
+    bool openOptim = false;
+    bool openPost = false;
     std::map<scene::Node *, bool> openNodes;
     bool vsync = true;
     bool printStats = false;
@@ -128,10 +155,12 @@ struct App {
     Mat4 selectedWorld;
     bool showSelectedBounds = true;
     std::map<scene::Node *, uint32_t> hiddenMasks; // the nodes hidden from the graph window
-    std::shared_ptr<scene::Geode> boundsMarker;     // the bounding sphere of the selection
+    std::shared_ptr<scene::Geode> boundsMarker;    // the bounding sphere of the selection
 
     // the measures: the last frames
-    std::deque<float> frameMs, cullMs, drawMs;
+    std::deque<float> frameMs;
+    std::deque<float> cullMs;
+    std::deque<float> drawMs;
     double lastFrameTime = 0;
     std::string snapRequest; // a capture without the GUI at the next frame
 

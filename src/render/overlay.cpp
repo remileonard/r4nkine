@@ -43,8 +43,9 @@ vec4 lookup(ivec2 p) {
     p = clamp(p, ivec2(0), ivec2(size.xy) - 1);
     int index = int(texelFetch(image, p, 0).r * 255.0 + 0.5);
     vec4 c = texelFetch(palette, ivec2(index, 0), 0);
-    if (index == int(params.y))
+    if (index == int(params.y)) {
         c.a = 0.0;
+    }
     return c;
 }
 void main() {
@@ -82,8 +83,10 @@ struct Overlay::Impl {
     gpu::ShaderHandle shader;
     gpu::PipelineHandle pipeline;
     gpu::BufferHandle ubo;
-    gpu::TextureHandle image, palette;
-    int width = 0, height = 0;
+    gpu::TextureHandle image;
+    gpu::TextureHandle palette;
+    int width = 0;
+    int height = 0;
     raster::Format format = raster::Format::Indexed8;
     bool smoothTexture = false;
     int transparent = -1;
@@ -93,18 +96,19 @@ struct Overlay::Impl {
     gpu::RenderTargetHandle target;
     bool targetDirty = true;
 
-    explicit Impl(gpu::Device &d) : device(d) {}
+    explicit Impl(gpu::Device &d) : device(d) {
+    }
 
     void makeImage(int w, int h, raster::Format f, bool smoothFilter) {
-        if (image)
+        if (image) {
             device.destroyTexture(image);
+        }
         gpu::TextureDesc td;
         td.width = w;
         td.height = h;
         td.format = f == raster::Format::Indexed8 ? gpu::TextureFormat::R8 : gpu::TextureFormat::RGBA8;
         // indices are never filtered by the sampler; true colors when smooth
-        td.minFilter = td.magFilter =
-            f == raster::Format::RGBA8 && smoothFilter ? gpu::Filter::Linear : gpu::Filter::Nearest;
+        td.minFilter = td.magFilter = f == raster::Format::RGBA8 && smoothFilter ? gpu::Filter::Linear : gpu::Filter::Nearest;
         td.mipmaps = false;
         td.wrapS = td.wrapT = gpu::Wrap::Clamp;
         image = device.createTexture(td, nullptr);
@@ -119,10 +123,7 @@ struct Overlay::Impl {
     }
 
     void drawQuad(float x0, float y0, float x1, float y1, float opacity) {
-        Block b{{x0, y0, x1, y1},
-                {format == raster::Format::Indexed8 ? 1.0f : 0.0f, (float)transparent, opacity,
-                 smoothTexture ? 1.0f : 0.0f},
-                {(float)width, (float)height, 0, 0}};
+        Block b{{x0, y0, x1, y1}, {format == raster::Format::Indexed8 ? 1.0f : 0.0f, (float)transparent, opacity, smoothTexture ? 1.0f : 0.0f}, {(float)width, (float)height, 0, 0}};
         device.updateBuffer(ubo, 0, &b, sizeof b);
         device.bindPipeline(pipeline);
         device.bindUniformBuffer(0, ubo, 0, sizeof b);
@@ -161,10 +162,12 @@ Overlay::Overlay(gpu::Device &device) : d(new Impl(device)) {
 
 Overlay::~Overlay() {
     gpu::Device &dev = d->device;
-    if (d->target)
+    if (d->target) {
         dev.destroyRenderTarget(d->target);
-    if (d->image)
+    }
+    if (d->image) {
         dev.destroyTexture(d->image);
+    }
     dev.destroyTexture(d->palette);
     dev.destroyBuffer(d->ubo);
     dev.destroyPipeline(d->pipeline);
@@ -178,19 +181,21 @@ void Overlay::setPalette(const raster::Palette &palette) {
 }
 
 void Overlay::update(const raster::Surface &s, const raster::Palette *palette) {
-    if (palette)
+    if (palette) {
         setPalette(*palette);
-    if (s.width() <= 0 || s.height() <= 0)
+    }
+    if (s.width() <= 0 || s.height() <= 0) {
         return;
-    if (!d->image || s.width() != d->width || s.height() != d->height || s.format() != d->format ||
-        (s.format() == raster::Format::RGBA8 && smooth != d->smoothTexture)) {
+    }
+    if (!d->image || s.width() != d->width || s.height() != d->height || s.format() != d->format || (s.format() == raster::Format::RGBA8 && smooth != d->smoothTexture)) {
         d->makeImage(s.width(), s.height(), s.format(), smooth);
         d->version = ~0ull;
     }
     d->smoothTexture = smooth;
     d->transparent = s.format() == raster::Format::Indexed8 ? s.transparentIndex : -1;
-    if (&s == d->last && s.version() == d->version)
+    if (&s == d->last && s.version() == d->version) {
         return;
+    }
     // the rows as they are, the first one at v = 0: the shader reads them so
     d->device.updateTexture(d->image, 0, 0, s.width(), s.height(), s.pixels());
     d->version = s.version();
@@ -199,10 +204,13 @@ void Overlay::update(const raster::Surface &s, const raster::Palette *palette) {
 }
 
 void Overlay::draw(int x, int y, int w, int h, int targetWidth, int targetHeight) {
-    if (!d->image || w <= 0 || h <= 0 || targetWidth <= 0 || targetHeight <= 0)
+    if (!d->image || w <= 0 || h <= 0 || targetWidth <= 0 || targetHeight <= 0) {
         return;
-    float x0 = 2.0f * x / targetWidth - 1, x1 = 2.0f * (x + w) / targetWidth - 1;
-    float y0 = 1 - 2.0f * y / targetHeight, y1 = 1 - 2.0f * (y + h) / targetHeight;
+    }
+    float x0 = 2.0f * x / targetWidth - 1;
+    float x1 = 2.0f * (x + w) / targetWidth - 1;
+    float y0 = 1 - 2.0f * y / targetHeight;
+    float y1 = 1 - 2.0f * (y + h) / targetHeight;
     d->drawQuad(x0, y0, x1, y1, opacity);
 }
 
@@ -225,8 +233,9 @@ void Overlay::fit(float aspect, int areaWidth, int areaHeight, int &x, int &y, i
 }
 
 gpu::TextureHandle Overlay::texture() {
-    if (!d->image)
+    if (!d->image) {
         return {};
+    }
     if (!d->target) {
         gpu::RenderTargetDesc rd;
         rd.width = d->width;

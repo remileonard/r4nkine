@@ -25,7 +25,7 @@ public:
     void update(const raster::Surface &surface, const raster::Palette *palette = nullptr);
     void setPalette(const raster::Palette &palette);
 
-    bool smooth = false;  // filtered when scaled (blends the colors, not the indices), else sharp pixels
+    bool smooth = false; // filtered when scaled (blends the colors, not the indices), else sharp pixels
     float opacity = 1;
 
     // drawn in the pass in progress, in the rectangle x, y, w, h (pixels from

@@ -23,19 +23,45 @@ namespace r4::assets {
 namespace {
 
 enum {
-    OP_HEADER = 1, OP_GROUP = 2, OP_OLD_LOD = 3, OP_OBJECT = 4, OP_FACE = 5, OP_OLD_VERTEX = 7,
-    OP_OLD_VERTEX_COLOR = 8, OP_OLD_VERTEX_NORMAL = 9, OP_PUSH = 10, OP_POP = 11, OP_PUSH_SUBFACE = 19,
-    OP_POP_SUBFACE = 20, OP_COLOR_PALETTE = 32, OP_MATRIX = 49, OP_EXTREF = 63, OP_TEXTURE = 64,
-    OP_MATERIAL_TABLE = 66, OP_VERTEX_PALETTE = 67, OP_VERTEX_C = 68, OP_VERTEX_CN = 69, OP_VERTEX_CNT = 70,
-    OP_VERTEX_CT = 71, OP_VERTEX_LIST = 72, OP_LOD = 73, OP_MATERIAL = 113
+    OP_HEADER = 1,
+    OP_GROUP = 2,
+    OP_OLD_LOD = 3,
+    OP_OBJECT = 4,
+    OP_FACE = 5,
+    OP_OLD_VERTEX = 7,
+    OP_OLD_VERTEX_COLOR = 8,
+    OP_OLD_VERTEX_NORMAL = 9,
+    OP_PUSH = 10,
+    OP_POP = 11,
+    OP_PUSH_SUBFACE = 19,
+    OP_POP_SUBFACE = 20,
+    OP_COLOR_PALETTE = 32,
+    OP_MATRIX = 49,
+    OP_EXTREF = 63,
+    OP_TEXTURE = 64,
+    OP_MATERIAL_TABLE = 66,
+    OP_VERTEX_PALETTE = 67,
+    OP_VERTEX_C = 68,
+    OP_VERTEX_CN = 69,
+    OP_VERTEX_CNT = 70,
+    OP_VERTEX_CT = 71,
+    OP_VERTEX_LIST = 72,
+    OP_LOD = 73,
+    OP_MATERIAL = 113
 };
 
-unsigned be16(const unsigned char *p) { return (unsigned)p[0] << 8 | p[1]; }
-int sbe16(const unsigned char *p) { return (short)be16(p); }
+unsigned be16(const unsigned char *p) {
+    return (unsigned)p[0] << 8 | p[1];
+}
+int sbe16(const unsigned char *p) {
+    return (short)be16(p);
+}
 uint32_t be32(const unsigned char *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
-int32_t sbe32(const unsigned char *p) { return (int32_t)be32(p); }
+int32_t sbe32(const unsigned char *p) {
+    return (int32_t)be32(p);
+}
 float bef(const unsigned char *p) {
     uint32_t u = be32(p);
     float f;
@@ -44,8 +70,9 @@ float bef(const unsigned char *p) {
 }
 double bed(const unsigned char *p) {
     uint64_t u = 0;
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; i++) {
         u = u << 8 | p[i];
+    }
     double d;
     std::memcpy(&d, &u, 8);
     return d;
@@ -56,23 +83,39 @@ struct FVertex {
     Vec3 nrm;
     Vec2 uv;
     Vec4 color{1, 1, 1, 1};
-    bool hasNrm = false, hasUV = false, hasColor = false;
+    bool hasNrm = false;
+    bool hasUV = false;
+    bool hasColor = false;
 };
 
 struct FMaterial {
-    Vec3 amb, dif, spec, emis;
-    float shininess = 0, alpha = 1;
+    Vec3 amb;
+    Vec3 dif;
+    Vec3 spec;
+    Vec3 emis;
+    float shininess = 0;
+    float alpha = 1;
 };
 
 struct Face {
     Vec4 color{1, 1, 1, 1};
-    int texture = -1, material = -1, drawtype = 0, templ = 0, lightmode = 0, subface = 0;
+    int texture = -1;
+    int material = -1;
+    int drawtype = 0;
+    int templ = 0;
+    int lightmode = 0;
+    int subface = 0;
     std::vector<FVertex> v;
 };
 
 struct Batch {
-    int texture, material, drawtype;
-    bool transp, decal, alphatex, vcolors;
+    int texture;
+    int material;
+    int drawtype;
+    bool transp;
+    bool decal;
+    bool alphatex;
+    bool vcolors;
     Vec4 color;
     Mesh mesh;
 };
@@ -84,13 +127,16 @@ struct Shared {
     std::map<std::string, int> refs;   // external file -> node index
     std::map<std::string, int> images; // image path -> index
     int depth = 0;
-    explicit Shared(Model &m) : model(m) {}
+    explicit Shared(Model &m) : model(m) {
+    }
 };
 
 // a file named in a database: as given, then by its base name (the
 // absolute paths of the machines where the databases were made are not
 // there), next to the file and on the search paths
-std::string findFile(const std::string &dir, const std::string &name) { return findAsset(dir, name); }
+std::string findFile(const std::string &dir, const std::string &name) {
+    return findAsset(dir, name);
+}
 
 int loadFile(Shared &sh, const std::string &path, std::string *error);
 
@@ -107,13 +153,15 @@ struct File {
     std::map<int, int> textures; // index -> image
     std::map<int, bool> alphatex;
     std::vector<int> vindex;
-    long vpalStart = -1, vpalLen = 0;
+    long vpalStart = -1;
+    long vpalLen = 0;
     std::vector<FVertex> verts;
     // the batches of each node
     std::map<int, std::vector<Batch>> batches;
     std::map<int, std::vector<std::tuple<Vec3, Batch, bool>>> billboards;
 
-    File(Shared &s) : sh(s), model(s.model) {}
+    File(Shared &s) : sh(s), model(s.model) {
+    }
 
     Vec4 indexColor(unsigned c) const {
         int base;
@@ -125,18 +173,22 @@ struct File {
             base = (int)(c / 128);
             in = (c % 128) / 127.0f;
         }
-        if (base >= (int)palette.size())
+        if (base >= (int)palette.size()) {
             return {1, 1, 1, 1};
+        }
         const Vec4 &p = palette[base];
         return {p.x * in, p.y * in, p.z * in, 1};
     }
-    static Vec4 packed(const unsigned char *p) { return {p[3] / 255.0f, p[2] / 255.0f, p[1] / 255.0f, 1}; }
+    static Vec4 packed(const unsigned char *p) {
+        return {p[3] / 255.0f, p[2] / 255.0f, p[1] / 255.0f, 1};
+    }
 
     void paletteVertex(int op, const unsigned char *r) {
         FVertex v;
         int flags = sbe16(r + 6);
-        for (int k = 0; k < 3; k++)
+        for (int k = 0; k < 3; k++) {
             v.xyz[k] = bed(r + 8 + 8 * k);
+        }
         if (op == OP_VERTEX_CN || op == OP_VERTEX_CNT) {
             v.nrm = {bef(r + 32), bef(r + 36), bef(r + 40)};
             v.hasNrm = true;
@@ -159,14 +211,14 @@ struct File {
 
     void oldVertex(Face &fc, int op, const unsigned char *r, int len) {
         FVertex v;
-        for (int k = 0; k < 3; k++)
+        for (int k = 0; k < 3; k++) {
             v.xyz[k] = sbe32(r + 4 + 4 * k) * unit;
+        }
         if (op == OP_OLD_VERTEX && len >= 24) {
             v.uv = {bef(r + 16), bef(r + 20)};
             v.hasUV = true;
         } else if (op == OP_OLD_VERTEX_NORMAL) {
-            v.nrm = Vec3{(float)(sbe32(r + 16) / 1073741824.0), (float)(sbe32(r + 20) / 1073741824.0),
-                         (float)(sbe32(r + 24) / 1073741824.0)};
+            v.nrm = Vec3{(float)(sbe32(r + 16) / 1073741824.0), (float)(sbe32(r + 20) / 1073741824.0), (float)(sbe32(r + 24) / 1073741824.0)};
             v.hasNrm = true;
             if (len >= 40) {
                 v.uv = {bef(r + 32), bef(r + 36)};
@@ -180,15 +232,18 @@ struct File {
     }
 
     static uint32_t pack(Vec4 c) {
-        auto b = [](float x) { return (uint32_t)(std::fmin(std::fmax(x, 0.0f), 1.0f) * 255 + 0.5f); };
+        auto b = [](float x) {
+            return (uint32_t)(std::fmin(std::fmax(x, 0.0f), 1.0f) * 255 + 0.5f);
+        };
         return b(c.x) | b(c.y) << 8 | b(c.z) << 16 | b(c.w) << 24;
     }
 
     void addFace(int owner, Face &fc) {
         int need = fc.drawtype >= 8 ? 1 : fc.drawtype >= 2 ? 2 : 3;
         int n = (int)fc.v.size();
-        if (n < need)
+        if (n < need) {
             return;
+        }
         const FMaterial *m = fc.material >= 0 && fc.material < nmaterials ? &materials[fc.material] : nullptr;
         bool points = fc.drawtype >= 8;
         bool lines = !points && (fc.drawtype == 2 || fc.drawtype == 3 || n < 3);
@@ -201,12 +256,14 @@ struct File {
         Vec3 fn;
         double center[3] = {0, 0, 0};
         for (int i = 0; i < n; i++) {
-            const double *a = fc.v[i].xyz, *c = fc.v[(i + 1) % n].xyz;
+            const double *a = fc.v[i].xyz;
+            const double *c = fc.v[(i + 1) % n].xyz;
             fn.x += (float)((a[1] - c[1]) * (a[2] + c[2]));
             fn.y += (float)((a[2] - c[2]) * (a[0] + c[0]));
             fn.z += (float)((a[0] - c[0]) * (a[1] + c[1]));
-            for (int k = 0; k < 3; k++)
+            for (int k = 0; k < 3; k++) {
                 center[k] += a[k] / n;
+            }
         }
         fn = normalize(fn);
         // a lit face with vertex colors uses them as its diffuse color
@@ -216,15 +273,12 @@ struct File {
         if (billboard) {
             b = &local;
         } else {
-            for (Batch &c : batches[owner])
-                if (c.texture == fc.texture && c.material == local.material && c.drawtype == drawtype &&
-                    c.transp == transp && c.decal == decal && c.alphatex == alpha && c.vcolors == vcolors &&
-                    (!m || vcolors ||
-                     (c.color.x == fc.color.x && c.color.y == fc.color.y && c.color.z == fc.color.z &&
-                      c.color.w == fc.color.w))) {
+            for (Batch &c : batches[owner]) {
+                if (c.texture == fc.texture && c.material == local.material && c.drawtype == drawtype && c.transp == transp && c.decal == decal && c.alphatex == alpha && c.vcolors == vcolors && (!m || vcolors || (c.color.x == fc.color.x && c.color.y == fc.color.y && c.color.z == fc.color.z && c.color.w == fc.color.w))) {
                     b = &c;
                     break;
                 }
+            }
             if (!b) {
                 batches[owner].push_back(local);
                 b = &batches[owner].back();
@@ -233,9 +287,11 @@ struct File {
         Mesh &mesh = b->mesh;
         mesh.primitive = points ? Primitive::Points : lines ? Primitive::Lines : Primitive::Triangles;
         double off[3] = {0, 0, 0};
-        if (billboard)
-            for (int k = 0; k < 3; k++)
+        if (billboard) {
+            for (int k = 0; k < 3; k++) {
                 off[k] = center[k];
+            }
+        }
         auto vertex = [&](const FVertex &v, Vec3 nrm, Vec4 col) {
             Vertex o;
             o.position = {(float)(v.xyz[0] - off[0]), (float)(v.xyz[1] - off[1]), (float)(v.xyz[2] - off[2])};
@@ -247,8 +303,9 @@ struct File {
         };
         if (lines) {
             for (int i = 0; i < n; i++) {
-                if (fc.drawtype == 3 && i == n - 1)
+                if (fc.drawtype == 3 && i == n - 1) {
                     break;
+                }
                 vertex(fc.v[i], fn, fc.color);
                 vertex(fc.v[(i + 1) % n], fn, fc.color);
             }
@@ -259,13 +316,15 @@ struct File {
                 const FVertex &v = fc.v[vi];
                 Vec3 nrm = (fc.lightmode >= 2 || version < 13) && v.hasNrm ? v.nrm : fn;
                 Vec4 col = (fc.lightmode == 1 || fc.lightmode == 3) && v.hasColor ? v.color : fc.color;
-                if (vcolors)
+                if (vcolors) {
                     col = {col.x * m->dif.x, col.y * m->dif.y, col.z * m->dif.z, col.w};
+                }
                 vertex(v, nrm, col);
             }
         }
-        if (billboard)
+        if (billboard) {
             billboards[owner].push_back({Vec3{(float)center[0], (float)center[1], (float)center[2]}, local, fc.templ == 4});
+        }
     }
 
     int material(const Batch &b) {
@@ -293,16 +352,18 @@ struct File {
             mat.vertexColors = true;
         }
         auto t = textures.find(b.texture);
-        if (t != textures.end())
+        if (t != textures.end()) {
             mat.diffuseImage = t->second;
+        }
         mat.doubleSided = !(b.drawtype == 0 && !b.decal);
         mat.decal = b.decal;
         if (b.alphatex) {
             mat.alpha = AlphaMode::Mask;
             mat.alphaCutoff = 0.5f;
         }
-        if (b.transp)
+        if (b.transp) {
             mat.alpha = AlphaMode::Blend;
+        }
         int index = (int)model.materials.size();
         model.materials.push_back(mat);
         return index;
@@ -312,25 +373,27 @@ struct File {
     void build() {
         std::map<std::tuple<int, int, int, bool, bool, bool, bool, float, float, float, float>, int> mats;
         auto materialOf = [&](const Batch &b) {
-            auto key = std::make_tuple(b.texture, b.material, b.drawtype == 0 ? 0 : b.drawtype, b.transp, b.decal,
-                                       b.alphatex, b.vcolors, b.color.x, b.color.y, b.color.z, b.color.w);
+            auto key = std::make_tuple(b.texture, b.material, b.drawtype == 0 ? 0 : b.drawtype, b.transp, b.decal, b.alphatex, b.vcolors, b.color.x, b.color.y, b.color.z, b.color.w);
             auto it = mats.find(key);
-            if (it != mats.end())
+            if (it != mats.end()) {
                 return it->second;
+            }
             return mats[key] = material(b);
         };
-        for (auto &[owner, list] : batches)
+        for (auto &[owner, list] : batches) {
             for (Batch &b : list) {
-                if (b.mesh.indices.empty())
+                if (b.mesh.indices.empty()) {
                     continue;
+                }
                 b.mesh.material = materialOf(b);
                 b.mesh.computeBounds();
                 model.nodes[owner].meshes.push_back((int)model.meshes.size());
                 model.meshes.push_back(std::move(b.mesh));
             }
+        }
         // the billboards at their centers, turned to the eye (template 2
         // axial, 4 point)
-        for (auto &[owner, list] : billboards)
+        for (auto &[owner, list] : billboards) {
             for (auto &[center, b, point] : list) {
                 b.mesh.material = materialOf(b);
                 b.mesh.computeBounds();
@@ -345,21 +408,24 @@ struct File {
                 model.nodes.push_back(n);
                 model.nodes[owner].children.push_back(ni);
             }
+        }
     }
 
     // the texture attribute file: the wrap of u at 40 and of v at 44
     // (0 repeat, 1 clamp, 3 the method at 36)
     static void readAttr(Image &img, const std::string &path) {
         FILE *fp = std::fopen((path + ".attr").c_str(), "rb");
-        if (!fp)
+        if (!fp) {
             return;
+        }
         unsigned char a[48];
         if (std::fread(a, 1, sizeof a, fp) == sizeof a) {
             int method = sbe32(a + 36);
             for (int k = 0; k < 2; k++) {
                 int w = sbe32(a + 40 + 4 * k);
-                if (w == 3)
+                if (w == 3) {
                     w = method;
+                }
                 (k ? img.clampT : img.clampS) = w == 1;
             }
         }
@@ -368,13 +434,15 @@ struct File {
 
     void loadTexture(const unsigned char *r, int len) {
         int namelen = version >= 13 ? 200 : 80;
-        if (len < namelen + 8)
+        if (len < namelen + 8) {
             return;
+        }
         std::string name((const char *)r + 4, (size_t)std::min(namelen, 255));
         name = name.c_str();
         int idx = sbe32(r + 4 + namelen);
-        if (idx < 0 || idx >= 1024)
+        if (idx < 0 || idx >= 1024) {
             return;
+        }
         std::string path = findFile(dir, name);
         if (path.empty()) {
             std::fprintf(stderr, "r4: flt: texture %s not found\n", name.c_str());
@@ -397,8 +465,9 @@ struct File {
             }
             sh.images[path] = image;
         }
-        if (image < 0)
+        if (image < 0) {
             return;
+        }
         textures[idx] = image;
         size_t dot = name.find_last_of('.');
         std::string ext = dot == std::string::npos ? "" : name.substr(dot);
@@ -411,8 +480,9 @@ struct File {
         n.name = name;
         int i = (int)model.nodes.size();
         model.nodes.push_back(n);
-        if (parent >= 0)
+        if (parent >= 0) {
             model.nodes[parent].children.push_back(i);
+        }
         return i;
     }
 
@@ -426,15 +496,20 @@ struct File {
             Face face;
         };
         std::vector<Level> stack{{root, Face()}};
-        int last = root, lastParent = -1, lastChild = -1, subface = 0;
+        int last = root;
+        int lastParent = -1;
+        int lastChild = -1;
+        int subface = 0;
         bool lastFace = false;
         Face face;
         long size = (long)data.size();
         for (long pos = 0; pos + 4 <= size;) {
             const unsigned char *r = &data[pos];
-            int op = (int)be16(r), len = (int)be16(r + 2);
-            if (len < 4 || pos + len > size)
+            int op = (int)be16(r);
+            int len = (int)be16(r + 2);
+            if (len < 4 || pos + len > size) {
                 break;
+            }
             int parent = stack.back().container;
             switch (op) {
             case OP_HEADER:
@@ -447,14 +522,15 @@ struct File {
             case OP_COLOR_PALETTE:
                 palette.clear();
                 if (version >= 13) {
-                    for (int k = 0; k < std::min((len - 132) / 4, 1024); k++)
+                    for (int k = 0; k < std::min((len - 132) / 4, 1024); k++) {
                         palette.push_back(packed(r + 132 + 4 * k));
+                    }
                 } else {
                     // the old palette: unsigned shorts r, g, b from 0 to 255
                     oldPalette = true;
-                    for (int k = 0; k < std::min((len - 4) / 6, 1024); k++)
-                        palette.push_back({be16(r + 4 + 6 * k) / 255.0f, be16(r + 6 + 6 * k) / 255.0f,
-                                           be16(r + 8 + 6 * k) / 255.0f, 1});
+                    for (int k = 0; k < std::min((len - 4) / 6, 1024); k++) {
+                        palette.push_back({be16(r + 4 + 6 * k) / 255.0f, be16(r + 6 + 6 * k) / 255.0f, be16(r + 8 + 6 * k) / 255.0f, 1});
+                    }
                 }
                 break;
             case OP_MATERIAL_TABLE:
@@ -468,8 +544,9 @@ struct File {
                     m.emis = {bef(e + 36), bef(e + 40), bef(e + 44)};
                     m.shininess = bef(e + 48);
                     m.alpha = bef(e + 52);
-                    if (m.alpha <= 0)
+                    if (m.alpha <= 0) {
                         m.alpha = 1;
+                    }
                 }
                 break;
             case OP_MATERIAL:
@@ -483,8 +560,9 @@ struct File {
                         m.emis = {bef(r + 60), bef(r + 64), bef(r + 68)};
                         m.shininess = bef(r + 72);
                         m.alpha = bef(r + 76);
-                        if (m.alpha <= 0)
+                        if (m.alpha <= 0) {
                             m.alpha = 1;
+                        }
                         nmaterials = std::max(nmaterials, idx + 1);
                     }
                 }
@@ -511,16 +589,19 @@ struct File {
             case OP_LOD:
             case OP_OLD_LOD:
             case OP_EXTREF: {
-                if (parent < 0)
+                if (parent < 0) {
                     break;
+                }
                 std::string name;
                 if (len >= 12) {
                     name.assign((const char *)r + 4, 8);
                     name = name.c_str();
                 }
-                int n = newNode(name, parent), child = n;
+                int n = newNode(name, parent);
+                int child = n;
                 if (op == OP_LOD || op == OP_OLD_LOD) {
-                    double in, out;
+                    double in;
+                    double out;
                     Vec3 c;
                     if (op == OP_LOD && len >= 64) {
                         in = bed(r + 16);
@@ -529,8 +610,7 @@ struct File {
                     } else {
                         in = sbe32(r + 12) * unit;
                         out = sbe32(r + 16) * unit;
-                        c = {(float)(sbe32(r + 28) * unit), (float)(sbe32(r + 32) * unit),
-                             (float)(sbe32(r + 36) * unit)};
+                        c = {(float)(sbe32(r + 28) * unit), (float)(sbe32(r + 32) * unit), (float)(sbe32(r + 36) * unit)};
                     }
                     Node &ln = model.nodes[n];
                     ln.kind = NodeKind::LOD;
@@ -543,15 +623,17 @@ struct File {
                     std::string ref((const char *)r + 4, (size_t)std::min(len - 4, 200));
                     ref = ref.c_str();
                     size_t lt = ref.find('<');
-                    if (lt != std::string::npos)
+                    if (lt != std::string::npos) {
                         ref.erase(lt);
+                    }
                     std::string found = findFile(dir, ref);
                     if (found.empty()) {
                         std::fprintf(stderr, "r4: flt: %s not found\n", ref.c_str());
                     } else {
                         int sub = loadFile(sh, found, nullptr);
-                        if (sub >= 0)
+                        if (sub >= 0) {
                             model.nodes[n].children.push_back(sub);
+                        }
                     }
                 }
                 last = n;
@@ -564,11 +646,14 @@ struct File {
                 if (last >= 0 && lastParent >= 0 && len >= 68) {
                     Mat4 m;
                     float *o = &m[0][0];
-                    for (int k = 0; k < 16; k++)
+                    for (int k = 0; k < 16; k++) {
                         o[k] = bef(r + 4 + 4 * k);
-                    if (version < 13)
-                        for (int k = 0; k < 3; k++)
+                    }
+                    if (version < 13) {
+                        for (int k = 0; k < 3; k++) {
                             m[3][k] *= (float)unit;
+                        }
+                    }
                     // the matrix applies to the node: it is put above its own
                     model.nodes[last].local = m * model.nodes[last].local;
                 }
@@ -582,34 +667,40 @@ struct File {
                 face.material = len >= 32 ? sbe16(r + 30) : -1;
                 face.lightmode = len > 48 && version >= 13 ? r[48] : 0;
                 uint32_t flags = len >= 48 && version >= 13 ? be32(r + 44) : 0;
-                if (flags & 0x40000000u)
+                if (flags & 0x40000000u) {
                     face.color = {1, 1, 1, 1};
-                else if ((flags & 0x10000000u) && len >= 60)
+                } else if ((flags & 0x10000000u) && len >= 60) {
                     face.color = packed(r + 56);
-                else
+                } else {
                     face.color = indexColor(be16(r + 20));
-                if (face.texture >= 0 && len > 19 && r[19])
+                }
+                if (face.texture >= 0 && len > 19 && r[19]) {
                     face.color = {1, 1, 1, 1};
+                }
                 face.color.w = 1;
-                if (version >= 13 && len >= 42)
+                if (version >= 13 && len >= 42) {
                     face.color.w = 1 - be16(r + 40) / 65535.0f;
+                }
                 lastFace = true;
                 break;
             }
             case OP_VERTEX_LIST:
-                if (stack.size() > 1 && stack.back().container < 0 && !vindex.empty())
+                if (stack.size() > 1 && stack.back().container < 0 && !vindex.empty()) {
                     for (int k = 4; k + 4 <= len; k += 4) {
                         long off = (long)be32(r + k);
                         int vi = off >= 0 && off < vpalLen ? vindex[off / 4] : -1;
-                        if (vi >= 0)
+                        if (vi >= 0) {
                             stack.back().face.v.push_back(verts[vi]);
+                        }
                     }
+                }
                 break;
             case OP_OLD_VERTEX:
             case OP_OLD_VERTEX_COLOR:
             case OP_OLD_VERTEX_NORMAL:
-                if (stack.size() > 1 && stack.back().container < 0)
+                if (stack.size() > 1 && stack.back().container < 0) {
                     oldVertex(stack.back().face, op, r, len);
+                }
                 break;
             case OP_PUSH:
                 if (stack.size() < 256) {
@@ -627,10 +718,12 @@ struct File {
                 if (stack.size() > 1) {
                     if (stack.back().container < 0) {
                         int owner = -1;
-                        for (size_t d = stack.size() - 1; d-- > 0 && owner < 0;)
+                        for (size_t d = stack.size() - 1; d-- > 0 && owner < 0;) {
                             owner = stack[d].container;
-                        if (owner >= 0)
+                        }
+                        if (owner >= 0) {
                             addFace(owner, stack.back().face);
+                        }
                     }
                     stack.pop_back();
                 }
@@ -640,8 +733,9 @@ struct File {
                 subface++;
                 break;
             case OP_POP_SUBFACE:
-                if (subface > 0)
+                if (subface > 0) {
                     subface--;
+                }
                 break;
             }
             pos += len;
@@ -653,25 +747,30 @@ struct File {
 
 int loadFile(Shared &sh, const std::string &path, std::string *error) {
     auto it = sh.refs.find(path);
-    if (it != sh.refs.end())
+    if (it != sh.refs.end()) {
         return it->second;
-    if (sh.depth > 16)
+    }
+    if (sh.depth > 16) {
         return -1;
+    }
     FILE *fp = std::fopen(path.c_str(), "rb");
     if (!fp) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return -1;
     }
     std::vector<unsigned char> data;
     unsigned char chunk[65536];
     size_t n;
-    while ((n = std::fread(chunk, 1, sizeof chunk, fp)) > 0)
+    while ((n = std::fread(chunk, 1, sizeof chunk, fp)) > 0) {
         data.insert(data.end(), chunk, chunk + n);
+    }
     std::fclose(fp);
     if (data.size() < 4 || be16(data.data()) != OP_HEADER) {
-        if (error)
+        if (error) {
             *error = path + ": not an OpenFlight file";
+        }
         return -1;
     }
     sh.depth++;
@@ -693,12 +792,14 @@ std::shared_ptr<Model> loadFLT(const std::string &path, std::string *error) {
     model->nodes.push_back(top);
     Shared sh(*model);
     int root = loadFile(sh, path, error);
-    if (root < 0)
+    if (root < 0) {
         return nullptr;
+    }
     model->nodes[0].children.push_back(root);
     if (model->meshes.empty()) {
-        if (error)
+        if (error) {
             *error = path + ": nothing to draw";
+        }
         return nullptr;
     }
     return model;

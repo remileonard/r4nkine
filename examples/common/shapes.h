@@ -31,8 +31,9 @@ inline Mesh box(Vec3 size) {
     m.name = "box";
     Vec3 h = size * 0.5f;
     Vec3 p[8];
-    for (int i = 0; i < 8; i++)
+    for (int i = 0; i < 8; i++) {
         p[i] = {i & 1 ? h.x : -h.x, i & 2 ? h.y : -h.y, i & 4 ? h.z : -h.z};
+    }
     addQuad(m, p[0], p[2], p[3], p[1]); // bottom
     addQuad(m, p[4], p[5], p[7], p[6]); // top
     addQuad(m, p[0], p[1], p[5], p[4]); // front (-Y)
@@ -49,9 +50,12 @@ inline Mesh cylinder(float r0, float r1, float z0, float z1, int segments = 16) 
     m.name = r1 > 0 ? "cylinder" : "cone";
     float slope = (r0 - r1) / (z1 - z0);
     for (int i = 0; i <= segments; i++) {
-        float a = 2 * r4::kPi * i / segments, c = std::cos(a), s = std::sin(a);
+        float a = 2 * r4::kPi * i / segments;
+        float c = std::cos(a);
+        float s = std::sin(a);
         Vec3 n = r4::normalize(Vec3{c, s, slope});
-        r4::assets::Vertex lo, hi;
+        r4::assets::Vertex lo;
+        r4::assets::Vertex hi;
         lo.position = {r0 * c, r0 * s, z0};
         hi.position = {r1 * c, r1 * s, z1};
         lo.normal = hi.normal = n;

@@ -36,48 +36,65 @@ namespace {
 
 std::string resultText(cgltf_result r) {
     switch (r) {
-    case cgltf_result_data_too_short: return "data too short";
-    case cgltf_result_unknown_format: return "unknown format";
-    case cgltf_result_invalid_json: return "invalid JSON";
-    case cgltf_result_invalid_gltf: return "invalid glTF";
-    case cgltf_result_invalid_options: return "invalid options";
-    case cgltf_result_file_not_found: return "file not found";
-    case cgltf_result_io_error: return "I/O error";
-    case cgltf_result_out_of_memory: return "out of memory";
-    case cgltf_result_legacy_gltf: return "glTF 1.0 is not supported";
-    default: return "error";
+    case cgltf_result_data_too_short:
+        return "data too short";
+    case cgltf_result_unknown_format:
+        return "unknown format";
+    case cgltf_result_invalid_json:
+        return "invalid JSON";
+    case cgltf_result_invalid_gltf:
+        return "invalid glTF";
+    case cgltf_result_invalid_options:
+        return "invalid options";
+    case cgltf_result_file_not_found:
+        return "file not found";
+    case cgltf_result_io_error:
+        return "I/O error";
+    case cgltf_result_out_of_memory:
+        return "out of memory";
+    case cgltf_result_legacy_gltf:
+        return "glTF 1.0 is not supported";
+    default:
+        return "error";
     }
 }
 
 uint32_t packColor(const float *c, int n) {
-    auto b = [](float x) { return (uint32_t)(std::fmin(std::fmax(x, 0.0f), 1.0f) * 255 + 0.5f); };
+    auto b = [](float x) {
+        return (uint32_t)(std::fmin(std::fmax(x, 0.0f), 1.0f) * 255 + 0.5f);
+    };
     return b(c[0]) | b(c[1]) << 8 | b(c[2]) << 16 | (n > 3 ? b(c[3]) : 255u) << 24;
 }
 
 // the image of a glTF image: a buffer view, a data URI or a file
-bool readImage(const cgltf_image &im, const std::string &dir, const cgltf_options &opts, Image &out,
-               std::string *err) {
+bool readImage(const cgltf_image &im, const std::string &dir, const cgltf_options &opts, Image &out, std::string *err) {
     if (im.buffer_view && im.buffer_view->buffer && im.buffer_view->buffer->data) {
         const uint8_t *p = (const uint8_t *)im.buffer_view->buffer->data + im.buffer_view->offset;
         return decodeImage(p, im.buffer_view->size, out, err);
     }
-    if (!im.uri)
+    if (!im.uri) {
         return false;
+    }
     std::string uri = im.uri;
     if (uri.compare(0, 5, "data:") == 0) {
         size_t comma = uri.find(";base64,");
-        if (comma == std::string::npos)
+        if (comma == std::string::npos) {
             return false;
+        }
         const char *b64 = uri.c_str() + comma + 8;
-        size_t len = std::strlen(b64), pad = 0;
-        if (len && b64[len - 1] == '=')
+        size_t len = std::strlen(b64);
+        size_t pad = 0;
+        if (len && b64[len - 1] == '=') {
             pad++;
-        if (len > 1 && b64[len - 2] == '=')
+        }
+        if (len > 1 && b64[len - 2] == '=') {
             pad++;
+        }
         size_t size = len / 4 * 3 - pad;
         void *data = nullptr;
-        if (cgltf_load_buffer_base64(&opts, size, b64, &data) != cgltf_result_success)
+        if (cgltf_load_buffer_base64(&opts, size, b64, &data) != cgltf_result_success) {
             return false;
+        }
         bool ok = decodeImage((const uint8_t *)data, size, out, err);
         std::free(data);
         return ok;
@@ -95,13 +112,16 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     cgltf_options opts{};
     cgltf_data *data = nullptr;
     cgltf_result r = cgltf_parse_file(&opts, path.c_str(), &data);
-    if (r == cgltf_result_success)
+    if (r == cgltf_result_success) {
         r = cgltf_load_buffers(&opts, data, path.c_str());
+    }
     if (r != cgltf_result_success) {
-        if (error)
+        if (error) {
             *error = path + ": " + resultText(r);
-        if (data)
+        }
+        if (data) {
             cgltf_free(data);
+        }
         return nullptr;
     }
     size_t slash = path.find_last_of("/\\");
@@ -112,11 +132,13 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     // the images, loaded once each
     std::map<const cgltf_image *, int> images;
     auto imageOf = [&](const cgltf_texture *t) -> int {
-        if (!t || !t->image)
+        if (!t || !t->image) {
             return -1;
+        }
         auto it = images.find(t->image);
-        if (it != images.end())
+        if (it != images.end()) {
             return it->second;
+        }
         Image img;
         std::string err;
         int index = -1;
@@ -144,8 +166,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         m.ambient = {1, 1, 1};
         if (gm.has_pbr_metallic_roughness) {
             const auto &pbr = gm.pbr_metallic_roughness;
-            m.diffuse = {pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2],
-                         pbr.base_color_factor[3]};
+            m.diffuse = {pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], pbr.base_color_factor[3]};
             m.diffuseImage = imageOf(pbr.base_color_texture.texture);
             // Blinn-Phong from the roughness and metalness, for now
             float rough = std::fmin(std::fmax(pbr.roughness_factor, 0.05f), 1.0f);
@@ -154,12 +175,13 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             m.shininess = std::fmin(2.0f / (rough * rough * rough * rough) - 2.0f, 256.0f);
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
-        if (gm.unlit)
+        if (gm.unlit) {
             m.shading = Shading::Unlit;
+        }
         m.doubleSided = gm.double_sided;
-        if (gm.alpha_mode == cgltf_alpha_mode_blend)
+        if (gm.alpha_mode == cgltf_alpha_mode_blend) {
             m.alpha = AlphaMode::Blend;
-        else if (gm.alpha_mode == cgltf_alpha_mode_mask) {
+        } else if (gm.alpha_mode == cgltf_alpha_mode_mask) {
             m.alpha = AlphaMode::Mask;
             m.alphaCutoff = gm.alpha_cutoff;
         }
@@ -170,16 +192,19 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     std::map<std::pair<int, bool>, int> colored;
     auto materialFor = [&](const cgltf_material *gm, bool vcolors) {
         int base = gm && materials.count(gm) ? materials[gm] : -1;
-        if (!vcolors)
+        if (!vcolors) {
             return base;
+        }
         auto key = std::make_pair(base, vcolors);
         auto it = colored.find(key);
-        if (it != colored.end())
+        if (it != colored.end()) {
             return it->second;
+        }
         Material m = base >= 0 ? model->materials[base] : Material();
         m.vertexColors = true;
-        if (base < 0)
+        if (base < 0) {
             m.diffuse = {1, 1, 1, 1};
+        }
         int index = (int)model->materials.size();
         model->materials.push_back(m);
         return colored[key] = index;
@@ -191,20 +216,25 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         const cgltf_mesh &gm = data->meshes[mi];
         for (size_t pi = 0; pi < gm.primitives_count; pi++) {
             const cgltf_primitive &prim = gm.primitives[pi];
-            const cgltf_accessor *pos = nullptr, *nrm = nullptr, *uv = nullptr, *col = nullptr;
+            const cgltf_accessor *pos = nullptr;
+            const cgltf_accessor *nrm = nullptr;
+            const cgltf_accessor *uv = nullptr;
+            const cgltf_accessor *col = nullptr;
             for (size_t a = 0; a < prim.attributes_count; a++) {
                 const cgltf_attribute &at = prim.attributes[a];
-                if (at.type == cgltf_attribute_type_position)
+                if (at.type == cgltf_attribute_type_position) {
                     pos = at.data;
-                else if (at.type == cgltf_attribute_type_normal)
+                } else if (at.type == cgltf_attribute_type_normal) {
                     nrm = at.data;
-                else if (at.type == cgltf_attribute_type_texcoord && at.index == 0)
+                } else if (at.type == cgltf_attribute_type_texcoord && at.index == 0) {
                     uv = at.data;
-                else if (at.type == cgltf_attribute_type_color && at.index == 0)
+                } else if (at.type == cgltf_attribute_type_color && at.index == 0) {
                     col = at.data;
+                }
             }
-            if (!pos)
+            if (!pos) {
                 continue;
+            }
             Mesh m;
             m.name = gm.name ? gm.name : "mesh " + std::to_string(mi);
             m.vertices.resize(pos->count);
@@ -212,26 +242,31 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                 float f[4] = {0, 0, 0, 1};
                 cgltf_accessor_read_float(pos, v, f, 3);
                 m.vertices[v].position = {f[0], f[1], f[2]};
-                if (nrm && v < nrm->count && cgltf_accessor_read_float(nrm, v, f, 3))
+                if (nrm && v < nrm->count && cgltf_accessor_read_float(nrm, v, f, 3)) {
                     m.vertices[v].normal = {f[0], f[1], f[2]};
-                if (uv && v < uv->count && cgltf_accessor_read_float(uv, v, f, 2))
+                }
+                if (uv && v < uv->count && cgltf_accessor_read_float(uv, v, f, 2)) {
                     m.vertices[v].uv = {f[0], 1 - f[1]}; // the rows of the images go up
+                }
                 if (col && v < col->count) {
                     int n = cgltf_num_components(col->type);
                     f[3] = 1;
-                    if (cgltf_accessor_read_float(col, v, f, n))
+                    if (cgltf_accessor_read_float(col, v, f, n)) {
                         m.vertices[v].color = packColor(f, n);
+                    }
                 }
             }
             std::vector<uint32_t> idx;
             if (prim.indices) {
                 idx.resize(prim.indices->count);
-                for (size_t k = 0; k < idx.size(); k++)
+                for (size_t k = 0; k < idx.size(); k++) {
                     idx[k] = (uint32_t)cgltf_accessor_read_index(prim.indices, k);
+                }
             } else {
                 idx.resize(pos->count);
-                for (size_t k = 0; k < idx.size(); k++)
+                for (size_t k = 0; k < idx.size(); k++) {
                     idx[k] = (uint32_t)k;
+                }
             }
             // the strips, fans and loops as lists
             switch (prim.type) {
@@ -239,15 +274,18 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                 m.indices = idx;
                 break;
             case cgltf_primitive_type_triangle_strip:
-                for (size_t k = 0; k + 2 < idx.size(); k++)
-                    if (k % 2 == 0)
+                for (size_t k = 0; k + 2 < idx.size(); k++) {
+                    if (k % 2 == 0) {
                         m.indices.insert(m.indices.end(), {idx[k], idx[k + 1], idx[k + 2]});
-                    else
+                    } else {
                         m.indices.insert(m.indices.end(), {idx[k + 1], idx[k], idx[k + 2]});
+                    }
+                }
                 break;
             case cgltf_primitive_type_triangle_fan:
-                for (size_t k = 1; k + 1 < idx.size(); k++)
+                for (size_t k = 1; k + 1 < idx.size(); k++) {
                     m.indices.insert(m.indices.end(), {idx[0], idx[k], idx[k + 1]});
+                }
                 break;
             case cgltf_primitive_type_lines:
                 m.primitive = Primitive::Lines;
@@ -256,10 +294,12 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             case cgltf_primitive_type_line_strip:
             case cgltf_primitive_type_line_loop:
                 m.primitive = Primitive::Lines;
-                for (size_t k = 0; k + 1 < idx.size(); k++)
+                for (size_t k = 0; k + 1 < idx.size(); k++) {
                     m.indices.insert(m.indices.end(), {idx[k], idx[k + 1]});
-                if (prim.type == cgltf_primitive_type_line_loop && idx.size() > 2)
+                }
+                if (prim.type == cgltf_primitive_type_line_loop && idx.size() > 2) {
                     m.indices.insert(m.indices.end(), {idx.back(), idx[0]});
+                }
                 break;
             case cgltf_primitive_type_points:
                 m.primitive = Primitive::Points;
@@ -268,10 +308,12 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             default:
                 break;
             }
-            if (m.indices.empty())
+            if (m.indices.empty()) {
                 continue;
-            if (!nrm && m.primitive == Primitive::Triangles)
+            }
+            if (!nrm && m.primitive == Primitive::Triangles) {
                 m.computeNormals();
+            }
             m.material = materialFor(prim.material, col != nullptr);
             m.computeBounds();
             meshes[&gm].push_back((int)model->meshes.size());
@@ -288,25 +330,31 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         Node &n = model->nodes[1 + i];
         n.name = gn.name ? gn.name : "";
         cgltf_node_transform_local(&gn, &n.local[0][0]);
-        if (gn.mesh && meshes.count(gn.mesh))
+        if (gn.mesh && meshes.count(gn.mesh)) {
             n.meshes = meshes[gn.mesh];
-        for (size_t c = 0; c < gn.children_count; c++)
+        }
+        for (size_t c = 0; c < gn.children_count; c++) {
             n.children.push_back(1 + (int)(gn.children[c] - data->nodes));
+        }
     }
     const cgltf_scene *scene = data->scene ? data->scene : data->scenes_count ? &data->scenes[0] : nullptr;
     if (scene) {
-        for (size_t k = 0; k < scene->nodes_count; k++)
+        for (size_t k = 0; k < scene->nodes_count; k++) {
             model->nodes[0].children.push_back(1 + (int)(scene->nodes[k] - data->nodes));
+        }
     } else {
         // no scene: the nodes without parent
-        for (size_t i = 0; i < data->nodes_count; i++)
-            if (!data->nodes[i].parent)
+        for (size_t i = 0; i < data->nodes_count; i++) {
+            if (!data->nodes[i].parent) {
                 model->nodes[0].children.push_back(1 + (int)i);
+            }
+        }
     }
     cgltf_free(data);
     if (model->meshes.empty()) {
-        if (error)
+        if (error) {
             *error = path + ": nothing to draw";
+        }
         return nullptr;
     }
     return model;

@@ -32,7 +32,10 @@ struct Lighting {
 // The axes of a model: R4nkine's (Z up, the default), or libRealSpace's own
 // (Y up), for the models placed in a world of libRealSpace (a mission), all
 // turned at once by realSpaceToR4() at its root.
-enum class Axes { R4, RealSpace };
+enum class Axes {
+    R4,
+    RealSpace
+};
 
 // libRealSpace's axes (Y up, as OpenGL) to R4nkine's (Z up):
 // r4::axes::fromYUpMatrix(), (x, y, z) -> (x, -z, y), a turn of 90 degrees
@@ -77,8 +80,6 @@ void finishTexture(r4::assets::Image &image);
 //   clear; property 6 or 9 the texture is the face, else a decal over it;
 // - the clear pass (property 2): palette color - 1, added (AlphaMode::Additive);
 // - two-sided: flags[2] == 1 for a triangle, props2 == 1 of its ATTR for a quad.
-std::shared_ptr<r4::assets::Model> toModel(RSEntity *entity, const VGAPalette &palette,
-                                           const std::vector<PaletteRange> &ranges, Lighting lighting = {},
-                                           Axes axes = Axes::R4);
+std::shared_ptr<r4::assets::Model> toModel(RSEntity *entity, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, Lighting lighting = {}, Axes axes = Axes::R4);
 
 } // namespace r4bridge

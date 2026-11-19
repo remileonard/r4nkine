@@ -23,17 +23,22 @@ namespace r4::assets {
 // an image in memory: rows from the bottom (OpenGL order), 8 bits per channel
 struct Image {
     std::string name; // the file it came from
-    int width = 0, height = 0, channels = 0; // 1 grey, 2 grey+alpha, 3 RGB, 4 RGBA
+    int width = 0;    // 1 grey, 2 grey+alpha, 3 RGB, 4 RGBA
+    int height = 0;
+    int channels = 0;
     std::vector<uint8_t> pixels;
-    bool clampS = false, clampT = false; // the wrap: clamped to the edges, else repeated
+    bool clampS = false; // the wrap: clamped to the edges, else repeated
+    bool clampT = false;
     bool mipmaps = true; // false: filtered without mipmaps (the textures of the old games, the atlases)
-    bool valid() const { return width > 0 && height > 0 && channels > 0; }
+    bool valid() const {
+        return width > 0 && height > 0 && channels > 0;
+    }
 };
 
 // how a material is lit
 enum class Shading {
-    Unlit,       // the color as is
-    Phong,       // the per-pixel Blinn-Phong of the classic demos
+    Unlit, // the color as is
+    Phong, // the per-pixel Blinn-Phong of the classic demos
     // lit along the ramps of a fixed 256-color palette, as the 8-bit games:
     // the palette index in the red of the vertex colors, the table of the
     // shades (256 colors x 32 intensities, made by the loader) as the image
@@ -44,7 +49,12 @@ enum class Shading {
 // Opaque; Mask: cut where alpha < alphaCutoff; Blend: mixed by alpha over
 // what is behind; Additive: added to what is behind (glows, the glass of the
 // 8-bit games). Blend and Additive are drawn after the opaque, far to near.
-enum class AlphaMode { Opaque, Mask, Blend, Additive };
+enum class AlphaMode {
+    Opaque,
+    Mask,
+    Blend,
+    Additive
+};
 
 struct Material {
     std::string name;
@@ -54,7 +64,7 @@ struct Material {
     Vec3 specular{0, 0, 0};
     Vec3 emissive{0, 0, 0};
     float shininess = 16;
-    int diffuseImage = -1; // an index in Model::images
+    int diffuseImage = -1;  // an index in Model::images
     bool sphereMap = false; // the texture coordinates from the normals (environment map)
     AlphaMode alpha = AlphaMode::Opaque;
     float alphaCutoff = 0.5f;
@@ -80,14 +90,20 @@ struct Material {
     int drawOrder = 0;
     // the shadows of the sun (RenderOptions::shadows): it casts one (drawn in
     // the shadow map: the opaque faces that write the depth), it receives them
-    bool castShadows = true, receiveShadows = true;
+    bool castShadows = true;
+    bool receiveShadows = true;
     // PaletteRamp: the intensity is rampAmbient + rampLight * max(N.L, 0)
-    float rampAmbient = 0.375f, rampLight = 0.625f;
+    float rampAmbient = 0.375f;
+    float rampLight = 0.625f;
     bool rampTextured = false;
 };
 
 // how the indices of a mesh are read
-enum class Primitive { Triangles, Lines, Points };
+enum class Primitive {
+    Triangles,
+    Lines,
+    Points
+};
 
 // the vertex of every mesh: the renderer uses one format, so that any mesh
 // can go with any material in one pipeline
@@ -103,7 +119,7 @@ struct Mesh {
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices; // by 3 (triangles), 2 (lines) or 1 (points)
     Primitive primitive = Primitive::Triangles;
-    int material = -1;             // an index in Model::materials, -1: the default
+    int material = -1; // an index in Model::materials, -1: the default
     Box bounds;
     void computeBounds();
     // normals from the triangles, for the meshes that have none: smooth
@@ -113,19 +129,24 @@ struct Mesh {
     void computeNormals(float creaseDegrees = 60);
 };
 
-enum class NodeKind { Group, Switch, LOD, Billboard };
+enum class NodeKind {
+    Group,
+    Switch,
+    LOD,
+    Billboard
+};
 
 struct Node {
     std::string name;
     NodeKind kind = NodeKind::Group;
-    Mat4 local;                  // relative to the parent
-    std::vector<int> meshes;     // indices in Model::meshes (none on a Switch or LOD)
-    std::vector<int> children;   // indices in Model::nodes
+    Mat4 local;                // relative to the parent
+    std::vector<int> meshes;   // indices in Model::meshes (none on a Switch or LOD)
+    std::vector<int> children; // indices in Model::nodes
     // the state bits the node belongs to: drawn when they meet the state of
     // the camera (the statebits of the flight objects, the masks of pfb)
     uint32_t mask = 0xffffffffu;
-    int switchValue = -1;            // Switch: the child shown, -1 all, -2 none
-    std::vector<float> lodRanges;    // LOD: child i in [ranges[i], ranges[i+1])
+    int switchValue = -1;         // Switch: the child shown, -1 all, -2 none
+    std::vector<float> lodRanges; // LOD: child i in [ranges[i], ranges[i+1])
     Vec3 lodCenter;
     bool hasLodCenter = false;
     // Billboard: its meshes turned to the eye about Z (axis) or about Z and
@@ -134,15 +155,15 @@ struct Node {
 };
 
 struct Model {
-    std::string source; // the file
-    std::vector<Node> nodes;   // nodes[0] is the root
+    std::string source;      // the file
+    std::vector<Node> nodes; // nodes[0] is the root
     std::vector<Mesh> meshes;
     std::vector<Material> materials;
     std::vector<Image> images;
     // the state to draw the model in when nothing else is said (a plane of
     // flight: its body, landing gear and weapons, not its shadows)
     uint32_t defaultState = 0xffffffffu;
-    Box bounds() const;        // in the space of the root
+    Box bounds() const; // in the space of the root
 };
 
 // the loaders, chosen by the extension of the file; null with the reason in

@@ -29,19 +29,33 @@ inline const Vec3 kUp{0, 0, 1};
 // --- the Y-up right-handed axes (OpenGL's camera, OBJ, glTF, OpenXR):
 // X right, Y up, -Z forward. A turn of 90 degrees about X: the handedness
 // and the winding of the faces are kept.
-inline Vec3 fromYUp(Vec3 v) { return {v.x, -v.z, v.y}; }
-inline Vec3 toYUp(Vec3 v) { return {v.x, v.z, -v.y}; }
-inline Mat4 fromYUpMatrix() { return rotate(radians(90.0f), kRight); }
-inline Mat4 toYUpMatrix() { return rotate(radians(-90.0f), kRight); }
+inline Vec3 fromYUp(Vec3 v) {
+    return {v.x, -v.z, v.y};
+}
+inline Vec3 toYUp(Vec3 v) {
+    return {v.x, v.z, -v.y};
+}
+inline Mat4 fromYUpMatrix() {
+    return rotate(radians(90.0f), kRight);
+}
+inline Mat4 toYUpMatrix() {
+    return rotate(radians(-90.0f), kRight);
+}
 // a transform written in Y-up axes (a pose of OpenXR, a matrix of a Y-up
 // game), in R4nkine's
-inline Mat4 transformFromYUp(const Mat4 &m) { return fromYUpMatrix() * m * toYUpMatrix(); }
+inline Mat4 transformFromYUp(const Mat4 &m) {
+    return fromYUpMatrix() * m * toYUpMatrix();
+}
 
 // --- heights and angles in these axes
-inline float heightOf(Vec3 p) { return dot(p, kUp); }
+inline float heightOf(Vec3 p) {
+    return dot(p, kUp);
+}
 // the heading of a direction, degrees about kUp: 0 along kForward, positive
 // to the left (counterclockwise seen from above)
-inline float headingOf(Vec3 d) { return degrees(std::atan2(-dot(d, kRight), dot(d, kForward))); }
+inline float headingOf(Vec3 d) {
+    return degrees(std::atan2(-dot(d, kRight), dot(d, kForward)));
+}
 // the pitch of a direction, degrees: positive above the horizon
 inline float pitchOf(Vec3 d) {
     float l = length(d);

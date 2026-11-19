@@ -33,9 +33,9 @@ struct PostSettings {
     float contrast = 1;   // around the middle grey
     float saturation = 1; // 0: greys
     float gamma = 1;
-    Vec3 tint{1, 1, 1};   // multiplied
+    Vec3 tint{1, 1, 1}; // multiplied
     Vec3 fadeColor{0, 0, 0};
-    float fade = 0;       // 0..1 towards fadeColor
+    float fade = 0; // 0..1 towards fadeColor
 
     // the palette: every pixel takes the nearest of its colors
     bool quantize = false;

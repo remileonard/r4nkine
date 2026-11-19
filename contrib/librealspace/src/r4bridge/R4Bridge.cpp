@@ -30,23 +30,29 @@ uint32_t rgba(const Texel &t, uint8_t alpha = 255) {
 // SCRenderer::shadeAlongRamp, as a color
 uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &ranges, int colour, float intensity) {
     const PaletteRange *range = nullptr;
-    for (const PaletteRange &r : ranges)
+    for (const PaletteRange &r : ranges) {
         if (r.first <= colour && colour <= r.first + r.fog) {
             range = &r;
             break;
         }
+    }
     auto pack = [](float r, float g, float b) {
-        auto c = [](float v) { return (uint32_t)std::max(0.0f, std::min(255.0f, v + 0.5f)); };
+        auto c = [](float v) {
+            return (uint32_t)std::max(0.0f, std::min(255.0f, v + 0.5f));
+        };
         return c(r) | c(g) << 8 | c(b) << 16 | 0xff000000u;
     };
     const Texel &c = palette.colors[colour & 0xff];
-    if (!range)
+    if (!range) {
         return pack(c.r * intensity, c.g * intensity, c.b * intensity);
+    }
     int n = colour - range->first;
-    if (n == 0)
+    if (n == 0) {
         n = range->shades;
-    if (n <= 0)
+    }
+    if (n <= 0) {
         return pack(c.r * intensity, c.g * intensity, c.b * intensity);
+    }
     float t = intensity * n;
     int k0 = std::min((int)t, n - 1);
     float f = t - k0;
@@ -73,49 +79,66 @@ r4::assets::Image rampImage(const VGAPalette &palette, const std::vector<Palette
     img.channels = 4;
     img.clampS = img.clampT = true;
     img.pixels.resize(256 * 32 * 4);
-    for (int k = 0; k < 32; k++)
+    for (int k = 0; k < 32; k++) {
         for (int i = 0; i < 256; i++) {
             uint32_t c = shade(palette, ranges, i, k / 31.0f);
             std::memcpy(&img.pixels[((size_t)k * 256 + i) * 4], &c, 4);
         }
+    }
     return img;
 }
 
 void bleedClearTexels(r4::assets::Image &img) {
-    if (img.channels != 4 || img.width <= 0 || img.height <= 0)
+    if (img.channels != 4 || img.width <= 0 || img.height <= 0) {
         return;
-    const int w = img.width, h = img.height;
+    }
+    const int w = img.width;
+    const int h = img.height;
     std::vector<uint8_t> known((size_t)w * h);
     bool any = false;
-    for (size_t i = 0; i < known.size(); i++)
+    for (size_t i = 0; i < known.size(); i++) {
         any |= (known[i] = img.pixels[i * 4 + 3] != 0) != 0;
-    if (!any)
+    }
+    if (!any) {
         return;
+    }
     // rings of the clear texels next to colored ones, until all are colored
     for (bool changed = true; changed;) {
         changed = false;
         std::vector<uint8_t> next = known;
-        for (int y = 0; y < h; y++)
+        for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 size_t i = (size_t)y * w + x;
-                if (known[i])
+                if (known[i]) {
                     continue;
-                int sum[3] = {0, 0, 0}, n = 0;
-                for (int dy = -1; dy <= 1; dy++)
+                }
+                int sum[3] = {0, 0, 0};
+                int n = 0;
+                for (int dy = -1; dy <= 1; dy++) {
                     for (int dx = -1; dx <= 1; dx++) {
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || !known[(size_t)ny * w + nx])
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h || !known[(size_t)ny * w + nx]) {
                             continue;
+                        }
                         const uint8_t *c = &img.pixels[((size_t)ny * w + nx) * 4];
-                        sum[0] += c[0], sum[1] += c[1], sum[2] += c[2], n++;
+                        sum[0] += c[0];
+                        sum[1] += c[1];
+                        sum[2] += c[2];
+                        n++;
                     }
-                if (!n)
+                }
+                if (!n) {
                     continue;
+                }
                 uint8_t *c = &img.pixels[i * 4];
-                c[0] = (uint8_t)(sum[0] / n), c[1] = (uint8_t)(sum[1] / n), c[2] = (uint8_t)(sum[2] / n);
+                c[0] = (uint8_t)(sum[0] / n);
+                c[1] = (uint8_t)(sum[1] / n);
+                c[2] = (uint8_t)(sum[2] / n);
                 next[i] = 1;
                 changed = true;
             }
+        }
         known.swap(next);
     }
 }
@@ -136,20 +159,24 @@ void finishTexture(r4::assets::Image &img) {
     img.mipmaps = q.mipmaps;
 }
 
-r4::Mat4 realSpaceToR4() { return r4::axes::fromYUpMatrix(); }
+r4::Mat4 realSpaceToR4() {
+    return r4::axes::fromYUpMatrix();
+}
 
-std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palette,
-                                           const std::vector<PaletteRange> &ranges, Lighting lighting, Axes axes) {
+std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, Lighting lighting, Axes axes) {
     using namespace r4::assets;
-    if (!e || e->vertices.empty())
+    if (!e || e->vertices.empty()) {
         return nullptr;
+    }
     auto model = std::make_shared<Model>();
     model->source = e->name;
     const size_t vertexCount = e->vertices.size();
     auto inRange = [&](const uint16_t *ids, int n) {
-        for (int k = 0; k < n; k++)
-            if (ids[k] >= vertexCount)
+        for (int k = 0; k < n; k++) {
+            if (ids[k] >= vertexCount) {
                 return false;
+            }
+        }
         return true;
     };
 
@@ -159,27 +186,36 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     // R4nkine's faces turn the other way: they are emitted (a, c, b) below.
     std::vector<r4::Vec3> normals(vertexCount, r4::Vec3(0));
     auto faceNormal = [&](uint16_t a, uint16_t b, uint16_t c) {
-        r4::Vec3 A = toAxes(e->vertices[a], axes), B = toAxes(e->vertices[b], axes), C = toAxes(e->vertices[c], axes);
+        r4::Vec3 A = toAxes(e->vertices[a], axes);
+        r4::Vec3 B = toAxes(e->vertices[b], axes);
+        r4::Vec3 C = toAxes(e->vertices[c], axes);
         return r4::normalize(r4::cross(A - B, C - B));
     };
-    for (const Triangle &t : e->triangles)
+    for (const Triangle &t : e->triangles) {
         if (inRange(t.ids, 3)) {
             r4::Vec3 n = faceNormal(t.ids[0], t.ids[1], t.ids[2]);
-            for (int k = 0; k < 3; k++)
+            for (int k = 0; k < 3; k++) {
                 normals[t.ids[k]] += n;
+            }
         }
-    for (const Quads *q : e->quads)
+    }
+    for (const Quads *q : e->quads) {
         if (q && inRange(q->ids, 4)) {
             r4::Vec3 n1 = faceNormal(q->ids[0], q->ids[1], q->ids[2]);
             r4::Vec3 n2 = faceNormal(q->ids[0], q->ids[2], q->ids[3]);
-            for (int k : {0, 1, 2})
+            for (int k : {0, 1, 2}) {
                 normals[q->ids[k]] += n1;
-            for (int k : {0, 2, 3})
+            }
+            for (int k : {0, 2, 3}) {
                 normals[q->ids[k]] += n2;
+            }
         }
-    for (r4::Vec3 &n : normals)
-        if (r4::length(n) > 0)
+    }
+    for (r4::Vec3 &n : normals) {
+        if (r4::length(n) > 0) {
             n = r4::normalize(n);
+        }
+    }
 
     // --- the materials ------------------------------------------------------------------
     // image 0: the shades along the ramps (the colored faces); image 1: the
@@ -190,8 +226,9 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     std::map<std::string, int> materials; // by a key of their settings
     auto material = [&](const std::string &key, Material m) {
         auto it = materials.find(key);
-        if (it != materials.end())
+        if (it != materials.end()) {
             return it->second;
+        }
         m.shading = Shading::PaletteRamp;
         m.rampAmbient = lighting.ambient;
         m.rampLight = lighting.light;
@@ -219,21 +256,23 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     std::vector<int> textureImage(e->images.size(), -1);
     for (size_t i = 0; i < e->images.size(); i++) {
         RSImage *src = e->images[i];
-        if (!src || !src->data || src->width == 0 || src->height == 0)
+        if (!src || !src->data || src->width == 0 || src->height == 0) {
             continue;
+        }
         Image img;
         img.name = src->name;
         img.width = (int)src->width;
         img.height = (int)src->height;
         img.channels = 4;
         img.pixels.resize((size_t)img.width * img.height * 4);
-        for (int y = 0; y < img.height; y++)
+        for (int y = 0; y < img.height; y++) {
             for (int x = 0; x < img.width; x++) {
                 uint8_t index = src->data[(size_t)y * img.width + x];
                 uint32_t c = rgba(palette.colors[index], index == 255 ? 0 : 255);
                 // R4nkine's images start at the bottom row
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
+        }
         // as SCRenderer::createTextureInGPU (GL_LINEAR, GL_CLAMP_TO_EDGE), or better
         finishTexture(img);
         model->images.push_back(std::move(img));
@@ -265,33 +304,38 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
     struct Level {
         std::map<int, Mesh> meshes; // by material
         Axes axes;
-        void add(const RSEntity *e, const std::vector<r4::Vec3> &normals, int material, const uint16_t *ids, int n,
-                 uint32_t color, const UV *uvs = nullptr, float w = 1, float h = 1) {
+        void add(const RSEntity *e, const std::vector<r4::Vec3> &normals, int material, const uint16_t *ids, int n, uint32_t color, const UV *uvs = nullptr, float w = 1, float h = 1) {
             Mesh &m = meshes[material];
             // the fan of the polygon, each triangle turned the way of R4nkine
-            for (int k = 1; k + 1 < n; k++)
+            for (int k = 1; k + 1 < n; k++) {
                 for (int j : {0, k + 1, k}) {
                     Vertex v;
                     v.position = toAxes(e->vertices[ids[j]], axes);
                     v.normal = normals[ids[j]];
                     v.color = color;
-                    if (uvs)
+                    if (uvs) {
                         v.uv = {uvs[j].u / w, 1 - uvs[j].v / h};
+                    }
                     m.vertices.push_back(v);
                     m.indices.push_back((uint32_t)m.vertices.size() - 1);
                 }
+            }
         }
     };
-    auto paletteColor = [](int index) { return (uint32_t)(index & 0xff) | 0xff000000u; };
+    auto paletteColor = [](int index) {
+        return (uint32_t)(index & 0xff) | 0xff000000u;
+    };
 
     // the levels: the LODs of the object, else all its triangles
     std::vector<std::pair<float, std::vector<uint16_t>>> lods;
-    for (const Lod &lod : e->lods)
+    for (const Lod &lod : e->lods) {
         lods.push_back({(float)lod.dist, std::vector<uint16_t>(lod.triangleIDs, lod.triangleIDs + lod.numTriangles)});
+    }
     if (lods.empty()) {
         std::vector<uint16_t> all;
-        for (size_t i = 0; i < e->triangles.size(); i++)
+        for (size_t i = 0; i < e->triangles.size(); i++) {
             all.push_back((uint16_t)i);
+        }
         lods.push_back({0.0f, all});
     }
 
@@ -302,12 +346,16 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         for (uint16_t id : lods[level].second) {
             // the face of the entry: through ATTR (T triangle, Q quad, L line),
             // or, without ATTR, the number of a triangle and of a quad
-            bool isTriangle = true, isQuad = true, quadTwoSided = false;
-            uint16_t triangleID = id, quadID = id;
+            bool isTriangle = true;
+            bool isQuad = true;
+            bool quadTwoSided = false;
+            uint16_t triangleID = id;
+            uint16_t quadID = id;
             if (!e->attrs.empty()) {
                 auto it = e->attrs.find(id);
-                if (it == e->attrs.end() || !it->second)
+                if (it == e->attrs.end() || !it->second) {
                     continue;
+                }
                 const Attr *a = it->second;
                 isTriangle = a->type == 'T';
                 isQuad = a->type == 'Q';
@@ -319,52 +367,55 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 bool twoSided = t.flags[2] == 1;
                 if (!inRange(t.ids, 3))
                     ;
-                else if (t.property == RSEntity::SC_TRANSPARENT)
+                else if (t.property == RSEntity::SC_TRANSPARENT) {
                     out.add(e, normals, clearMaterial(twoSided), t.ids, 3, paletteColor(t.color - 1));
-                else if (t.property != 6 && t.property != 9)
+                } else if (t.property != 6 && t.property != 9) {
                     out.add(e, normals, colorMaterial(twoSided), t.ids, 3, paletteColor(t.color));
+                }
             }
             if (isQuad && quadID < e->quads.size() && e->quads[quadID]) {
                 const Quads &q = *e->quads[quadID];
                 if (!inRange(q.ids, 4))
                     ;
-                else if (q.property == RSEntity::SC_TRANSPARENT)
+                else if (q.property == RSEntity::SC_TRANSPARENT) {
                     out.add(e, normals, clearMaterial(quadTwoSided), q.ids, 4, paletteColor(q.color - 1));
-                else if (q.property != 6 && q.property != 9)
+                } else if (q.property != 6 && q.property != 9) {
                     out.add(e, normals, colorMaterial(quadTwoSided), q.ids, 4, paletteColor(q.color - 1));
+                }
             }
         }
         // the textures, on the most detailed level only, as SCRenderer::drawModelTexturePass
         if (level == 0) {
             for (const uvxyEntry &u : e->uvs) {
-                if (u.textureID >= e->images.size() || textureImage[u.textureID] < 0 ||
-                    u.triangleID >= e->triangles.size())
+                if (u.textureID >= e->images.size() || textureImage[u.textureID] < 0 || u.triangleID >= e->triangles.size()) {
                     continue;
+                }
                 const Triangle &t = e->triangles[u.triangleID];
-                if (!inRange(t.ids, 3))
+                if (!inRange(t.ids, 3)) {
                     continue;
+                }
                 RSImage *img = e->images[u.textureID];
                 bool replaces = t.property == 6 || t.property == 9;
-                out.add(e, normals, textureMaterial(u.textureID, replaces, t.flags[2] == 1), t.ids, 3, 0xffffffffu,
-                        u.uvs, (float)img->width, (float)img->height);
+                out.add(e, normals, textureMaterial(u.textureID, replaces, t.flags[2] == 1), t.ids, 3, 0xffffffffu, u.uvs, (float)img->width, (float)img->height);
             }
             for (const qmapuvxyEntry *u : e->qmapuvs) {
-                if (!u || u->textureID >= e->images.size() || textureImage[u->textureID] < 0 ||
-                    u->triangleID >= e->quads.size() || !e->quads[u->triangleID])
+                if (!u || u->textureID >= e->images.size() || textureImage[u->textureID] < 0 || u->triangleID >= e->quads.size() || !e->quads[u->triangleID]) {
                     continue;
+                }
                 const Quads &q = *e->quads[u->triangleID];
-                if (!inRange(q.ids, 4))
+                if (!inRange(q.ids, 4)) {
                     continue;
+                }
                 bool twoSided = false;
-                for (const auto &[key, a] : e->attrs)
+                for (const auto &[key, a] : e->attrs) {
                     if (a && a->id == u->triangleID && a->type == 'Q') {
                         twoSided = a->props2 == 1;
                         break;
                     }
+                }
                 RSImage *img = e->images[u->textureID];
                 bool replaces = q.property == 6 || q.property == 9;
-                out.add(e, normals, textureMaterial(u->textureID, replaces, twoSided), q.ids, 4, 0xffffffffu, u->uvs,
-                        (float)img->width, (float)img->height);
+                out.add(e, normals, textureMaterial(u->textureID, replaces, twoSided), q.ids, 4, 0xffffffffu, u->uvs, (float)img->width, (float)img->height);
             }
         }
         Node node;
@@ -390,8 +441,9 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         lod.name = "levels of detail";
         lod.kind = NodeKind::LOD;
         // level i from its distance to the next one's
-        for (size_t i = 0; i < lods.size(); i++)
+        for (size_t i = 0; i < lods.size(); i++) {
             lod.lodRanges.push_back(i == 0 ? 0.0f : lods[i].first);
+        }
         lod.lodRanges.push_back(1e30f);
         model->nodes.push_back(lod);
         model->nodes[0].children.push_back(1);

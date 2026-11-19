@@ -31,28 +31,46 @@
 namespace r4::ui {
 
 struct Color {
-    uint8_t r = 0, g = 0, b = 0, a = 255;
+    uint8_t r = 0;
+    uint8_t g = 0;
+    uint8_t b = 0;
+    uint8_t a = 255;
     static Color rgb(float r, float g, float b, float a = 1) {
-        auto c = [](float v) { return (uint8_t)(v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + 0.5f); };
+        auto c = [](float v) {
+            return (uint8_t)(v <= 0 ? 0 : v >= 1 ? 255 : v * 255 + 0.5f);
+        };
         return {c(r), c(g), c(b), c(a)};
     }
 };
 
 struct Rect {
-    float x = 0, y = 0, w = 0, h = 0; // points, from the top left
-    bool contains(float px, float py) const { return px >= x && px < x + w && py >= y && py < y + h; }
+    float x = 0; // points, from the top left
+    float y = 0;
+    float w = 0;
+    float h = 0;
+    bool contains(float px, float py) const {
+        return px >= x && px < x + w && py >= y && py < y + h;
+    }
 };
 
-enum class Font { Regular, Bold, Small, Title };
+enum class Font {
+    Regular,
+    Bold,
+    Small,
+    Title
+};
 
 // the state of the mouse for a frame
 struct Input {
-    float mouseX = -1, mouseY = -1; // points, from the top left
-    bool left = false, right = false;
+    float mouseX = -1; // points, from the top left
+    float mouseY = -1;
+    bool left = false;
+    bool right = false;
     float wheel = 0; // notches, positive away from the user
     // a button went down, or up, since the last frame (a quick click can do
     // both between two frames)
-    bool pressed = false, released = false;
+    bool pressed = false;
+    bool released = false;
 };
 
 class Context {
@@ -89,8 +107,7 @@ public:
     // a menu button: "label: item", opening the list of the items
     bool menu(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);
     // the value in the label, a blue bar under it; log: logarithmic scale
-    bool slider(const char *label, float &value, float min, float max, const char *format = "%.2f",
-                bool log = false, bool enabled = true);
+    bool slider(const char *label, float &value, float min, float max, const char *format = "%.2f", bool log = false, bool enabled = true);
     // a row of choices with lights
     bool radio(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);
     // the lights of the bits of a mask, in a row
@@ -114,7 +131,7 @@ public:
         const void *id = nullptr;
         int depth = 0;
         const char *label = "";
-        Color tag;           // the color of the type
+        Color tag; // the color of the type
         const char *tagText = "";
         bool hasChildren = false;
         bool selected = false;

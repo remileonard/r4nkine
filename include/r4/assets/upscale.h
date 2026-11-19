@@ -14,7 +14,12 @@
 
 namespace r4::assets {
 
-enum class Upscale { None, SaI2x, Xbr2x, Xbr4x };
+enum class Upscale {
+    None,
+    SaI2x,
+    Xbr2x,
+    Xbr4x
+};
 
 // the factor of a scaler (1, 2 or 4)
 int upscaleFactor(Upscale u);

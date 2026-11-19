@@ -28,7 +28,14 @@ namespace r4::scene {
 class Node;
 using NodePtr = std::shared_ptr<Node>;
 
-enum class NodeType { Group, Geode, Switch, LOD, Billboard, Instancer };
+enum class NodeType {
+    Group,
+    Geode,
+    Switch,
+    LOD,
+    Billboard,
+    Instancer
+};
 
 // a mesh with its material, as the renderer draws them
 struct Drawable {
@@ -38,22 +45,33 @@ struct Drawable {
 
 class Node : public std::enable_shared_from_this<Node> {
 public:
-    explicit Node(NodeType type = NodeType::Group) : type_(type) {}
+    explicit Node(NodeType type = NodeType::Group) : type_(type) {
+    }
     virtual ~Node() = default;
 
-    NodeType type() const { return type_; }
-    const std::string &name() const { return name_; }
-    void setName(std::string n) { name_ = std::move(n); }
+    NodeType type() const {
+        return type_;
+    }
+    const std::string &name() const {
+        return name_;
+    }
+    void setName(std::string n) {
+        name_ = std::move(n);
+    }
 
     // the matrix relative to the parent
-    const Mat4 &matrix() const { return matrix_; }
+    const Mat4 &matrix() const {
+        return matrix_;
+    }
     void setMatrix(const Mat4 &m) {
         matrix_ = m;
         markDirty();
     }
 
     // the children; a node may have several parents (instancing a subgraph)
-    const std::vector<NodePtr> &children() const { return children_; }
+    const std::vector<NodePtr> &children() const {
+        return children_;
+    }
     void addChild(NodePtr child);
     bool removeChild(const Node *child);
     void removeAllChildren();
@@ -64,22 +82,34 @@ public:
 
     // the visibility mask: a node is skipped when (mask & state) == 0, the
     // state being the mask of the camera
-    uint32_t mask() const { return mask_; }
-    void setMask(uint32_t m) { mask_ = m; }
+    uint32_t mask() const {
+        return mask_;
+    }
+    void setMask(uint32_t m) {
+        mask_ = m;
+    }
     // the state of the subtree: the state below is (state & filter); so one
     // model can be drawn in its own state (drawobj(obj, state) of libgobj)
-    uint32_t stateFilter() const { return filter_; }
-    void setStateFilter(uint32_t f) { filter_ = f; }
+    uint32_t stateFilter() const {
+        return filter_;
+    }
+    void setStateFilter(uint32_t f) {
+        filter_ = f;
+    }
 
     // marks the bounds of this node and its ancestors to be computed again
     void markDirty();
 
 protected:
     // the bounds of what the node itself draws, in its own space
-    virtual Sphere contentBounds() const { return {}; }
+    virtual Sphere contentBounds() const {
+        return {};
+    }
     // the bounds of a child as they count for this node (a billboard turns
     // its children: their bounds must hold for every turn)
-    virtual Sphere childBounds(const Sphere &s) const { return s; }
+    virtual Sphere childBounds(const Sphere &s) const {
+        return s;
+    }
 
 private:
     NodeType type_;
@@ -95,14 +125,19 @@ private:
 
 class Group : public Node {
 public:
-    Group() : Node(NodeType::Group) {}
+    Group() : Node(NodeType::Group) {
+    }
 };
 
 class Geode : public Node {
 public:
-    Geode() : Node(NodeType::Geode) {}
-    explicit Geode(NodeType type) : Node(type) {}
-    const std::vector<Drawable> &drawables() const { return drawables_; }
+    Geode() : Node(NodeType::Geode) {
+    }
+    explicit Geode(NodeType type) : Node(type) {
+    }
+    const std::vector<Drawable> &drawables() const {
+        return drawables_;
+    }
     void addDrawable(Drawable d) {
         drawables_.push_back(std::move(d));
         markDirty();
@@ -122,11 +157,19 @@ private:
 // shows one child, all of them or none
 class Switch : public Node {
 public:
-    static constexpr int kAll = -1, kNone = -2;
-    Switch() : Node(NodeType::Switch) {}
-    int value() const { return value_; }
-    void setValue(int v) { value_ = v; }
-    bool isActive(int child) const { return value_ == kAll || value_ == child; }
+    static constexpr int kAll = -1;
+    static constexpr int kNone = -2;
+    Switch() : Node(NodeType::Switch) {
+    }
+    int value() const {
+        return value_;
+    }
+    void setValue(int v) {
+        value_ = v;
+    }
+    bool isActive(int child) const {
+        return value_ == kAll || value_ == child;
+    }
 
 private:
     int value_ = kAll;
@@ -136,15 +179,22 @@ private:
 // [range(i), range(i + 1)); one range more than children
 class LOD : public Node {
 public:
-    LOD() : Node(NodeType::LOD) {}
-    const std::vector<float> &ranges() const { return ranges_; }
-    void setRanges(std::vector<float> r) { ranges_ = std::move(r); }
+    LOD() : Node(NodeType::LOD) {
+    }
+    const std::vector<float> &ranges() const {
+        return ranges_;
+    }
+    void setRanges(std::vector<float> r) {
+        ranges_ = std::move(r);
+    }
     // the center of the distances, in the node's space; the bounds center by default
     void setCenter(Vec3 c) {
         center_ = c;
         hasCenter_ = true;
     }
-    Vec3 center() { return hasCenter_ ? center_ : bounds().center; }
+    Vec3 center() {
+        return hasCenter_ ? center_ : bounds().center;
+    }
     // the child for a distance, -1: none
     int select(float distance) const;
 
@@ -160,10 +210,18 @@ private:
 // that it faces the eye from any direction (lights, sprites)
 class Billboard : public Geode {
 public:
-    enum class Mode { Axis, Point };
-    Billboard() : Geode(NodeType::Billboard) {}
-    Mode mode() const { return mode_; }
-    void setMode(Mode m) { mode_ = m; }
+    enum class Mode {
+        Axis,
+        Point
+    };
+    Billboard() : Geode(NodeType::Billboard) {
+    }
+    Mode mode() const {
+        return mode_;
+    }
+    void setMode(Mode m) {
+        mode_ = m;
+    }
     // the turn for an eye given in the space of the node
     Mat4 rotationFor(Vec3 eye) const;
 
@@ -191,12 +249,14 @@ struct InstancePart {
 struct Placement {
     Vec3 position;
     float heading = 0; // radians, about the up axis
-    float scale = 1, scaleUp = 1;
+    float scale = 1;
+    float scaleUp = 1;
 };
 
 class Instancer : public Node {
 public:
-    Instancer() : Node(NodeType::Instancer) {}
+    Instancer() : Node(NodeType::Instancer) {
+    }
 
     struct Level {
         float maxDistance = 1e30f;
@@ -205,7 +265,9 @@ public:
     };
     // the levels go from the nearest to the farthest
     void addLevel(std::vector<InstancePart> parts, float maxDistance = 1e30f);
-    const std::vector<Level> &levels() const { return levels_; }
+    const std::vector<Level> &levels() const {
+        return levels_;
+    }
 
     void addInstance(const Mat4 &m) {
         instances_.push_back(m);
@@ -219,21 +281,29 @@ public:
         instances_.clear();
         markDirty();
     }
-    const std::vector<Mat4> &instances() const { return instances_; }
+    const std::vector<Mat4> &instances() const {
+        return instances_;
+    }
     // the compact instances, drawn with the matrices; their up axis (R4nkine's
     // by default; (0, 1, 0) in a subgraph of Y-up data)
     void setPlacements(std::vector<Placement> p) {
         placements_ = std::move(p);
         markDirty();
     }
-    const std::vector<Placement> &placements() const { return placements_; }
+    const std::vector<Placement> &placements() const {
+        return placements_;
+    }
     void setUp(Vec3 up) {
         up_ = normalize(up);
         markDirty();
     }
-    Vec3 up() const { return up_; }
+    Vec3 up() const {
+        return up_;
+    }
     Mat4 matrixOf(const Placement &p) const;
-    size_t count() const { return instances_.size() + placements_.size(); }
+    size_t count() const {
+        return instances_.size() + placements_.size();
+    }
     // the level for a distance, -1: none (farther than the last)
     int select(float distance) const;
 
@@ -254,6 +324,8 @@ private:
 // model.
 std::vector<InstancePart> collectParts(Node &node, uint32_t state = 0xffffffffu);
 
-template <class T, class... A> std::shared_ptr<T> make(A &&...a) { return std::make_shared<T>(std::forward<A>(a)...); }
+template <class T, class... A> std::shared_ptr<T> make(A &&...a) {
+    return std::make_shared<T>(std::forward<A>(a)...);
+}
 
 } // namespace r4::scene

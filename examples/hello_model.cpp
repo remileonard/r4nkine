@@ -14,8 +14,9 @@
 
 int main(int argc, char **argv) {
     example::Window win;
-    if (!win.open("hello_model", argc, argv))
+    if (!win.open("hello_model", argc, argv)) {
         return 1;
+    }
     r4::render::Renderer renderer(*win.device);
     renderer.environment().lightDirection = r4::normalize(r4::Vec3{0.4f, 0.7f, -0.6f}); // from behind the eye
 
@@ -45,7 +46,8 @@ int main(int argc, char **argv) {
     r4::render::Camera camera;
     r4::render::Environment &env = renderer.environment();
     r4::Vec3 background{env.clearColor.x, env.clearColor.y, env.clearColor.z};
-    bool wireframe = false, openLight = false;
+    bool wireframe = false;
+    bool openLight = false;
     while (win.poll()) {
         r4::ui::Context &gui = win.beginGui();
         gui.beginPanel("model", {0, 0, 250, (float)win.pointHeight}, "hello_model");
@@ -59,8 +61,9 @@ int main(int argc, char **argv) {
         gui.toggle("Wireframe", wireframe);
         gui.toggle("Textures", renderer.options().textures);
         gui.columns(1);
-        if (gui.color("Background", background))
+        if (gui.color("Background", background)) {
             env.clearColor = {background, 1};
+        }
         if (gui.section("Light", openLight)) {
             gui.toggle("Lighting", renderer.options().lighting);
             gui.color("Light Color", env.lightColor);

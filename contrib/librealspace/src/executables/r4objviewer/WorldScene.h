@@ -52,13 +52,21 @@ public:
     // the light of the terrain: baked (RSArea's colors) or dynamic (the sun,
     // through normals from the relief); the terrain is made again
     void setTerrainLight(bool dynamic, float relief = 4);
-    float terrainRelief() const { return terrainRelief_; }
-    bool terrainLightDynamic() const { return terrainDynamic_; }
+    float terrainRelief() const {
+        return terrainRelief_;
+    }
+    bool terrainLightDynamic() const {
+        return terrainDynamic_;
+    }
     // the height of the ground under a point (R4nkine's axes); false out of the map
     bool groundHeight(r4::Vec3 p, float &height) const;
 
-    r4::scene::NodePtr root() const { return root_; }
-    RSArea *area() const { return area_.get(); }
+    r4::scene::NodePtr root() const {
+        return root_;
+    }
+    RSArea *area() const {
+        return area_.get();
+    }
     // the layers, shown or hidden
     void showTerrain(bool on);
     void showMapObjects(bool on);
@@ -73,11 +81,17 @@ public:
     // where the trees come from (r4bridge::ForestMode): the green and a noise,
     // or the woods painted in the textures; the forests made again
     void setForestMode(r4bridge::ForestMode mode);
-    r4bridge::ForestMode forestMode() const { return forestMode_; }
-    float forestDensity() const { return forestDensity_; }
-    size_t forestTrees = 0, forestChunks = 0;
+    r4bridge::ForestMode forestMode() const {
+        return forestMode_;
+    }
+    float forestDensity() const {
+        return forestDensity_;
+    }
+    size_t forestTrees = 0;
+    size_t forestChunks = 0;
     // the trees: the detailed ones up to the first, the simple ones up to the second
-    const float kTreeNear = 1500, kTreeFar = 6000;
+    const float kTreeNear = 1500;
+    const float kTreeFar = 6000;
     // the parts of a scene of the mission (or, scene -1, those of no scene)
     void showScene(int scene, bool on);
 
@@ -86,22 +100,34 @@ public:
         std::string name;
         r4::Vec3 position; // R4nkine's axes
         float radius;
-        bool found;        // its object is in the TRE
-        int scene = -2;    // the scene that makes it appear; -1: none, -2: not a part
+        bool found;     // its object is in the TRE
+        int scene = -2; // the scene that makes it appear; -1: none, -2: not a part
     };
     // the scenes of the mission: their area and how many parts they bring
     struct Scene {
         std::string label;
         size_t parts = 0;
     };
-    const std::vector<Scene> &scenes() const { return scenes_; }
+    const std::vector<Scene> &scenes() const {
+        return scenes_;
+    }
     size_t partsWithoutScene = 0;
-    const std::vector<Item> &parts() const { return parts_; }
-    const std::vector<Item> &mapObjects() const { return mapObjects_; }
+    const std::vector<Item> &parts() const {
+        return parts_;
+    }
+    const std::vector<Item> &mapObjects() const {
+        return mapObjects_;
+    }
     // the areas of the mission (entering one starts its scenes)
-    const std::vector<Item> &areas() const { return areas_; }
-    std::string worldName, terrainName;
-    size_t terrainTriangles = 0, terrainTextures = 0, overlayTriangles = 0, terrainBlocks = 0;
+    const std::vector<Item> &areas() const {
+        return areas_;
+    }
+    std::string worldName;
+    std::string terrainName;
+    size_t terrainTriangles = 0;
+    size_t terrainTextures = 0;
+    size_t overlayTriangles = 0;
+    size_t terrainBlocks = 0;
     // the distances of the levels of the blocks: the finest up to 2 blocks,
     // the coarsest beyond 5
     const std::vector<float> kTerrainRanges{0, 40000, 100000, 1e30f};
@@ -130,10 +156,17 @@ private:
     std::map<std::string, std::unique_ptr<RSEntity>> entities_;
     std::map<std::string, r4::scene::NodePtr> objects_;
     std::shared_ptr<r4::scene::Group> root_;
-    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_, forests_, buildings_;
+    std::shared_ptr<r4::scene::Switch> terrain_;
+    std::shared_ptr<r4::scene::Switch> overlays_;
+    std::shared_ptr<r4::scene::Switch> mapLayer_;
+    std::shared_ptr<r4::scene::Switch> partsLayer_;
+    std::shared_ptr<r4::scene::Switch> forests_;
+    std::shared_ptr<r4::scene::Switch> buildings_;
     std::vector<std::shared_ptr<r4::scene::Switch>> sceneLayers_; // the scenes, then "no scene"
     std::vector<Scene> scenes_;
-    std::vector<Item> parts_, mapObjects_, areas_;
+    std::vector<Item> parts_;
+    std::vector<Item> mapObjects_;
+    std::vector<Item> areas_;
     bool terrainDynamic_ = false;
     float terrainRelief_ = 4;
     float forestDensity_ = 1;

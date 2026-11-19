@@ -18,48 +18,88 @@ namespace r4::gpu {
 // handles: 0 is none
 struct BufferHandle {
     uint32_t id = 0;
-    explicit operator bool() const { return id != 0; }
+    explicit operator bool() const {
+        return id != 0;
+    }
 };
 struct TextureHandle {
     uint32_t id = 0;
-    explicit operator bool() const { return id != 0; }
+    explicit operator bool() const {
+        return id != 0;
+    }
 };
 struct ShaderHandle {
     uint32_t id = 0;
-    explicit operator bool() const { return id != 0; }
+    explicit operator bool() const {
+        return id != 0;
+    }
 };
 // an image to draw into, instead of the window: the scene before the post
 // process, a screen of a virtual cockpit
 struct RenderTargetHandle {
     uint32_t id = 0;
-    explicit operator bool() const { return id != 0; }
+    explicit operator bool() const {
+        return id != 0;
+    }
 };
 struct PipelineHandle {
     uint32_t id = 0;
-    explicit operator bool() const { return id != 0; }
-    bool operator==(PipelineHandle o) const { return id == o.id; }
-    bool operator!=(PipelineHandle o) const { return id != o.id; }
+    explicit operator bool() const {
+        return id != 0;
+    }
+    bool operator==(PipelineHandle o) const {
+        return id == o.id;
+    }
+    bool operator!=(PipelineHandle o) const {
+        return id != o.id;
+    }
 };
 
-enum class BufferUsage { Vertex, Index, Uniform };
-enum class IndexType { U16, U32 };
+enum class BufferUsage {
+    Vertex,
+    Index,
+    Uniform
+};
+enum class IndexType {
+    U16,
+    U32
+};
 
-enum class TextureFormat { R8, RG8, RGB8, RGBA8 };
-enum class Filter { Nearest, Linear };
-enum class Wrap { Repeat, Clamp, Mirror };
+enum class TextureFormat {
+    R8,
+    RG8,
+    RGB8,
+    RGBA8
+};
+enum class Filter {
+    Nearest,
+    Linear
+};
+enum class Wrap {
+    Repeat,
+    Clamp,
+    Mirror
+};
 
 struct TextureDesc {
-    int width = 0, height = 0;
+    int width = 0;
+    int height = 0;
     TextureFormat format = TextureFormat::RGBA8;
-    Filter minFilter = Filter::Linear, magFilter = Filter::Linear;
+    Filter minFilter = Filter::Linear;
+    Filter magFilter = Filter::Linear;
     bool mipmaps = true;
-    Wrap wrapS = Wrap::Repeat, wrapT = Wrap::Repeat;
+    Wrap wrapS = Wrap::Repeat;
+    Wrap wrapT = Wrap::Repeat;
     // anisotropic filtering: up to this many samples along the slope (1: off),
     // limited by Limits::maxAnisotropy
     float anisotropy = 1;
 };
 
-enum class AttribType { Float, UByte, Short };
+enum class AttribType {
+    Float,
+    UByte,
+    Short
+};
 
 struct VertexAttrib {
     uint32_t location = 0;   // the shader input
@@ -80,17 +120,39 @@ struct VertexLayout {
     std::vector<VertexStream> streams; // indexed by buffer slot
 };
 
-enum class Primitive { Triangles, Lines, Points, TriangleStrip };
-enum class CullMode { None, Back, Front };
-enum class BlendMode { Opaque, Alpha, Additive, Premultiplied };
-enum class CompareOp { Never, Less, LessEqual, Equal, Greater, Always };
+enum class Primitive {
+    Triangles,
+    Lines,
+    Points,
+    TriangleStrip
+};
+enum class CullMode {
+    None,
+    Back,
+    Front
+};
+enum class BlendMode {
+    Opaque,
+    Alpha,
+    Additive,
+    Premultiplied
+};
+enum class CompareOp {
+    Never,
+    Less,
+    LessEqual,
+    Equal,
+    Greater,
+    Always
+};
 
 // the sources of a shader program. The GL backend takes GLSL 330; the other
 // backends will take the same sources cross-compiled (SPIR-V, MSL...).
 // Uniform blocks are bound by name: their slot is listed here, so that the
 // sources need no binding qualifier (absent from GLSL 330). Samplers too.
 struct ShaderDesc {
-    std::string vertex, fragment;
+    std::string vertex;
+    std::string fragment;
     std::vector<std::pair<std::string, uint32_t>> uniformBlocks; // name, slot
     std::vector<std::pair<std::string, uint32_t>> samplers;      // name, texture slot
     std::string debugName;
@@ -103,16 +165,19 @@ struct PipelineDesc {
     CullMode cull = CullMode::Back;
     bool frontCCW = true;
     BlendMode blend = BlendMode::Opaque;
-    bool depthTest = true, depthWrite = true;
+    bool depthTest = true;
+    bool depthWrite = true;
     CompareOp depthCompare = CompareOp::LessEqual;
     bool wireframe = false;
-    float polygonOffsetFactor = 0, polygonOffsetUnits = 0; // decals, outlines
+    float polygonOffsetFactor = 0; // decals, outlines
+    float polygonOffsetUnits = 0;
 };
 
 struct RenderTargetDesc {
-    int width = 0, height = 0;
-    int samples = 1;    // > 1: multisampled (MSAA), resolved into the texture
-    bool depth = true;  // a depth (and stencil) buffer
+    int width = 0;
+    int height = 0;
+    int samples = 1;                // > 1: multisampled (MSAA), resolved into the texture
+    bool depth = true;              // a depth (and stencil) buffer
     Filter filter = Filter::Linear; // how its texture is sampled
     // a shadow map: depth only (no color, no samples), its texture the depth,
     // sampled compared (sampler2DShadow, linear filter: 2 x 2 PCF)
@@ -120,8 +185,12 @@ struct RenderTargetDesc {
 };
 
 struct ClearValues {
-    bool color = true, depth = true;
-    float r = 0, g = 0, b = 0, a = 1;
+    bool color = true;
+    bool depth = true;
+    float r = 0;
+    float g = 0;
+    float b = 0;
+    float a = 1;
     float depthValue = 1;
 };
 
@@ -129,12 +198,15 @@ struct Limits {
     uint32_t uniformBufferAlignment = 256;
     uint32_t maxUniformBlockSize = 16384;
     uint32_t maxTextureSize = 2048;
-    int maxSamples = 1; // of the render targets
+    int maxSamples = 1;      // of the render targets
     float maxAnisotropy = 1; // 1: no anisotropic filtering (GL 4.6 or the extension)
 };
 
 struct FrameStats {
-    uint32_t drawCalls = 0, triangles = 0, pipelineChanges = 0, textureChanges = 0;
+    uint32_t drawCalls = 0;
+    uint32_t triangles = 0;
+    uint32_t pipelineChanges = 0;
+    uint32_t textureChanges = 0;
 };
 
 class Device {
@@ -171,8 +243,7 @@ public:
     virtual const std::string &lastError() const = 0;
 
     // a pass into a render target, or the window when the handle is null
-    virtual void beginPass(RenderTargetHandle target, int x, int y, int width, int height,
-                           const ClearValues &clear) = 0;
+    virtual void beginPass(RenderTargetHandle target, int x, int y, int width, int height, const ClearValues &clear) = 0;
     // a pass on the window
     void beginPass(int x, int y, int width, int height, const ClearValues &clear) {
         beginPass(RenderTargetHandle{}, x, y, width, height, clear);
@@ -190,8 +261,7 @@ public:
     virtual void bindTexture(uint32_t slot, TextureHandle t) = 0;
 
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0, uint32_t instances = 1) = 0;
-    virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0,
-                             uint32_t instances = 1) = 0;
+    virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instances = 1) = 0;
 
     // reads the pixels of the last pass, RGBA8 from the bottom row
     virtual bool readPixels(int x, int y, int width, int height, void *rgba) = 0;
@@ -202,8 +272,10 @@ public:
     // around the drawing of the device inside a host that also draws with the
     // same API (a game in fixed-pipeline OpenGL): the state of the host is
     // saved before and given back after
-    virtual void beginHostInterop() {}
-    virtual void endHostInterop() {}
+    virtual void beginHostInterop() {
+    }
+    virtual void endHostInterop() {
+    }
 };
 
 // the OpenGL 3.3 backend, in the GL context current on this thread (a

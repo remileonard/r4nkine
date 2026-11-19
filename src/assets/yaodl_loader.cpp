@@ -57,10 +57,18 @@ struct Recorder {
         float plane[4] = {0, 0, 0, 0};
     };
     const Contour *contour[2] = {nullptr, nullptr};
-    bool sphereMap() const { return contour[0] && contour[0]->mode == 2; }
+    bool sphereMap() const {
+        return contour[0] && contour[0]->mode == 2;
+    }
     std::map<std::string, int> textureByName;
 
-    enum Kind { None, Polygon, Line, ClosedLine, Strip };
+    enum Kind {
+        None,
+        Polygon,
+        Line,
+        ClosedLine,
+        Strip
+    };
     Kind kind = None;
     std::vector<Vertex> prim;
     std::vector<bool> primNormal;
@@ -68,13 +76,19 @@ struct Recorder {
     // the meshes by (texture, lit, primitive, sphere map)
     std::map<std::tuple<int, bool, int, bool>, Mesh> meshes;
 
-    explicit Recorder(Model &m) : model(m) {}
+    explicit Recorder(Model &m) : model(m) {
+    }
 
-    Mat4 &top() { return stack.back(); }
-    void push() { stack.push_back(stack.back()); }
+    Mat4 &top() {
+        return stack.back();
+    }
+    void push() {
+        stack.push_back(stack.back());
+    }
     void pop() {
-        if (stack.size() > 1)
+        if (stack.size() > 1) {
             stack.pop_back();
+        }
     }
 
     void begin(Kind k) {
@@ -84,18 +98,22 @@ struct Recorder {
     }
 
     void vertex(Vec3 p) {
-        if (kind == None)
+        if (kind == None) {
             return;
+        }
         Vertex v;
         v.position = transformPoint(top(), p);
         v.normal = normalize(transformVector(normalMatrix(top()), normal));
         v.uv = uv;
-        for (int c = 0; c < 2; c++)
+        for (int c = 0; c < 2; c++) {
             if (contour[c] && contour[c]->mode == 1) {
                 const float *pl = contour[c]->plane;
                 (c ? v.uv.y : v.uv.x) = pl[0] * p.x + pl[1] * p.y + pl[2] * p.z + pl[3];
             }
-        auto byte = [](float f) { return (uint32_t)(std::fmin(std::fmax(f, 0.0f), 1.0f) * 255.0f + 0.5f); };
+        }
+        auto byte = [](float f) {
+            return (uint32_t)(std::fmin(std::fmax(f, 0.0f), 1.0f) * 255.0f + 0.5f);
+        };
         v.color = byte(color.x) | byte(color.y) << 8 | byte(color.z) << 16 | byte(color.w) << 24;
         prim.push_back(v);
         primNormal.push_back(haveNormal);
@@ -113,41 +131,49 @@ struct Recorder {
         kind = None;
         size_t n = prim.size();
         if (k == Polygon || k == Strip) {
-            if (n < 3)
+            if (n < 3) {
                 return;
+            }
             // the faces without normals get theirs
             bool any = false;
-            for (bool b : primNormal)
+            for (bool b : primNormal) {
                 any = any || b;
+            }
             if (!any) {
                 Vec3 fn = normalize(cross(prim[1].position - prim[0].position, prim[2].position - prim[0].position));
-                for (Vertex &v : prim)
+                for (Vertex &v : prim) {
                     v.normal = fn;
+                }
             }
             Mesh &m = mesh(unlit == 0, Primitive::Triangles);
             uint32_t base = (uint32_t)m.vertices.size();
             m.vertices.insert(m.vertices.end(), prim.begin(), prim.end());
             for (uint32_t c = 1; c + 1 < n; c++) {
-                if (k == Polygon)
+                if (k == Polygon) {
                     m.indices.insert(m.indices.end(), {base, base + c, base + c + 1});
-                else if (c % 2)
+                } else if (c % 2) {
                     m.indices.insert(m.indices.end(), {base + c - 1, base + c, base + c + 1});
-                else
+                } else {
                     m.indices.insert(m.indices.end(), {base + c, base + c - 1, base + c + 1});
+                }
             }
         } else if (k == Line || k == ClosedLine) {
-            if (n < 2)
+            if (n < 2) {
                 return;
+            }
             bool lit = unlit == 0;
-            for (bool b : primNormal)
+            for (bool b : primNormal) {
                 lit = lit && b;
+            }
             Mesh &m = mesh(lit, Primitive::Lines);
             uint32_t base = (uint32_t)m.vertices.size();
             m.vertices.insert(m.vertices.end(), prim.begin(), prim.end());
-            for (uint32_t c = 0; c + 1 < n; c++)
+            for (uint32_t c = 0; c + 1 < n; c++) {
                 m.indices.insert(m.indices.end(), {base + c, base + c + 1});
-            if (k == ClosedLine && n > 2)
+            }
+            if (k == ClosedLine && n > 2) {
                 m.indices.insert(m.indices.end(), {base + (uint32_t)n - 1, base});
+            }
         }
     }
 
@@ -155,17 +181,20 @@ struct Recorder {
     // of the model, then by its name in the folder (the IRIX absolute paths)
     int loadTexture(const std::string &name) {
         auto it = textureByName.find(name);
-        if (it != textureByName.end())
+        if (it != textureByName.end()) {
             return it->second;
+        }
         Image img;
         std::string err;
         bool ok = loadImage(name, img, &err);
-        if (!ok && !dir.empty() && name[0] != '/' && name[0] != '\\')
+        if (!ok && !dir.empty() && name[0] != '/' && name[0] != '\\') {
             ok = loadImage(dir + name, img, &err);
+        }
         if (!ok) {
             size_t slash = name.find_last_of("/\\");
-            if (slash != std::string::npos)
+            if (slash != std::string::npos) {
                 ok = loadImage(dir + name.substr(slash + 1), img, &err);
+            }
         }
         int index = -1;
         if (ok) {
@@ -182,14 +211,40 @@ struct Recorder {
 // --- the objects ---------------------------------------------------------------
 
 enum class Cls {
-    Float, Int, String, Group, Lines, Polygons, IndexPolygons, Indices, Vertices, Normals, Colors, Colors4f,
-    Translates, Scales, Rotates, Untransform, NoFlipLighting, Textures, TexCoords, Contours, Subdivides,
-    RegularMesh, Nurbs, TrimCurves, Unknown
+    Float,
+    Int,
+    String,
+    Group,
+    Lines,
+    Polygons,
+    IndexPolygons,
+    Indices,
+    Vertices,
+    Normals,
+    Colors,
+    Colors4f,
+    Translates,
+    Scales,
+    Rotates,
+    Untransform,
+    NoFlipLighting,
+    Textures,
+    TexCoords,
+    Contours,
+    Subdivides,
+    RegularMesh,
+    Nurbs,
+    TrimCurves,
+    Unknown
 };
 
 struct Surface {
-    std::vector<double> sknots, tknots, points;
-    int ns = 0, nt = 0, size = 3;
+    std::vector<double> sknots;
+    std::vector<double> tknots;
+    std::vector<double> points;
+    int ns = 0;
+    int nt = 0;
+    int size = 3;
 };
 
 struct Yobj {
@@ -210,20 +265,26 @@ struct Yobj {
     const Recorder::Contour *savedContour = nullptr;
 };
 
-bool isData(const Yobj &o) { return o.cls == Cls::Float || o.cls == Cls::Int || o.cls == Cls::String; }
-int clampIndex(int i, int n) { return i < n ? i : n - 1; }
+bool isData(const Yobj &o) {
+    return o.cls == Cls::Float || o.cls == Cls::Int || o.cls == Cls::String;
+}
+int clampIndex(int i, int n) {
+    return i < n ? i : n - 1;
+}
 
 struct Exec {
     Recorder &r;
     int currentTexture = 0; // 1 + image index, 0: none (as texbind)
 
     void listPush(std::vector<YobjP> &l, bool full) {
-        for (auto &a : l)
+        for (auto &a : l) {
             push(*a, full);
+        }
     }
     void listPop(std::vector<YobjP> &l, bool full) {
-        for (size_t i = l.size(); i-- > 0;)
+        for (size_t i = l.size(); i-- > 0;) {
             pop(*l[i], full);
+        }
     }
     void listExecuteN(std::vector<YobjP> &l, int i) {
         for (auto &a : l) {
@@ -246,7 +307,9 @@ struct Exec {
         listPop(o.assoc, true);
     }
 
-    const float *element(Yobj &o, int i) { return o.f.data() + o.width * clampIndex(i, o.count); }
+    const float *element(Yobj &o, int i) {
+        return o.f.data() + o.width * clampIndex(i, o.count);
+    }
 
     void push(Yobj &o, bool full) {
         switch (o.cls) {
@@ -255,8 +318,9 @@ struct Exec {
         case Cls::Polygons:
         case Cls::IndexPolygons:
         case Cls::RegularMesh:
-            for (auto &k : o.kids)
+            for (auto &k : o.kids) {
                 push(*k, full);
+            }
             break;
         case Cls::Translates:
         case Cls::Scales:
@@ -273,14 +337,17 @@ struct Exec {
             r.unlit++;
             break;
         case Cls::Textures:
-            if (currentTexture)
+            if (currentTexture) {
                 o.flag = 1;
-            if (full)
+            }
+            if (full) {
                 o.saved = currentTexture;
+            }
             break;
         case Cls::Contours:
-            if (full)
+            if (full) {
                 o.savedContour = r.contour[o.className == "tContours"];
+            }
             break;
         default:
             break;
@@ -294,8 +361,9 @@ struct Exec {
         case Cls::Polygons:
         case Cls::IndexPolygons:
         case Cls::RegularMesh:
-            for (auto &k : o.kids)
+            for (auto &k : o.kids) {
                 pop(*k, full);
+            }
             break;
         case Cls::Translates:
         case Cls::Scales:
@@ -303,23 +371,26 @@ struct Exec {
             r.pop();
             break;
         case Cls::Untransform:
-            if (full)
+            if (full) {
                 r.pop();
+            }
             break;
         case Cls::NoFlipLighting:
             r.unlit--;
             break;
         case Cls::Textures:
-            if (o.flag || !full)
+            if (o.flag || !full) {
                 return;
+            }
             if (o.saved != currentTexture) {
                 currentTexture = o.saved;
                 r.texture = currentTexture - 1;
             }
             break;
         case Cls::Contours:
-            if (full)
+            if (full) {
                 r.contour[o.className == "tContours"] = o.savedContour;
+            }
             break;
         default:
             break;
@@ -361,8 +432,9 @@ struct Exec {
         }
         case Cls::Rotates: {
             const float *a = element(o, i);
-            if (a[1] != 0 || a[2] != 0 || a[3] != 0)
+            if (a[1] != 0 || a[2] != 0 || a[3] != 0) {
                 r.top() = r.top() * rotate(radians(a[0]), {a[1], a[2], a[3]});
+            }
             break;
         }
         case Cls::Group:
@@ -386,8 +458,9 @@ struct Exec {
             const std::vector<int> &poly = ind.polys[i];
             for (size_t j = 0; j < poly.size(); j++) {
                 int v = poly[j];
-                if (v < 0 || v >= verts.count)
+                if (v < 0 || v >= verts.count) {
                     continue;
+                }
                 if (j) {
                     listPop(verts.assoc, false);
                     listPush(verts.assoc, false);
@@ -400,8 +473,9 @@ struct Exec {
             break;
         }
         case Cls::Textures:
-            if (o.flag || o.count == 0)
+            if (o.flag || o.count == 0) {
                 return;
+            }
             currentTexture = o.iv[clampIndex(i, o.count)];
             r.texture = currentTexture - 1;
             break;
@@ -430,23 +504,29 @@ struct Exec {
         case Cls::Lines: {
             // lines without normals are not lit
             bool lit = false;
-            for (auto &a : o.assoc)
+            for (auto &a : o.assoc) {
                 lit = lit || a->cls == Cls::Normals;
-            for (auto &k : o.kids)
-                for (auto &a : k->assoc)
+            }
+            for (auto &k : o.kids) {
+                for (auto &a : k->assoc) {
                     lit = lit || a->cls == Cls::Normals;
-            if (!lit)
+                }
+            }
+            if (!lit) {
                 r.unlit++;
+            }
             executeElements(o);
-            if (!lit)
+            if (!lit) {
                 r.unlit--;
+            }
             break;
         }
         case Cls::RegularMesh: {
             listPush(o.assoc, true);
             listExecuteN(o.assoc, 0);
             Yobj &verts = *o.kids[0];
-            int w = o.width, h = o.iv.empty() ? 0 : o.iv[0];
+            int w = o.width;
+            int h = o.iv.empty() ? 0 : o.iv[0];
             listPush(verts.assoc, true);
             auto meshVertex = [&](int v, bool first) {
                 if (!first) {
@@ -471,8 +551,9 @@ struct Exec {
         case Cls::Nurbs: {
             // the attributes (trimming curves) go inside the surfaces
             listPush(o.assoc, true);
-            for (int i = 0; i < o.count; i++)
+            for (int i = 0; i < o.count; i++) {
                 executeN(o, i);
+            }
             listPop(o.assoc, true);
             break;
         }
@@ -486,45 +567,63 @@ struct Exec {
         // Cox - de Boor, iterative on a small table
         std::vector<double> N(order);
         for (int j = 0; j < order; j++) {
-            double a = knots[i + j], b = knots[i + j + 1];
+            double a = knots[i + j];
+            double b = knots[i + j + 1];
             N[j] = (u >= a && u < b) || (u == knots.back() && u > a && u <= b) ? 1 : 0;
         }
-        for (int k = 2; k <= order; k++)
+        for (int k = 2; k <= order; k++) {
             for (int j = 0; j + k - 1 < order; j++) {
-                double left = 0, right = 0;
+                double left = 0;
+                double right = 0;
                 double d1 = knots[i + j + k - 1] - knots[i + j];
                 double d2 = knots[i + j + k] - knots[i + j + 1];
-                if (d1 > 0)
+                if (d1 > 0) {
                     left = (u - knots[i + j]) / d1 * N[j];
-                if (d2 > 0)
+                }
+                if (d2 > 0) {
                     right = (knots[i + j + k] - u) / d2 * N[j + 1];
+                }
                 N[j] = left + right;
             }
+        }
         return N[0];
     }
 
     void nurbs(const Surface &s) {
-        int os = (int)s.sknots.size() - s.ns, ot = (int)s.tknots.size() - s.nt;
-        if (os < 1 || ot < 1)
+        int os = (int)s.sknots.size() - s.ns;
+        int ot = (int)s.tknots.size() - s.nt;
+        if (os < 1 || ot < 1) {
             return;
-        double s0 = s.sknots[os - 1], s1 = s.sknots[s.ns], t0 = s.tknots[ot - 1], t1 = s.tknots[s.nt];
-        const int SN = std::max(8, (s.ns - os + 1) * 6), TN = std::max(8, (s.nt - ot + 1) * 6);
+        }
+        double s0 = s.sknots[os - 1];
+        double s1 = s.sknots[s.ns];
+        double t0 = s.tknots[ot - 1];
+        double t1 = s.tknots[s.nt];
+        const int SN = std::max(8, (s.ns - os + 1) * 6);
+        const int TN = std::max(8, (s.nt - ot + 1) * 6);
         std::vector<Vec3> grid((SN + 1) * (TN + 1));
-        std::vector<double> bs(s.ns), bt(s.nt);
+        std::vector<double> bs(s.ns);
+        std::vector<double> bt(s.nt);
         for (int b = 0; b <= TN; b++) {
             double t = t0 + (t1 - t0) * b / TN;
-            for (int j = 0; j < s.nt; j++)
+            for (int j = 0; j < s.nt; j++) {
                 bt[j] = basis(s.tknots, ot, j, t);
+            }
             for (int a = 0; a <= SN; a++) {
                 double u = s0 + (s1 - s0) * a / SN;
-                for (int i = 0; i < s.ns; i++)
+                for (int i = 0; i < s.ns; i++) {
                     bs[i] = basis(s.sknots, os, i, u);
-                double x = 0, y = 0, z = 0, w = 0;
-                for (int j = 0; j < s.nt; j++)
+                }
+                double x = 0;
+                double y = 0;
+                double z = 0;
+                double w = 0;
+                for (int j = 0; j < s.nt; j++) {
                     for (int i = 0; i < s.ns; i++) {
                         double k = bs[i] * bt[j];
-                        if (k == 0)
+                        if (k == 0) {
                             continue;
+                        }
                         const double *p = &s.points[(j * s.ns + i) * s.size];
                         double pw = s.size == 4 ? p[3] : 1;
                         x += k * p[0];
@@ -532,16 +631,20 @@ struct Exec {
                         z += k * p[2];
                         w += k * (s.size == 4 ? pw : 1);
                     }
-                if (w == 0)
+                }
+                if (w == 0) {
                     w = 1;
+                }
                 grid[b * (SN + 1) + a] = {(float)(x / w), (float)(y / w), (float)(z / w)};
             }
         }
-        auto at = [&](int a, int b) { return grid[b * (SN + 1) + a]; };
+        auto at = [&](int a, int b) {
+            return grid[b * (SN + 1) + a];
+        };
         bool saved = r.haveNormal;
         for (int b = 0; b < TN; b++) {
             r.begin(Recorder::Strip);
-            for (int a = 0; a <= SN; a++)
+            for (int a = 0; a <= SN; a++) {
                 for (int k = 0; k < 2; k++) {
                     int bb = b + k;
                     Vec3 du = at(std::min(a + 1, SN), bb) - at(std::max(a - 1, 0), bb);
@@ -552,6 +655,7 @@ struct Exec {
                     r.uv = {(float)a / SN, (float)bb / TN};
                     r.vertex(at(a, bb));
                 }
+            }
             r.end();
         }
         r.haveNormal = saved;
@@ -562,16 +666,19 @@ struct Exec {
 
 struct Parser {
     const unsigned char *s;
-    long len, pos = 0;
+    long len;
+    long pos = 0;
     int line = 1;
     std::string error;
     std::vector<std::pair<std::string, YobjP>> defs;
     Recorder &rec;
-    explicit Parser(Recorder &r) : s(nullptr), len(0), rec(r) {}
+    explicit Parser(Recorder &r) : s(nullptr), len(0), rec(r) {
+    }
 
     void fail(const std::string &msg) {
-        if (error.empty())
+        if (error.empty()) {
             error = "line " + std::to_string(line) + ": " + msg;
+        }
     }
 
     void skip(bool commas) {
@@ -581,13 +688,15 @@ struct Parser {
                 line++;
                 pos++;
             } else if (c == '#') {
-                while (pos < len && s[pos] != '\n')
+                while (pos < len && s[pos] != '\n') {
                     pos++;
+                }
             } else if (c == '/' && pos + 1 < len && s[pos + 1] == '*') {
                 pos += 2;
                 while (pos + 1 < len && !(s[pos] == '*' && s[pos + 1] == '/')) {
-                    if (s[pos] == '\n')
+                    if (s[pos] == '\n') {
                         line++;
+                    }
                     pos++;
                 }
                 pos += 2;
@@ -602,26 +711,35 @@ struct Parser {
         skip(commas);
         return pos < len ? s[pos] : -1;
     }
-    static bool wordStart(int c) { return std::isalpha(c) || c == '_' || c == '/'; }
-    static bool wordChar(int c) { return std::isalnum(c) || c == '_' || c == '.' || c == '/' || c == '-'; }
+    static bool wordStart(int c) {
+        return std::isalpha(c) || c == '_' || c == '/';
+    }
+    static bool wordChar(int c) {
+        return std::isalnum(c) || c == '_' || c == '.' || c == '/' || c == '-';
+    }
     bool isNumber() {
         long q = pos;
-        if (q < len && (s[q] == '-' || s[q] == '+'))
+        if (q < len && (s[q] == '-' || s[q] == '+')) {
             q++;
-        if (q < len && s[q] == '.')
+        }
+        if (q < len && s[q] == '.') {
             q++;
+        }
         return q < len && std::isdigit(s[q]);
     }
     std::string word() {
         std::string w;
-        while (pos < len && wordChar(s[pos]))
+        while (pos < len && wordChar(s[pos])) {
             w += (char)s[pos++];
+        }
         return w;
     }
     YobjP findDef(const std::string &name) {
-        for (size_t i = defs.size(); i-- > 0;)
-            if (defs[i].first == name)
+        for (size_t i = defs.size(); i-- > 0;) {
+            if (defs[i].first == name) {
                 return defs[i].second;
+            }
+        }
         return nullptr;
     }
 
@@ -630,15 +748,18 @@ struct Parser {
         bool isFloat = false;
         for (;;) {
             skip(false);
-            if (pos >= len || !isNumber())
+            if (pos >= len || !isNumber()) {
                 break;
+            }
             std::string b;
             while (pos < len) {
                 int c = s[pos];
-                if (!(std::isdigit(c) || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E'))
+                if (!(std::isdigit(c) || c == '.' || c == '-' || c == '+' || c == 'e' || c == 'E')) {
                     break;
-                if (c == '.' || c == 'e' || c == 'E')
+                }
+                if (c == '.' || c == 'e' || c == 'E') {
                     isFloat = true;
+                }
                 b += (char)c;
                 pos++;
             }
@@ -647,12 +768,14 @@ struct Parser {
         auto o = std::make_shared<Yobj>();
         if (isFloat) {
             o->cls = Cls::Float;
-            for (double d : v)
+            for (double d : v) {
                 o->f.push_back((float)d);
+            }
         } else {
             o->cls = Cls::Int;
-            for (double d : v)
+            for (double d : v) {
                 o->iv.push_back((int)d);
+            }
         }
         o->count = (int)v.size();
         return o;
@@ -666,8 +789,9 @@ struct Parser {
         std::string type;
         pos++;
         while (pos < len && s[pos] != 0) {
-            if (!std::isspace(s[pos]))
+            if (!std::isspace(s[pos])) {
                 type += (char)s[pos];
+            }
             pos++;
         }
         pos++;
@@ -696,8 +820,9 @@ struct Parser {
             return o;
         }
         std::vector<int> iv(n);
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < n; i++) {
             iv[i] = (int)be32(d + 4 * i);
+        }
         if (type == "int") {
             o->cls = Cls::Int;
             o->iv = iv;
@@ -732,35 +857,42 @@ struct Parser {
     YobjP create(const std::string &name, std::vector<YobjP> &args);
 
     YobjP object(const std::string &name, bool bare) {
-        std::vector<YobjP> args, assoc;
+        std::vector<YobjP> args;
+        std::vector<YobjP> assoc;
         bool attributes = false;
         for (;;) {
             int c = peek(!bare);
             if (c < 0) {
-                if (!bare)
+                if (!bare) {
                     fail("unexpected end of file");
+                }
                 break;
             }
             if (c == ')') {
-                if (!bare)
+                if (!bare) {
                     pos++;
+                }
                 break;
             }
-            if (bare && c == ',')
+            if (bare && c == ',') {
                 break;
+            }
             if (c == ':') {
                 pos++;
                 attributes = true;
                 continue;
             }
             YobjP a = item(attributes);
-            if (a)
+            if (a) {
                 (attributes ? assoc : args).push_back(a);
-            if (!error.empty())
+            }
+            if (!error.empty()) {
                 return nullptr;
+            }
         }
-        if (!error.empty())
+        if (!error.empty()) {
             return nullptr;
+        }
         YobjP o = create(name, args);
         if (!o) {
             fail("bad arguments of " + name);
@@ -772,8 +904,9 @@ struct Parser {
 
     YobjP item(bool bareOk) {
         int c = peek(true);
-        if (c < 0)
+        if (c < 0) {
             return nullptr;
+        }
         if (c == '(') {
             pos++;
             skip(true);
@@ -784,16 +917,19 @@ struct Parser {
             }
             return object(w, false);
         }
-        if (c == '@')
+        if (c == '@') {
             return binary();
-        if (isNumber())
+        }
+        if (isNumber()) {
             return numbers();
+        }
         if (c == '"') {
             auto o = std::make_shared<Yobj>();
             o->cls = Cls::String;
             long start = ++pos;
-            while (pos < len && s[pos] != '"')
+            while (pos < len && s[pos] != '"') {
                 pos++;
+            }
             o->str.assign((const char *)s + start, pos - start);
             o->count = 1;
             pos++;
@@ -804,14 +940,17 @@ struct Parser {
             if (peek(false) == '=') {
                 pos++;
                 YobjP d = item(true);
-                if (d)
+                if (d) {
                     defs.emplace_back(w, d);
+                }
                 return nullptr;
             }
-            if (YobjP d = findDef(w))
+            if (YobjP d = findDef(w)) {
                 return d;
-            if (bareOk)
+            }
+            if (bareOk) {
                 return object(w, true);
+            }
             auto o = std::make_shared<Yobj>();
             o->cls = Cls::String;
             o->str = w;
@@ -825,8 +964,9 @@ struct Parser {
     void file(std::vector<YobjP> &objs) {
         for (;;) {
             int c = peek(true);
-            if (c < 0 || !error.empty())
+            if (c < 0 || !error.empty()) {
                 return;
+            }
             if (wordStart(c)) {
                 long save = pos;
                 int saveLine = line;
@@ -834,8 +974,9 @@ struct Parser {
                 if (peek(false) == '=') {
                     pos++;
                     YobjP d = item(true);
-                    if (d)
+                    if (d) {
                         defs.emplace_back(name, d);
+                    }
                     continue;
                 }
                 pos = save;
@@ -844,13 +985,15 @@ struct Parser {
             if (c == ':') {
                 pos++;
                 YobjP o = item(true);
-                if (o && !objs.empty())
+                if (o && !objs.empty()) {
                     objs.back()->assoc.push_back(o);
+                }
                 continue;
             }
             YobjP o = item(true);
-            if (o && !isData(*o))
+            if (o && !isData(*o)) {
                 objs.push_back(o);
+            }
         }
     }
 };
@@ -862,44 +1005,72 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         o->cls = cls;
         o->width = width;
         for (auto &a : args) {
-            if (a->cls == Cls::Float)
+            if (a->cls == Cls::Float) {
                 o->f.insert(o->f.end(), a->f.begin(), a->f.end());
-            else if (a->cls == Cls::Int)
-                for (int v : a->iv)
+            } else if (a->cls == Cls::Int) {
+                for (int v : a->iv) {
                     o->f.push_back((float)v);
-            else
+                }
+            } else {
                 return nullptr;
+            }
         }
-        if (o->f.empty() || o->f.size() % width)
+        if (o->f.empty() || o->f.size() % width) {
             return nullptr;
+        }
         o->count = (int)o->f.size() / width;
         return o;
     };
     auto group = [&](Cls cls, const char *kidClass) -> YobjP {
         o->cls = cls;
         for (auto &a : args) {
-            if (kidClass && a->className != kidClass)
+            if (kidClass && a->className != kidClass) {
                 return nullptr;
-            if (!isData(*a))
+            }
+            if (!isData(*a)) {
                 o->kids.push_back(a);
+            }
         }
         o->count = (int)o->kids.size();
         return o;
     };
-    if (name == "group") return group(Cls::Group, nullptr);
-    if (name == "lines") return group(Cls::Lines, "vertices");
-    if (name == "polygons") return group(Cls::Polygons, "vertices");
-    if (name == "vertices") return floats(Cls::Vertices, 3);
-    if (name == "normals") return floats(Cls::Normals, 3);
-    if (name == "colors") return floats(Cls::Colors, 3);
-    if (name == "colors4f") return floats(Cls::Colors4f, 4);
-    if (name == "translates") return floats(Cls::Translates, 3);
-    if (name == "scales") return floats(Cls::Scales, 3);
-    if (name == "rotates") return floats(Cls::Rotates, 4);
-    if (name == "texcoords") return floats(Cls::TexCoords, 2);
+    if (name == "group") {
+        return group(Cls::Group, nullptr);
+    }
+    if (name == "lines") {
+        return group(Cls::Lines, "vertices");
+    }
+    if (name == "polygons") {
+        return group(Cls::Polygons, "vertices");
+    }
+    if (name == "vertices") {
+        return floats(Cls::Vertices, 3);
+    }
+    if (name == "normals") {
+        return floats(Cls::Normals, 3);
+    }
+    if (name == "colors") {
+        return floats(Cls::Colors, 3);
+    }
+    if (name == "colors4f") {
+        return floats(Cls::Colors4f, 4);
+    }
+    if (name == "translates") {
+        return floats(Cls::Translates, 3);
+    }
+    if (name == "scales") {
+        return floats(Cls::Scales, 3);
+    }
+    if (name == "rotates") {
+        return floats(Cls::Rotates, 4);
+    }
+    if (name == "texcoords") {
+        return floats(Cls::TexCoords, 2);
+    }
     if (name == "indexpolygons") {
-        if (args.size() != 2 || args[0]->className != "vertices" || args[1]->className != "indices")
+        if (args.size() != 2 || args[0]->className != "vertices" || args[1]->className != "indices") {
             return nullptr;
+        }
         o->cls = Cls::IndexPolygons;
         o->kids = args;
         o->count = args[1]->count;
@@ -908,8 +1079,9 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
     if (name == "indices") {
         o->cls = Cls::Indices;
         for (auto &a : args) {
-            if (a->cls != Cls::Int)
+            if (a->cls != Cls::Int) {
                 return nullptr;
+            }
             o->polys.push_back(a->iv);
         }
         o->count = (int)o->polys.size();
@@ -923,8 +1095,9 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
     if (name == "textures") {
         o->cls = Cls::Textures;
         for (auto &a : args) {
-            if (a->cls != Cls::String)
+            if (a->cls != Cls::String) {
                 return nullptr;
+            }
             o->iv.push_back(rec.loadTexture(a->str) + 1);
         }
         o->count = (int)o->iv.size();
@@ -937,22 +1110,27 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         size_t k = 0;
         while (k < args.size()) {
             Recorder::Contour c;
-            if (args[k]->cls != Cls::String)
+            if (args[k]->cls != Cls::String) {
                 return nullptr;
+            }
             const std::string &m = args[k++]->str;
             c.mode = m == "contour" || m == "linear" ? 1 : m == "spheremap" ? 2 : m == "off" ? 0 : -1;
-            if (c.mode < 0 || k >= args.size() || args[k]->cls != Cls::String)
+            if (c.mode < 0 || k >= args.size() || args[k]->cls != Cls::String) {
                 return nullptr;
+            }
             k++; // eye or object: the planes are taken in the object
             if (c.mode == 1) {
-                if (k >= args.size())
+                if (k >= args.size()) {
                     return nullptr;
+                }
                 const Yobj &pl = *args[k++];
                 size_t n = pl.cls == Cls::Float ? pl.f.size() : pl.iv.size();
-                if (n != 4)
+                if (n != 4) {
                     return nullptr;
-                for (int j = 0; j < 4; j++)
+                }
+                for (int j = 0; j < 4; j++) {
                     c.plane[j] = pl.cls == Cls::Float ? pl.f[j] : (float)pl.iv[j];
+                }
             }
             o->contours.push_back(c);
         }
@@ -960,10 +1138,12 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     }
     if (name == "regularMesh") {
-        if (args.size() != 2 || args[0]->cls != Cls::Int || args[0]->iv.size() != 2 || args[1]->className != "vertices")
+        if (args.size() != 2 || args[0]->cls != Cls::Int || args[0]->iv.size() != 2 || args[1]->className != "vertices") {
             return nullptr;
-        if (args[0]->iv[0] * args[0]->iv[1] != args[1]->count)
+        }
+        if (args[0]->iv[0] * args[0]->iv[1] != args[1]->count) {
             return nullptr;
+        }
         o->cls = Cls::RegularMesh;
         o->kids = {args[1]};
         o->width = args[0]->iv[0];
@@ -972,31 +1152,36 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     }
     if (name == "nurbs") {
-        if (args.empty() || args.size() % 4)
+        if (args.empty() || args.size() % 4) {
             return nullptr;
+        }
         o->cls = Cls::Nurbs;
         auto doubles = [](const Yobj &l) {
             std::vector<double> d;
-            if (l.cls == Cls::Float)
+            if (l.cls == Cls::Float) {
                 d.assign(l.f.begin(), l.f.end());
-            else
+            } else {
                 d.assign(l.iv.begin(), l.iv.end());
+            }
             return d;
         };
         for (size_t k = 0; k < args.size(); k += 4) {
             Surface sf;
-            if (args[k + 2]->cls != Cls::Int || args[k + 2]->iv.size() != 2)
+            if (args[k + 2]->cls != Cls::Int || args[k + 2]->iv.size() != 2) {
                 return nullptr;
+            }
             sf.sknots = doubles(*args[k]);
             sf.tknots = doubles(*args[k + 1]);
             sf.ns = args[k + 2]->iv[0];
             sf.nt = args[k + 2]->iv[1];
             sf.points = doubles(*args[k + 3]);
-            if (sf.ns <= 0 || sf.nt <= 0 || sf.points.size() % (size_t)(sf.ns * sf.nt))
+            if (sf.ns <= 0 || sf.nt <= 0 || sf.points.size() % (size_t)(sf.ns * sf.nt)) {
                 return nullptr;
+            }
             sf.size = (int)(sf.points.size() / (size_t)(sf.ns * sf.nt));
-            if ((sf.size != 3 && sf.size != 4) || (int)sf.sknots.size() <= sf.ns || (int)sf.tknots.size() <= sf.nt)
+            if ((sf.size != 3 && sf.size != 4) || (int)sf.sknots.size() <= sf.ns || (int)sf.tknots.size() <= sf.nt) {
                 return nullptr;
+            }
             o->surfaces.push_back(std::move(sf));
         }
         o->count = (int)o->surfaces.size();
@@ -1017,8 +1202,9 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
 std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return nullptr;
     }
     std::fseek(f, 0, SEEK_END);
@@ -1028,8 +1214,9 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     bool ok = len >= 0 && std::fread(buf.data(), 1, buf.size(), f) == buf.size();
     std::fclose(f);
     if (!ok) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return nullptr;
     }
     auto model = std::make_shared<Model>();
@@ -1043,13 +1230,15 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     std::vector<YobjP> objs;
     p.file(objs);
     if (!p.error.empty() || objs.empty()) {
-        if (error)
+        if (error) {
             *error = path + ": " + (p.error.empty() ? std::string("nothing to draw") : p.error);
+        }
         return nullptr;
     }
     Exec ex{rec};
-    for (auto &o : objs)
+    for (auto &o : objs) {
         ex.execute(*o);
+    }
 
     // the materials: lit or not, textured or not; the colors drive the
     // ambient and diffuse as lmcolor(LMC_AD), the faces are two-sided
@@ -1060,8 +1249,9 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
     for (auto &[key, mesh] : rec.meshes) {
         auto [texture, lit, prim, sphere] = key;
         (void)prim;
-        if (mesh.indices.empty())
+        if (mesh.indices.empty()) {
             continue;
+        }
         auto mk = std::make_tuple(texture, lit, sphere);
         auto it = materials.find(mk);
         if (it == materials.end()) {
@@ -1079,18 +1269,20 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
         }
         mesh.material = it->second;
         // transparent vertex colors
-        for (const Vertex &v : mesh.vertices)
+        for (const Vertex &v : mesh.vertices) {
             if ((v.color >> 24) < 255) {
                 model->materials[mesh.material].alpha = AlphaMode::Blend;
                 break;
             }
+        }
         mesh.computeBounds();
         root.meshes.push_back((int)model->meshes.size());
         model->meshes.push_back(std::move(mesh));
     }
     if (model->meshes.empty()) {
-        if (error)
+        if (error) {
             *error = path + ": nothing to draw";
+        }
         return nullptr;
     }
     model->nodes.push_back(std::move(root));

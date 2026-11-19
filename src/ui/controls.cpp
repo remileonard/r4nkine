@@ -44,8 +44,9 @@ bool postProcessControls(Context &g, render::PostSettings &s) {
     changed |= g.slider("Gamma", s.gamma, 0.3f, 3, "%.2f", true);
     changed |= g.color("Tint", s.tint);
     changed |= g.slider("Fade", s.fade, 0, 1, "%.2f");
-    if (s.fade > 0)
+    if (s.fade > 0) {
         changed |= g.color("Fade Color", s.fadeColor);
+    }
     g.label("Palette", Font::Bold);
     changed |= g.toggle("Reduce to a Palette", s.quantize);
     if (s.quantize) {
@@ -54,8 +55,9 @@ bool postProcessControls(Context &g, render::PostSettings &s) {
         int current = 0;
         for (size_t i = 0; i < presets.size(); i++) {
             names.push_back(presets[i].name);
-            if (presets[i].size == s.paletteSize && presets[i].palette.colors == s.palette.colors)
+            if (presets[i].size == s.paletteSize && presets[i].palette.colors == s.palette.colors) {
                 current = (int)i;
+            }
         }
         if (g.menu("Palette", current, names)) {
             s.palette = presets[current].palette;

@@ -14,7 +14,11 @@
 #include <cstdlib>
 #include <vector>
 
-struct Face { int file; float px; const char *name; };
+struct Face {
+    int file;
+    float px;
+    const char *name;
+};
 
 int main(int argc, char **argv) {
     if (argc < 3) {
@@ -24,17 +28,22 @@ int main(int argc, char **argv) {
     std::vector<std::vector<unsigned char>> ttf(2);
     for (int i = 0; i < 2; i++) {
         FILE *f = std::fopen(argv[1 + i], "rb");
-        if (!f) return 1;
+        if (!f) {
+            return 1;
+        }
         std::fseek(f, 0, SEEK_END);
         ttf[i].resize(std::ftell(f));
         std::fseek(f, 0, SEEK_SET);
-        if (std::fread(ttf[i].data(), 1, ttf[i].size(), f) != ttf[i].size()) return 1;
+        if (std::fread(ttf[i].data(), 1, ttf[i].size(), f) != ttf[i].size()) {
+            return 1;
+        }
         std::fclose(f);
     }
     // at 1x, then at 2x for the screens of high density (Retina)
-    const Face faces[] = {{0, 13, "regular"}, {1, 13, "bold"}, {0, 11, "small"}, {1, 16, "title"},
-                          {0, 26, "regular 2x"}, {1, 26, "bold 2x"}, {0, 22, "small 2x"}, {1, 32, "title 2x"}};
-    const int nf = 8, W = 1024, H = 256;
+    const Face faces[] = {{0, 13, "regular"}, {1, 13, "bold"}, {0, 11, "small"}, {1, 16, "title"}, {0, 26, "regular 2x"}, {1, 26, "bold 2x"}, {0, 22, "small 2x"}, {1, 32, "title 2x"}};
+    const int nf = 8;
+    const int W = 1024;
+    const int H = 256;
     std::vector<unsigned char> atlas(W * H);
     stbtt_pack_context pc;
     // the glyphs above the last rows, which keep the white texels
@@ -45,9 +54,13 @@ int main(int argc, char **argv) {
         chars[f][0].resize(95);
         chars[f][1].resize(96);
         stbtt_pack_range r[2] = {};
-        r[0].font_size = faces[f].px; r[0].first_unicode_codepoint_in_range = 32; r[0].num_chars = 95;
+        r[0].font_size = faces[f].px;
+        r[0].first_unicode_codepoint_in_range = 32;
+        r[0].num_chars = 95;
         r[0].chardata_for_range = chars[f][0].data();
-        r[1].font_size = faces[f].px; r[1].first_unicode_codepoint_in_range = 160; r[1].num_chars = 96;
+        r[1].font_size = faces[f].px;
+        r[1].first_unicode_codepoint_in_range = 160;
+        r[1].num_chars = 96;
         r[1].chardata_for_range = chars[f][1].data();
         if (!stbtt_PackFontRanges(&pc, ttf[faces[f].file].data(), 0, r, 2)) {
             std::fprintf(stderr, "atlas too small\n");
@@ -70,7 +83,9 @@ int main(int argc, char **argv) {
     for (int f = 0; f < nf; f++) {
         stbtt_fontinfo info;
         stbtt_InitFont(&info, ttf[faces[f].file].data(), 0);
-        int a, d, g;
+        int a;
+        int d;
+        int g;
         stbtt_GetFontVMetrics(&info, &a, &d, &g);
         float s = stbtt_ScaleForPixelHeight(&info, faces[f].px);
         std::printf("    {%g, %.3f, %.3f, %.3f}, // %s\n", faces[f].px, a * s, d * s, g * s, faces[f].name);
@@ -80,17 +95,21 @@ int main(int argc, char **argv) {
     std::printf("constexpr short kGlyphBox[kFontCount][191][4] = {\n");
     for (int f = 0; f < nf; f++) {
         std::printf("{");
-        for (int r = 0; r < 2; r++)
-            for (auto &c : chars[f][r])
+        for (int r = 0; r < 2; r++) {
+            for (auto &c : chars[f][r]) {
                 std::printf("{%d,%d,%d,%d},", c.x0, c.y0, c.x1, c.y1);
+            }
+        }
         std::printf("},\n");
     }
     std::printf("};\nconstexpr float kGlyphMetrics[kFontCount][191][3] = {\n");
     for (int f = 0; f < nf; f++) {
         std::printf("{");
-        for (int r = 0; r < 2; r++)
-            for (auto &c : chars[f][r])
+        for (int r = 0; r < 2; r++) {
+            for (auto &c : chars[f][r]) {
                 std::printf("{%g,%g,%g},", c.xoff, c.yoff, c.xadvance);
+            }
+        }
         std::printf("},\n");
     }
     std::printf("};\n");
@@ -98,15 +117,18 @@ int main(int argc, char **argv) {
     std::vector<int> rle;
     for (size_t i = 0; i < atlas.size();) {
         size_t j = i;
-        while (j < atlas.size() && atlas[j] == atlas[i] && j - i < 255) j++;
+        while (j < atlas.size() && atlas[j] == atlas[i] && j - i < 255) {
+            j++;
+        }
         rle.push_back((int)(j - i));
         rle.push_back(atlas[i]);
         i = j;
     }
     std::printf("// the atlas, rows from the top, in runs: count, value\n");
     std::printf("constexpr unsigned char kAtlasRuns[%zu] = {", rle.size());
-    for (size_t i = 0; i < rle.size(); i++)
+    for (size_t i = 0; i < rle.size(); i++) {
         std::printf("%s%d,", i % 32 ? "" : "\n", rle[i]);
+    }
     std::printf("\n};\n");
     return 0;
 }

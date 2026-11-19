@@ -28,15 +28,29 @@ namespace r4::assets {
 namespace {
 
 enum : unsigned {
-    OP_HEADER = 0x1771, OP_GROUP = 0x1772, OP_LOD = 0x1773, OP_POLYGON = 0x1775, OP_VERTICES = 0x177a,
-    OP_VERTICES2 = 0x177c, OP_NAME = 0x1798, OP_TEXNAME = 0x179c, OP_PUSH = 0x17ca, OP_POP = 0x17cb,
-    OP_MATERIAL = 0x17ea, OP_TEXTURE = 0x17eb
+    OP_HEADER = 0x1771,
+    OP_GROUP = 0x1772,
+    OP_LOD = 0x1773,
+    OP_POLYGON = 0x1775,
+    OP_VERTICES = 0x177a,
+    OP_VERTICES2 = 0x177c,
+    OP_NAME = 0x1798,
+    OP_TEXNAME = 0x179c,
+    OP_PUSH = 0x17ca,
+    OP_POP = 0x17cb,
+    OP_MATERIAL = 0x17ea,
+    OP_TEXTURE = 0x17eb
 };
-constexpr uint32_t kLayer = 0x04000000u, kSequence = 0x01000000u;
+constexpr uint32_t kLayer = 0x04000000u;
+constexpr uint32_t kSequence = 0x01000000u;
 constexpr int kVertexSize = 44;
 
-unsigned be16(const unsigned char *p) { return (unsigned)p[0] << 8 | p[1]; }
-int sbe16(const unsigned char *p) { return (short)be16(p); }
+unsigned be16(const unsigned char *p) {
+    return (unsigned)p[0] << 8 | p[1];
+}
+int sbe16(const unsigned char *p) {
+    return (short)be16(p);
+}
 uint32_t be32(const unsigned char *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
@@ -49,8 +63,9 @@ float bef(const unsigned char *p) {
 
 bool readHeader(const std::string &path, unsigned char h[112]) {
     FILE *fp = std::fopen(path.c_str(), "rb");
-    if (!fp)
+    if (!fp) {
         return false;
+    }
     bool ok = std::fread(h, 1, 112, fp) == 112;
     std::fclose(fp);
     return ok;
@@ -66,22 +81,27 @@ bool isEncrypted(const std::string &path) {
 void unscramble(Image &img) {
     static unsigned char seed[0x661];
     seed[0] = 0x67;
-    for (int i = 1; i < 0x661; i++)
+    for (int i = 1; i < 0x661; i++) {
         seed[i] = (unsigned char)(seed[i - 1] * 103);
-    int w = img.width, zs = img.channels, n = 0;
+    }
+    int w = img.width;
+    int zs = img.channels;
+    int n = 0;
     for (int y = 0; y < img.height; y++) {
         unsigned char *row = &img.pixels[(size_t)y * w * zs];
         for (int x = 0; x < w; x++) {
             unsigned char s = seed[n];
-            unsigned char *a = row + (size_t)x * zs, *b = row + (size_t)(w - 1 - x) * zs;
+            unsigned char *a = row + (size_t)x * zs;
+            unsigned char *b = row + (size_t)(w - 1 - x) * zs;
             a[0] ^= s;
-            if (zs == 2)
+            if (zs == 2) {
                 b[1] ^= s;
-            else if (zs >= 3) {
+            } else if (zs >= 3) {
                 b[1] ^= s;
                 a[2] ^= s;
-                if (zs == 4)
+                if (zs == 4) {
                     b[3] ^= s;
+                }
             }
             n = (n + 1) % 0x661;
         }
@@ -93,13 +113,15 @@ void unscramble(Image &img) {
 double roughness(const Image &img) {
     double r = 0;
     int zs = img.channels;
-    for (int y = 0; y < img.height; y += 4)
-        for (int x = 1; x < img.width; x++)
+    for (int y = 0; y < img.height; y += 4) {
+        for (int x = 1; x < img.width; x++) {
             for (int c = 0; c < zs; c++) {
                 int a = img.pixels[((size_t)y * img.width + x) * zs + c];
                 int b = img.pixels[((size_t)y * img.width + x - 1) * zs + c];
                 r += a > b ? a - b : b - a;
             }
+        }
+    }
     return r;
 }
 
@@ -108,25 +130,33 @@ double roughness(const Image &img) {
 void decryptIfNeeded(Image &img) {
     Image dec = img;
     unscramble(dec);
-    if (roughness(dec) < roughness(img))
+    if (roughness(dec) < roughness(img)) {
         img = std::move(dec);
+    }
 }
 
 float unitsScale(int units) {
     switch (units) {
-    case 1: return 0.3048f;
-    case 2: return 0.0254f;
-    case 3: return 0.01f;
-    case 4: return 1852.0f;
-    case 5: return 1000.0f;
-    case 6: return 1609.344f;
-    default: return 1.0f;
+    case 1:
+        return 0.3048f;
+    case 2:
+        return 0.0254f;
+    case 3:
+        return 0.01f;
+    case 4:
+        return 1852.0f;
+    case 5:
+        return 1000.0f;
+    case 6:
+        return 1609.344f;
+    default:
+        return 1.0f;
     }
 }
 
 struct Level {
-    int node = -1;  // where the children go
-    int geode = -1; // the node of the polygons
+    int node = -1;                                           // where the children go
+    int geode = -1;                                          // the node of the polygons
     std::map<std::tuple<int, int, bool, bool>, int> batches; // texture, material, transparent, decal
     bool layer = false;
     int layerPolys = 0;
@@ -139,8 +169,12 @@ struct Loader {
     float scale = 1;
     std::vector<int> tex; // image indices, -1: none
     struct Mtl {
-        Vec3 diffuse, ambient, specular, emission;
-        float shininess = 0, alpha = 1;
+        Vec3 diffuse;
+        Vec3 ambient;
+        Vec3 specular;
+        Vec3 emission;
+        float shininess = 0;
+        float alpha = 1;
     };
     std::vector<Mtl> mtl;
     std::map<std::tuple<int, int, bool, bool>, int> materials;
@@ -149,15 +183,17 @@ struct Loader {
     uint32_t polyColor = 0;
     int polyVerts = 0;
 
-    explicit Loader(Model &m) : model(m) {}
+    explicit Loader(Model &m) : model(m) {
+    }
 
     int newNode(const std::string &name, int parent) {
         int i = (int)model.nodes.size();
         Node n;
         n.name = name;
         model.nodes.push_back(n);
-        if (parent >= 0)
+        if (parent >= 0) {
             model.nodes[parent].children.push_back(i);
+        }
         return i;
     }
 
@@ -171,44 +207,49 @@ struct Loader {
         }
         static const char *exts[] = {"", ".rgb", ".rgba", ".int", ".inta", ".bw"};
         std::vector<std::string> dirs = {dir, dir + "../textures/", dir + "textures/"};
-        if (!lastDir.empty() && lastDir != ".")
+        if (!lastDir.empty() && lastDir != ".") {
             dirs.push_back(dir + "../textures/" + lastDir + "/");
-        for (const std::string &d : dirs)
+        }
+        for (const std::string &d : dirs) {
             for (const char *e : exts) {
                 std::string path = d + base + e;
                 FILE *fp = std::fopen(path.c_str(), "rb");
-                if (!fp)
+                if (!fp) {
                     continue;
+                }
                 std::fclose(fp);
                 auto it = imageCache.find(path);
-                if (it != imageCache.end())
+                if (it != imageCache.end()) {
                     return it->second;
+                }
                 Image img;
                 std::string err;
                 int index = -1;
                 if (loadImage(path, img, &err)) {
-                    if (isEncrypted(path))
+                    if (isEncrypted(path)) {
                         decryptIfNeeded(img);
+                    }
                     index = (int)model.images.size();
                     model.images.push_back(std::move(img));
                 }
                 imageCache[path] = index;
                 return index;
             }
+        }
         std::fprintf(stderr, "r4: dwb: texture %s not found\n", name.c_str());
         return -1;
     }
 
     bool hasAlpha(int t) const {
-        return t >= 0 && t < (int)tex.size() && tex[t] >= 0 &&
-               (model.images[tex[t]].channels == 2 || model.images[tex[t]].channels == 4);
+        return t >= 0 && t < (int)tex.size() && tex[t] >= 0 && (model.images[tex[t]].channels == 2 || model.images[tex[t]].channels == 4);
     }
 
     int material(int t, int m, bool transp, bool decal) {
         auto key = std::make_tuple(t, m, transp, decal);
         auto it = materials.find(key);
-        if (it != materials.end())
+        if (it != materials.end()) {
             return it->second;
+        }
         Material mat;
         // the colors of the polygons drive the ambient and diffuse
         mat.vertexColors = true;
@@ -226,10 +267,12 @@ struct Loader {
         }
         mat.doubleSided = true;
         mat.decal = decal;
-        if (t >= 0 && t < (int)tex.size())
+        if (t >= 0 && t < (int)tex.size()) {
             mat.diffuseImage = tex[t];
-        if (transp)
+        }
+        if (transp) {
             mat.alpha = AlphaMode::Blend;
+        }
         int index = (int)model.materials.size();
         model.materials.push_back(mat);
         materials[key] = index;
@@ -245,31 +288,37 @@ struct Loader {
         } else {
             auto key = std::make_tuple(t, m, transp, false);
             auto it = lv.batches.find(key);
-            if (it != lv.batches.end())
+            if (it != lv.batches.end()) {
                 return it->second;
-            if (lv.geode < 0)
+            }
+            if (lv.geode < 0) {
                 lv.geode = newNode("polygons", lv.node);
+            }
         }
         Mesh mesh;
         mesh.material = material(t, m, transp, decal);
         int index = (int)model.meshes.size();
         model.meshes.push_back(std::move(mesh));
         model.nodes[lv.geode].meshes.push_back(index);
-        if (!lv.layer)
+        if (!lv.layer) {
             lv.batches[std::make_tuple(t, m, transp, false)] = index;
+        }
         return index;
     }
 
     void addVertices(const unsigned char *b, int len) {
         int n = len / kVertexSize;
-        if (polyMesh < 0 || n <= 0)
+        if (polyMesh < 0 || n <= 0) {
             return;
+        }
         Mesh &mesh = model.meshes[polyMesh];
         polyMesh = -1;
-        if (polyVerts > 0 && polyVerts < n)
+        if (polyVerts > 0 && polyVerts < n) {
             n = polyVerts;
-        if (n < 3)
+        }
+        if (n < 3) {
             return;
+        }
         uint32_t base = (uint32_t)mesh.vertices.size();
         for (int i = 0; i < n; i++) {
             const unsigned char *v = b + i * kVertexSize;
@@ -280,8 +329,9 @@ struct Loader {
             out.color = polyColor; // 0xAABBGGRR: R in the low byte
             mesh.vertices.push_back(out);
         }
-        for (int i = 1; i + 1 < n; i++)
+        for (int i = 1; i + 1 < n; i++) {
             mesh.indices.insert(mesh.indices.end(), {base, base + i, base + i + 1});
+        }
     }
 };
 
@@ -290,19 +340,22 @@ struct Loader {
 std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     FILE *fp = std::fopen(path.c_str(), "rb");
     if (!fp) {
-        if (error)
+        if (error) {
             *error = "cannot read " + path;
+        }
         return nullptr;
     }
     std::vector<unsigned char> data;
     unsigned char chunk[65536];
     size_t got;
-    while ((got = std::fread(chunk, 1, sizeof chunk, fp)) > 0)
+    while ((got = std::fread(chunk, 1, sizeof chunk, fp)) > 0) {
         data.insert(data.end(), chunk, chunk + got);
+    }
     std::fclose(fp);
     if (data.size() < 8 || be16(data.data()) != OP_HEADER) {
-        if (error)
+        if (error) {
             *error = path + ": not a Designer's Workbench file";
+        }
         return nullptr;
     }
     auto model = std::make_shared<Model>();
@@ -317,23 +370,27 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     stack[0].node = content;
     Level last;
     bool lastIsPoly = false;
-    int lastNode = -1, lastTex = -1;
+    int lastNode = -1;
+    int lastTex = -1;
     bool yUp = false;
     long size = (long)data.size();
     for (long p = 0; p + 4 <= size;) {
         unsigned op = be16(&data[p]);
         int len = (int)be16(&data[p + 2]);
         const unsigned char *b = &data[p + 4];
-        if (p + 4 + len > size)
+        if (p + 4 + len > size) {
             break;
+        }
         p += 4 + len;
         Level &lv = stack.back();
         switch (op) {
         case OP_HEADER:
-            if (len >= 2)
+            if (len >= 2) {
                 L.scale = unitsScale(sbe16(b));
-            if (len >= 0x88)
+            }
+            if (len >= 0x88) {
                 yUp = sbe16(b + 0x86) == 2;
+            }
             break;
         case OP_GROUP: {
             uint32_t flags = len >= 0x38 ? be32(b + 0x34) : 0;
@@ -369,19 +426,24 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
             break;
         }
         case OP_POLYGON: {
-            if (len < 0x38)
+            if (len < 0x38) {
                 break;
-            int t = sbe16(b + 0x10), m = sbe16(b + 0x36);
+            }
+            int t = sbe16(b + 0x10);
+            int m = sbe16(b + 0x36);
             uint32_t color = be32(b + 0x2c);
-            if (t < 0 || t >= (int)L.tex.size() || L.tex[t] < 0)
+            if (t < 0 || t >= (int)L.tex.size() || L.tex[t] < 0) {
                 t = -1;
-            if (m < 0 || m >= (int)L.mtl.size())
+            }
+            if (m < 0 || m >= (int)L.mtl.size()) {
                 m = -1;
+            }
             bool transp = (color >> 24) < 255 || (m >= 0 && L.mtl[m].alpha < 0.95f) || L.hasAlpha(t);
             // a polygon inside a polygon (a subface) goes with its parent
             size_t d = stack.size() - 1;
-            while (d > 0 && stack[d].polygon)
+            while (d > 0 && stack[d].polygon) {
                 d--;
+            }
             L.polyMesh = L.batch(stack[d], t, m, transp);
             L.polyColor = color;
             L.polyVerts = sbe16(b + 4);
@@ -396,10 +458,12 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
         case OP_NAME:
             if (lastNode >= 0) {
                 int k = 0;
-                while (k < len && b[k])
+                while (k < len && b[k]) {
                     k++;
-                if (k)
+                }
+                if (k) {
                     model->nodes[lastNode].name.assign((const char *)b, k);
+                }
             }
             break;
         case OP_MATERIAL:
@@ -411,8 +475,9 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
                 m.specular = {bef(b + 0x20), bef(b + 0x24), bef(b + 0x28)};
                 m.emission = {bef(b + 0x2c), bef(b + 0x30), bef(b + 0x34)};
                 m.alpha = bef(b + 0x38);
-                if (m.alpha <= 0 || m.alpha > 1)
+                if (m.alpha <= 0 || m.alpha > 1) {
                     m.alpha = 1;
+                }
                 L.mtl.push_back(m);
             }
             break;
@@ -423,8 +488,9 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
         case OP_TEXNAME:
             if (lastTex >= 0 && L.tex[lastTex] < 0) {
                 int k = 0;
-                while (k < len && b[k])
+                while (k < len && b[k]) {
                     k++;
+                }
                 L.tex[lastTex] = L.loadTexture(std::string((const char *)b, k));
             }
             lastTex = -1;
@@ -467,9 +533,11 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     // the empty meshes go
     for (Node &n : model->nodes) {
         std::vector<int> keep;
-        for (int mi : n.meshes)
-            if (!model->meshes[mi].indices.empty())
+        for (int mi : n.meshes) {
+            if (!model->meshes[mi].indices.empty()) {
                 keep.push_back(mi);
+            }
+        }
         n.meshes = keep;
     }
     bool any = false;
@@ -478,13 +546,15 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
         any = any || !m.indices.empty();
     }
     if (!any) {
-        if (error)
+        if (error) {
             *error = path + ": nothing to draw";
+        }
         return nullptr;
     }
     model->nodes[0].children = {content};
-    if (yUp)
+    if (yUp) {
         model->nodes[0].local = axes::fromYUpMatrix();
+    }
     return model;
 }
 

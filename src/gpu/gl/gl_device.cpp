@@ -13,12 +13,12 @@
 namespace r4::gl {
 
 bool Api::load(void *(*getProc)(const char *), const char **missing) {
-#define R4_GL_LOAD(ret, name, args)                                                  \
-    name = reinterpret_cast<ret(R4_GLAPI *) args>(getProc("gl" #name));            \
-    if (!name) {                                                                      \
-        if (missing)                                                                  \
-            *missing = "gl" #name;                                                    \
-        return false;                                                                 \
+#define R4_GL_LOAD(ret, name, args)                                     \
+    name = reinterpret_cast<ret(R4_GLAPI *) args>(getProc("gl" #name)); \
+    if (!name) {                                                        \
+        if (missing)                                                    \
+            *missing = "gl" #name;                                      \
+        return false;                                                   \
     }
     R4_GL_FUNCTIONS(R4_GL_LOAD)
 #undef R4_GL_LOAD
@@ -51,7 +51,9 @@ template <class T> struct Pool {
         }
         return i + 1;
     }
-    T *get(uint32_t id) { return id && id <= items.size() && used[id - 1] ? &items[id - 1] : nullptr; }
+    T *get(uint32_t id) {
+        return id && id <= items.size() && used[id - 1] ? &items[id - 1] : nullptr;
+    }
     void remove(uint32_t id) {
         if (get(id)) {
             used[id - 1] = false;
@@ -74,10 +76,11 @@ struct GLTexture {
 };
 struct GLRenderTarget {
     RenderTargetDesc desc;
-    GLuint fbo = 0;            // the texture (and the depth when single sampled)
-    GLuint msaaFbo = 0;        // multisampled: where the passes draw
-    GLuint colorRb = 0, depthRb = 0;
-    uint32_t texture = 0;      // a handle in the textures
+    GLuint fbo = 0;     // the texture (and the depth when single sampled)
+    GLuint msaaFbo = 0; // multisampled: where the passes draw
+    GLuint colorRb = 0;
+    GLuint depthRb = 0;
+    uint32_t texture = 0; // a handle in the textures
 };
 struct GLShader {
     GLuint program = 0;
@@ -99,37 +102,53 @@ struct GLPipeline {
 
 GLenum attribType(AttribType t) {
     switch (t) {
-    case AttribType::UByte: return UNSIGNED_BYTE;
-    case AttribType::Short: return SHORT;
-    default: return FLOAT;
+    case AttribType::UByte:
+        return UNSIGNED_BYTE;
+    case AttribType::Short:
+        return SHORT;
+    default:
+        return FLOAT;
     }
 }
 
 GLenum compareOp(CompareOp c) {
     switch (c) {
-    case CompareOp::Never: return NEVER;
-    case CompareOp::Less: return LESS;
-    case CompareOp::Equal: return EQUAL;
-    case CompareOp::Greater: return GREATER;
-    case CompareOp::Always: return ALWAYS;
-    default: return LEQUAL;
+    case CompareOp::Never:
+        return NEVER;
+    case CompareOp::Less:
+        return LESS;
+    case CompareOp::Equal:
+        return EQUAL;
+    case CompareOp::Greater:
+        return GREATER;
+    case CompareOp::Always:
+        return ALWAYS;
+    default:
+        return LEQUAL;
     }
 }
 
 GLenum primitive(Primitive p) {
     switch (p) {
-    case Primitive::Lines: return LINES;
-    case Primitive::Points: return POINTS;
-    case Primitive::TriangleStrip: return TRIANGLE_STRIP;
-    default: return TRIANGLES;
+    case Primitive::Lines:
+        return LINES;
+    case Primitive::Points:
+        return POINTS;
+    case Primitive::TriangleStrip:
+        return TRIANGLE_STRIP;
+    default:
+        return TRIANGLES;
     }
 }
 
 GLint wrapMode(Wrap w) {
     switch (w) {
-    case Wrap::Clamp: return CLAMP_TO_EDGE;
-    case Wrap::Mirror: return MIRRORED_REPEAT;
-    default: return REPEAT;
+    case Wrap::Clamp:
+        return CLAMP_TO_EDGE;
+    case Wrap::Mirror:
+        return MIRRORED_REPEAT;
+    default:
+        return REPEAT;
     }
 }
 
@@ -138,20 +157,24 @@ public:
     bool init(void *(*getProc)(const char *), std::string *error) {
         const char *missing = nullptr;
         if (!gl.load(getProc, &missing)) {
-            if (error)
+            if (error) {
                 *error = std::string("OpenGL 3.3 function missing: ") + (missing ? missing : "?");
+            }
             return false;
         }
         GLint v = 0;
         gl.GetIntegerv(UNIFORM_BUFFER_OFFSET_ALIGNMENT, &v);
-        if (v > 0)
+        if (v > 0) {
             lim.uniformBufferAlignment = (uint32_t)v;
+        }
         gl.GetIntegerv(MAX_UNIFORM_BLOCK_SIZE, &v);
-        if (v > 0)
+        if (v > 0) {
             lim.maxUniformBlockSize = (uint32_t)v;
+        }
         gl.GetIntegerv(MAX_TEXTURE_SIZE, &v);
-        if (v > 0)
+        if (v > 0) {
             lim.maxTextureSize = (uint32_t)v;
+        }
         v = 1;
         gl.GetIntegerv(MAX_SAMPLES, &v);
         lim.maxSamples = v > 0 ? v : 1;
@@ -172,28 +195,41 @@ public:
     }
 
     ~GLDevice() override {
-        for (size_t i = 0; i < pipelines.items.size(); i++)
-            if (pipelines.used[i])
+        for (size_t i = 0; i < pipelines.items.size(); i++) {
+            if (pipelines.used[i]) {
                 gl.DeleteVertexArrays(1, &pipelines.items[i].vao);
-        for (size_t i = 0; i < buffers.items.size(); i++)
-            if (buffers.used[i])
+            }
+        }
+        for (size_t i = 0; i < buffers.items.size(); i++) {
+            if (buffers.used[i]) {
                 gl.DeleteBuffers(1, &buffers.items[i].name);
-        for (size_t i = 0; i < textures.items.size(); i++)
-            if (textures.used[i])
+            }
+        }
+        for (size_t i = 0; i < textures.items.size(); i++) {
+            if (textures.used[i]) {
                 gl.DeleteTextures(1, &textures.items[i].name);
-        for (size_t i = 0; i < shaders.items.size(); i++)
-            if (shaders.used[i])
+            }
+        }
+        for (size_t i = 0; i < shaders.items.size(); i++) {
+            if (shaders.used[i]) {
                 gl.DeleteProgram(shaders.items[i].program);
+            }
+        }
     }
 
-    const char *name() const override { return nameStr.c_str(); }
-    Limits limits() const override { return lim; }
-    const std::string &lastError() const override { return error; }
+    const char *name() const override {
+        return nameStr.c_str();
+    }
+    Limits limits() const override {
+        return lim;
+    }
+    const std::string &lastError() const override {
+        return error;
+    }
 
     BufferHandle createBuffer(BufferUsage usage, const void *data, size_t size, bool dynamic) override {
         GLBuffer b;
-        b.target = usage == BufferUsage::Index ? ELEMENT_ARRAY_BUFFER
-                   : usage == BufferUsage::Uniform ? UNIFORM_BUFFER : ARRAY_BUFFER;
+        b.target = usage == BufferUsage::Index ? ELEMENT_ARRAY_BUFFER : usage == BufferUsage::Uniform ? UNIFORM_BUFFER : ARRAY_BUFFER;
         b.size = size;
         gl.GenBuffers(1, &b.name);
         // the element buffer is VAO state: create it with no VAO bound
@@ -206,8 +242,9 @@ public:
 
     void updateBuffer(BufferHandle h, size_t offset, const void *data, size_t size) override {
         GLBuffer *b = buffers.get(h.id);
-        if (!b || offset + size > b->size)
+        if (!b || offset + size > b->size) {
             return;
+        }
         bindVAO(0);
         gl.BindBuffer(b->target, b->name);
         gl.BufferSubData(b->target, (GLintptr)offset, (GLsizeiptr)size, data);
@@ -217,18 +254,23 @@ public:
     void destroyBuffer(BufferHandle h) override {
         if (GLBuffer *b = buffers.get(h.id)) {
             gl.DeleteBuffers(1, &b->name);
-            for (auto &u : uniformBound)
-                if (u.buffer == h.id)
+            for (auto &u : uniformBound) {
+                if (u.buffer == h.id) {
                     u = {};
+                }
+            }
             buffers.remove(h.id);
             // the VAOs pointing at it point again at draw time
             for (size_t i = 0; i < pipelines.items.size(); i++) {
                 GLPipeline &p = pipelines.items[i];
-                for (int s = 0; s < kMaxStreams; s++)
-                    if (p.streamBuffer[s] == h.id)
+                for (int s = 0; s < kMaxStreams; s++) {
+                    if (p.streamBuffer[s] == h.id) {
                         p.streamBuffer[s] = 0;
-                if (p.indexBuffer == h.id)
+                    }
+                }
+                if (p.indexBuffer == h.id) {
                     p.indexBuffer = 0;
+                }
             }
         }
     }
@@ -243,24 +285,38 @@ public:
         GLenum fmt = RGBA;
         int bpp = 4;
         switch (d.format) {
-        case TextureFormat::R8: ifmt = R8; fmt = RED; bpp = 1; break;
-        case TextureFormat::RG8: ifmt = RG8; fmt = RG; bpp = 2; break;
-        case TextureFormat::RGB8: ifmt = RGB8; fmt = RGB; bpp = 3; break;
-        default: break;
+        case TextureFormat::R8:
+            ifmt = R8;
+            fmt = RED;
+            bpp = 1;
+            break;
+        case TextureFormat::RG8:
+            ifmt = RG8;
+            fmt = RG;
+            bpp = 2;
+            break;
+        case TextureFormat::RGB8:
+            ifmt = RGB8;
+            fmt = RGB;
+            bpp = 3;
+            break;
+        default:
+            break;
         }
         gl.PixelStorei(UNPACK_ALIGNMENT, (d.width * bpp) % 4 == 0 ? 4 : 1);
         gl.TexImage2D(TEXTURE_2D, 0, ifmt, d.width, d.height, 0, fmt, UNSIGNED_BYTE, pixels);
         gl.PixelStorei(UNPACK_ALIGNMENT, 4);
-        GLint minf = d.minFilter == Filter::Linear ? (d.mipmaps ? LINEAR_MIPMAP_LINEAR : LINEAR)
-                                                   : (d.mipmaps ? NEAREST_MIPMAP_NEAREST : NEAREST);
+        GLint minf = d.minFilter == Filter::Linear ? (d.mipmaps ? LINEAR_MIPMAP_LINEAR : LINEAR) : (d.mipmaps ? NEAREST_MIPMAP_NEAREST : NEAREST);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, minf);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, d.magFilter == Filter::Linear ? LINEAR : NEAREST);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, wrapMode(d.wrapS));
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, wrapMode(d.wrapT));
-        if (d.anisotropy > 1 && lim.maxAnisotropy > 1)
+        if (d.anisotropy > 1 && lim.maxAnisotropy > 1) {
             gl.TexParameterf(TEXTURE_2D, TEXTURE_MAX_ANISOTROPY, std::min(d.anisotropy, lim.maxAnisotropy));
-        if (d.mipmaps && pixels)
+        }
+        if (d.mipmaps && pixels) {
             gl.GenerateMipmap(TEXTURE_2D);
+        }
         gl.BindTexture(TEXTURE_2D, 0);
         t.format = fmt;
         t.bpp = bpp;
@@ -269,8 +325,9 @@ public:
 
     void updateTexture(TextureHandle h, int x, int y, int width, int height, const void *pixels) override {
         GLTexture *t = textures.get(h.id);
-        if (!t || width <= 0 || height <= 0)
+        if (!t || width <= 0 || height <= 0) {
             return;
+        }
         gl.ActiveTexture(TEXTURE0);
         gl.BindTexture(TEXTURE_2D, t->name);
         textureBound[0] = 0;
@@ -281,12 +338,14 @@ public:
     }
 
     RenderTargetHandle createRenderTarget(const RenderTargetDesc &d) override {
-        if (d.width <= 0 || d.height <= 0)
+        if (d.width <= 0 || d.height <= 0) {
             return {};
+        }
         GLRenderTarget r;
         r.desc = d;
-        if (d.shadow)
+        if (d.shadow) {
             return createShadowTarget(r);
+        }
         r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
         // the texture of its color
         TextureDesc td;
@@ -314,8 +373,7 @@ public:
         if (d.depth) {
             gl.GenRenderbuffers(1, &r.depthRb);
             gl.BindRenderbuffer(RENDERBUFFER, r.depthRb);
-            gl.RenderbufferStorageMultisample(RENDERBUFFER, r.desc.samples > 1 ? r.desc.samples : 0,
-                                              DEPTH24_STENCIL8, d.width, d.height);
+            gl.RenderbufferStorageMultisample(RENDERBUFFER, r.desc.samples > 1 ? r.desc.samples : 0, DEPTH24_STENCIL8, d.width, d.height);
             gl.FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, r.depthRb);
         }
         ok = gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
@@ -343,8 +401,7 @@ public:
         gl.ActiveTexture(TEXTURE0);
         gl.BindTexture(TEXTURE_2D, t.name);
         textureBound[0] = 0;
-        gl.TexImage2D(TEXTURE_2D, 0, DEPTH_COMPONENT24, r.desc.width, r.desc.height, 0, DEPTH_COMPONENT,
-                      UNSIGNED_INT, nullptr);
+        gl.TexImage2D(TEXTURE_2D, 0, DEPTH_COMPONENT24, r.desc.width, r.desc.height, 0, DEPTH_COMPONENT, UNSIGNED_INT, nullptr);
         GLint f = r.desc.filter == Filter::Linear ? LINEAR : NEAREST;
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, f);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, f);
@@ -375,18 +432,24 @@ public:
 
     void destroyRenderTarget(RenderTargetHandle h) override {
         GLRenderTarget *r = targets.get(h.id);
-        if (!r)
+        if (!r) {
             return;
-        if (r->fbo)
+        }
+        if (r->fbo) {
             gl.DeleteFramebuffers(1, &r->fbo);
-        if (r->msaaFbo)
+        }
+        if (r->msaaFbo) {
             gl.DeleteFramebuffers(1, &r->msaaFbo);
-        if (r->colorRb)
+        }
+        if (r->colorRb) {
             gl.DeleteRenderbuffers(1, &r->colorRb);
-        if (r->depthRb)
+        }
+        if (r->depthRb) {
             gl.DeleteRenderbuffers(1, &r->depthRb);
-        if (GLTexture *t = textures.get(r->texture))
+        }
+        if (GLTexture *t = textures.get(r->texture)) {
             t->owned = true;
+        }
         destroyTexture({r->texture});
         if (boundFbo == r->fbo || boundFbo == r->msaaFbo) {
             gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
@@ -402,22 +465,24 @@ public:
 
     void resolveRenderTarget(RenderTargetHandle h) override {
         GLRenderTarget *r = targets.get(h.id);
-        if (!r || !r->msaaFbo)
+        if (!r || !r->msaaFbo) {
             return;
+        }
         gl.BindFramebuffer(READ_FRAMEBUFFER, r->msaaFbo);
         gl.BindFramebuffer(DRAW_FRAMEBUFFER, r->fbo);
         setCap(SCISSOR_TEST, false, scissorEnabled);
-        gl.BlitFramebuffer(0, 0, r->desc.width, r->desc.height, 0, 0, r->desc.width, r->desc.height,
-                           COLOR_BUFFER_BIT, NEAREST);
+        gl.BlitFramebuffer(0, 0, r->desc.width, r->desc.height, 0, 0, r->desc.width, r->desc.height, COLOR_BUFFER_BIT, NEAREST);
         gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
     }
 
     void destroyTexture(TextureHandle h) override {
         if (GLTexture *t = textures.get(h.id); t && t->owned) {
             gl.DeleteTextures(1, &t->name);
-            for (auto &b : textureBound)
-                if (b == h.id)
+            for (auto &b : textureBound) {
+                if (b == h.id) {
                     b = 0;
+                }
+            }
             textures.remove(h.id);
         }
     }
@@ -444,8 +509,9 @@ public:
     ShaderHandle createShader(const ShaderDesc &d) override {
         std::string what = d.debugName.empty() ? std::string("shader") : d.debugName;
         GLuint vs = compile(VERTEX_SHADER, d.vertex, what + " (vertex)");
-        if (!vs)
+        if (!vs) {
             return {};
+        }
         GLuint fs = compile(FRAGMENT_SHADER, d.fragment, what + " (fragment)");
         if (!fs) {
             gl.DeleteShader(vs);
@@ -470,15 +536,17 @@ public:
         }
         for (auto &[blockName, slot] : d.uniformBlocks) {
             GLuint index = gl.GetUniformBlockIndex(p, blockName.c_str());
-            if (index != INVALID_INDEX)
+            if (index != INVALID_INDEX) {
                 gl.UniformBlockBinding(p, index, slot);
+            }
         }
         if (!d.samplers.empty()) {
             gl.UseProgram(p);
             for (auto &[samplerName, slot] : d.samplers) {
                 GLint loc = gl.GetUniformLocation(p, samplerName.c_str());
-                if (loc >= 0)
+                if (loc >= 0) {
                     gl.Uniform1i(loc, (GLint)slot);
+                }
             }
             gl.UseProgram(currentProgram);
         }
@@ -511,31 +579,34 @@ public:
         p.program = s->program;
         gl.GenVertexArrays(1, &p.vao);
         bindVAO(p.vao);
-        for (const VertexStream &st : d.layout.streams)
+        for (const VertexStream &st : d.layout.streams) {
             for (const VertexAttrib &a : st.attribs) {
                 gl.EnableVertexAttribArray(a.location);
                 gl.VertexAttribDivisor(a.location, st.perInstance ? 1 : 0);
             }
+        }
         bindVAO(0);
         return {pipelines.add(p)};
     }
 
     void destroyPipeline(PipelineHandle h) override {
         if (GLPipeline *p = pipelines.get(h.id)) {
-            if (currentVAO == p->vao)
+            if (currentVAO == p->vao) {
                 bindVAO(0);
+            }
             gl.DeleteVertexArrays(1, &p->vao);
-            if (current == h.id)
+            if (current == h.id) {
                 current = 0;
+            }
             pipelines.remove(h.id);
         }
     }
 
-    void beginPass(RenderTargetHandle target, int x, int y, int width, int height,
-                   const ClearValues &c) override {
+    void beginPass(RenderTargetHandle target, int x, int y, int width, int height, const ClearValues &c) override {
         GLuint fbo = windowFbo;
-        if (GLRenderTarget *r = targets.get(target.id))
+        if (GLRenderTarget *r = targets.get(target.id)) {
             fbo = r->msaaFbo ? r->msaaFbo : r->fbo;
+        }
         if (fbo != boundFbo) {
             gl.BindFramebuffer(FRAMEBUFFER, fbo);
             boundFbo = fbo;
@@ -556,17 +627,22 @@ public:
             gl.ClearDepth(c.depthValue);
             mask |= DEPTH_BUFFER_BIT;
         }
-        if (mask)
+        if (mask) {
             gl.Clear(mask);
+        }
     }
 
-    void endPass() override { setCap(SCISSOR_TEST, false, scissorEnabled); }
+    void endPass() override {
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+    }
 
     void setScissor(int x, int y, int width, int height) override {
         setCap(SCISSOR_TEST, true, scissorEnabled);
         gl.Scissor(x, y, width < 0 ? 0 : width, height < 0 ? 0 : height);
     }
-    void clearScissor() override { setCap(SCISSOR_TEST, false, scissorEnabled); }
+    void clearScissor() override {
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+    }
 
     void setCap(GLenum cap, bool on, int &cache) {
         if (cache != (int)on) {
@@ -577,8 +653,9 @@ public:
 
     void bindPipeline(PipelineHandle h) override {
         GLPipeline *p = pipelines.get(h.id);
-        if (!p || current == h.id)
+        if (!p || current == h.id) {
             return;
+        }
         current = h.id;
         stats.pipelineChanges++;
         const PipelineDesc &d = p->desc;
@@ -612,11 +689,13 @@ public:
         }
         setCap(BLEND, d.blend != BlendMode::Opaque, blendEnabled);
         if (d.blend != BlendMode::Opaque) {
-            GLenum s = SRC_ALPHA, t = ONE_MINUS_SRC_ALPHA;
-            if (d.blend == BlendMode::Additive)
+            GLenum s = SRC_ALPHA;
+            GLenum t = ONE_MINUS_SRC_ALPHA;
+            if (d.blend == BlendMode::Additive) {
                 t = ONE;
-            else if (d.blend == BlendMode::Premultiplied)
+            } else if (d.blend == BlendMode::Premultiplied) {
                 s = ONE;
+            }
             if (blendSrc != s || blendDst != t) {
                 gl.BlendFunc(s, t);
                 blendSrc = s;
@@ -630,8 +709,9 @@ public:
         }
         bool offset = d.polygonOffsetFactor != 0 || d.polygonOffsetUnits != 0;
         setCap(POLYGON_OFFSET_FILL, offset, offsetEnabled);
-        if (offset)
+        if (offset) {
             gl.PolygonOffset(d.polygonOffsetFactor, d.polygonOffsetUnits);
+        }
     }
 
     void bindVertexBuffer(uint32_t slot, BufferHandle b, size_t offset) override {
@@ -647,21 +727,25 @@ public:
     }
 
     void bindUniformBuffer(uint32_t slot, BufferHandle h, size_t offset, size_t size) override {
-        if (slot >= (uint32_t)kMaxUniformSlots)
+        if (slot >= (uint32_t)kMaxUniformSlots) {
             return;
+        }
         UniformBinding &u = uniformBound[slot];
-        if (u.buffer == h.id && u.offset == offset && u.size == size)
+        if (u.buffer == h.id && u.offset == offset && u.size == size) {
             return;
+        }
         GLBuffer *b = buffers.get(h.id);
-        if (!b)
+        if (!b) {
             return;
+        }
         gl.BindBufferRange(UNIFORM_BUFFER, slot, b->name, (GLintptr)offset, (GLsizeiptr)size);
         u = {h.id, offset, size};
     }
 
     void bindTexture(uint32_t slot, TextureHandle h) override {
-        if (slot >= (uint32_t)kMaxTextures || textureBound[slot] == h.id)
+        if (slot >= (uint32_t)kMaxTextures || textureBound[slot] == h.id) {
             return;
+        }
         GLTexture *t = textures.get(h.id);
         gl.ActiveTexture(TEXTURE0 + slot);
         gl.BindTexture(TEXTURE_2D, t ? t->name : 0);
@@ -672,29 +756,32 @@ public:
     // points the VAO of the pipeline at the bound buffers when they changed
     bool prepareDraw(bool indexed) {
         GLPipeline *p = pipelines.get(current);
-        if (!p)
+        if (!p) {
             return false;
+        }
         bindVAO(p->vao);
         const VertexLayout &layout = p->desc.layout;
         for (size_t s = 0; s < layout.streams.size(); s++) {
-            if (p->streamBuffer[s] == streams[s] && p->streamOffset[s] == streamOffsets[s])
+            if (p->streamBuffer[s] == streams[s] && p->streamOffset[s] == streamOffsets[s]) {
                 continue;
+            }
             GLBuffer *b = buffers.get(streams[s]);
-            if (!b)
+            if (!b) {
                 return false;
+            }
             gl.BindBuffer(ARRAY_BUFFER, b->name);
             const VertexStream &st = layout.streams[s];
-            for (const VertexAttrib &a : st.attribs)
-                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type),
-                                       a.normalized ? TRUE_ : FALSE_, (GLsizei)st.stride,
-                                       reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
+            for (const VertexAttrib &a : st.attribs) {
+                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type), a.normalized ? TRUE_ : FALSE_, (GLsizei)st.stride, reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
+            }
             p->streamBuffer[s] = streams[s];
             p->streamOffset[s] = streamOffsets[s];
         }
         if (indexed && p->indexBuffer != indexBuffer) {
             GLBuffer *b = buffers.get(indexBuffer);
-            if (!b)
+            if (!b) {
                 return false;
+            }
             gl.BindBuffer(ELEMENT_ARRAY_BUFFER, b->name);
             p->indexBuffer = indexBuffer;
         }
@@ -704,30 +791,29 @@ public:
     void countDraw(uint32_t count, uint32_t instances) {
         GLPipeline *p = pipelines.get(current);
         stats.drawCalls++;
-        if (p && p->desc.primitive == Primitive::Triangles)
+        if (p && p->desc.primitive == Primitive::Triangles) {
             stats.triangles += count / 3 * instances;
-        else if (p && p->desc.primitive == Primitive::TriangleStrip && count > 2)
+        } else if (p && p->desc.primitive == Primitive::TriangleStrip && count > 2) {
             stats.triangles += (count - 2) * instances;
+        }
     }
 
     void draw(uint32_t vertexCount, uint32_t firstVertex, uint32_t instances) override {
-        if (!vertexCount || !instances || !prepareDraw(false))
+        if (!vertexCount || !instances || !prepareDraw(false)) {
             return;
+        }
         GLPipeline *p = pipelines.get(current);
-        gl.DrawArraysInstanced(primitive(p->desc.primitive), (GLint)firstVertex, (GLsizei)vertexCount,
-                               (GLsizei)instances);
+        gl.DrawArraysInstanced(primitive(p->desc.primitive), (GLint)firstVertex, (GLsizei)vertexCount, (GLsizei)instances);
         countDraw(vertexCount, instances);
     }
 
     void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t baseVertex, uint32_t instances) override {
-        if (!indexCount || !instances || !prepareDraw(true))
+        if (!indexCount || !instances || !prepareDraw(true)) {
             return;
+        }
         GLPipeline *p = pipelines.get(current);
         size_t size = indexType == IndexType::U16 ? 2 : 4;
-        gl.DrawElementsInstancedBaseVertex(primitive(p->desc.primitive), (GLsizei)indexCount,
-                                           indexType == IndexType::U16 ? UNSIGNED_SHORT : UNSIGNED_INT,
-                                           reinterpret_cast<const void *>(firstIndex * size), (GLsizei)instances,
-                                           baseVertex);
+        gl.DrawElementsInstancedBaseVertex(primitive(p->desc.primitive), (GLsizei)indexCount, indexType == IndexType::U16 ? UNSIGNED_SHORT : UNSIGNED_INT, reinterpret_cast<const void *>(firstIndex * size), (GLsizei)instances, baseVertex);
         countDraw(indexCount, instances);
     }
 
@@ -830,15 +916,18 @@ private:
         cullEnabled = depthEnabled = blendEnabled = offsetEnabled = scissorEnabled = -1;
         cullMode = frontFace = depthFunc = blendSrc = blendDst = polygonMode = 0;
         depthWrite = true;
-        for (auto &t : textureBound)
+        for (auto &t : textureBound) {
             t = (uint32_t)-1;
-        for (auto &u : uniformBound)
+        }
+        for (auto &u : uniformBound) {
             u = {};
+        }
         // the VAOs may have been changed by the host: point them again
         for (size_t i = 0; i < pipelines.items.size(); i++) {
             GLPipeline &p = pipelines.items[i];
-            for (int s = 0; s < kMaxStreams; s++)
+            for (int s = 0; s < kMaxStreams; s++) {
                 p.streamBuffer[s] = 0;
+            }
             p.indexBuffer = 0;
         }
         // the first state calls must not be skipped
@@ -846,7 +935,8 @@ private:
     }
 
     Api gl;
-    std::string nameStr, error;
+    std::string nameStr;
+    std::string error;
     Limits lim;
     FrameStats stats;
     Pool<GLBuffer> buffers;
@@ -854,18 +944,30 @@ private:
     Pool<GLShader> shaders;
     Pool<GLPipeline> pipelines;
     Pool<GLRenderTarget> targets;
-    GLuint windowFbo = 0, boundFbo = 0;
+    GLuint windowFbo = 0;
+    GLuint boundFbo = 0;
 
     // the cached state
     uint32_t current = 0;
-    GLuint currentProgram = 0, currentVAO = 0;
-    int cullEnabled = -1, depthEnabled = -1, blendEnabled = -1, offsetEnabled = -1, scissorEnabled = -1;
-    GLenum cullMode = 0, frontFace = 0, depthFunc = 0, blendSrc = 0, blendDst = 0, polygonMode = 0;
+    GLuint currentProgram = 0;
+    GLuint currentVAO = 0;
+    int cullEnabled = -1;
+    int depthEnabled = -1;
+    int blendEnabled = -1;
+    int offsetEnabled = -1;
+    int scissorEnabled = -1;
+    GLenum cullMode = 0;
+    GLenum frontFace = 0;
+    GLenum depthFunc = 0;
+    GLenum blendSrc = 0;
+    GLenum blendDst = 0;
+    GLenum polygonMode = 0;
     bool depthWrite = true;
     uint32_t textureBound[kMaxTextures] = {};
     struct UniformBinding {
         uint32_t buffer = 0;
-        size_t offset = 0, size = 0;
+        size_t offset = 0;
+        size_t size = 0;
     } uniformBound[kMaxUniformSlots];
 
     // what the next draw uses
@@ -875,11 +977,23 @@ private:
     IndexType indexType = IndexType::U32;
 
     struct HostState {
-        GLint program = 0, vao = 0, arrayBuffer = 0, activeTexture = TEXTURE0;
+        GLint program = 0;
+        GLint vao = 0;
+        GLint arrayBuffer = 0;
+        GLint activeTexture = TEXTURE0;
         GLint textures[kMaxTextures] = {};
-        bool cull = false, depth = false, blend = false, offset = false, scissor = false;
-        GLint cullMode = BACK, frontFace = CCW, depthMask = 1, depthFunc = LESS;
-        GLint blendSrc = ONE, blendDst = ZERO, polygonMode = FILL;
+        bool cull = false;
+        bool depth = false;
+        bool blend = false;
+        bool offset = false;
+        bool scissor = false;
+        GLint cullMode = BACK;
+        GLint frontFace = CCW;
+        GLint depthMask = 1;
+        GLint depthFunc = LESS;
+        GLint blendSrc = ONE;
+        GLint blendDst = ZERO;
+        GLint polygonMode = FILL;
         GLint viewport[4] = {};
         GLint fbo = 0;
     } host;
@@ -889,8 +1003,9 @@ private:
 
 std::unique_ptr<Device> createGLDevice(void *(*getProc)(const char *), std::string *error) {
     auto d = std::make_unique<GLDevice>();
-    if (!d->init(getProc, error))
+    if (!d->init(getProc, error)) {
         return nullptr;
+    }
     return d;
 }
 

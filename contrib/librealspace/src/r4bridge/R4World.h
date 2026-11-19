@@ -57,9 +57,7 @@ struct TerrainLight {
     // the data exaggerates it
     float relief = 1;
 };
-std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette,
-                                               const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f},
-                                               const TerrainLight &light = {});
+std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, const std::vector<float> &lodRanges = {0, 40000, 100000, 1e30f}, const TerrainLight &light = {});
 
 // The overlays of an area: its runways and the ground around them, as
 // SCRenderer::renderMapOverlay draws them over the terrain: a mesh by
@@ -85,15 +83,18 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
 // matrices by species (the species of treeModel), in libRealSpace's axes (Y up).
 // where the trees come from: the green types of the terrain and a noise
 // (Noise), or the woods painted in the textures of the game (Textures)
-enum class ForestMode { Noise, Textures };
+enum class ForestMode {
+    Noise,
+    Textures
+};
 
 struct ForestSettings {
     ForestMode mode = ForestMode::Noise;
-    float density = 1;                                     // multiplies all the densities
+    float density = 1; // multiplies all the densities
     // on the green: perKm2 x 25 at the heart of the woods (a noise of a few km),
     // perKm2 x 0.1 between them
     float perKm2 = 30;
-    float treeScale = 1.4f;                                // the size of the trees
+    float treeScale = 1.4f; // the size of the trees
     // the jungle (type 4) is most of its map: its woods larger, less dense
     float jungleDensity = 0.4f;
     // per km2 under these textures: the woods of TURKEY, the jungle of NICARAGA
@@ -109,12 +110,11 @@ struct ForestSettings {
     float minTreeShare = 0.08f;
     float areaPerTree = 400;
     // the texels of trees by image, found once
-    std::shared_ptr<std::map<int, std::vector<uint32_t>>> treeTexels =
-        std::make_shared<std::map<int, std::vector<uint32_t>>>();
+    std::shared_ptr<std::map<int, std::vector<uint32_t>>> treeTexels = std::make_shared<std::map<int, std::vector<uint32_t>>>();
     // the side of a chunk (a whole number of cells): small, so that the
     // chunks out of the view are left whole, few trees tested one by one
     float chunk = 2000;
-    std::vector<r4::Vec3> keepOut;                         // x, z, radius (libRealSpace)
+    std::vector<r4::Vec3> keepOut; // x, z, radius (libRealSpace)
     uint32_t seed = 1;
 };
 // the species of treeModel: a conifer and a broadleaf in the green of the
@@ -124,8 +124,9 @@ constexpr int kTreeSpecies = 4;
 // The chunks of the map with some green, without their trees: the trees of a
 // chunk are planted when it is needed (plantForest), the same at each time.
 struct ForestChunk {
-    int cx = 0, cz = 0;      // its place in the grid of chunks
-    r4::Vec3 center;         // its bounds, the trees included
+    int cx = 0; // its place in the grid of chunks
+    int cz = 0;
+    r4::Vec3 center; // its bounds, the trees included
     float radius = 0;
     std::vector<r4::scene::Placement> trees[kTreeSpecies]; // by species, about Y (libRealSpace's up)
 };
@@ -138,8 +139,7 @@ void plantForest(RSArea *area, const ForestSettings &settings, ForestChunk &chun
 // the simpler one for the distance (a pyramid, an octahedron). About 25 high
 // (the scale of the objects of the game, 2.1 times real), its foot at 0.
 // In libRealSpace's axes (Y up).
-std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette,
-                                            const std::vector<PaletteRange> &ranges, Lighting lighting = {});
+std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, Lighting lighting = {});
 
 // The buildings of the cities, villages, farms and harbors: on the cells
 // whose texture shows them (by its image of TXMPACK, the same on every map),
@@ -153,8 +153,7 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
 // None where an object of the map or of the mission stands: keepOut, x, z
 // and radius each (libRealSpace's axes). A node by cell ("city x,y"). In
 // libRealSpace's axes (Y up). Null without any.
-std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &palette, Lighting lighting = {},
-                                            const std::vector<r4::Vec3> &keepOut = {}, size_t *buildings = nullptr);
+std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &palette, Lighting lighting = {}, const std::vector<r4::Vec3> &keepOut = {}, size_t *buildings = nullptr);
 
 // The matrix of an object of the map: its position, then its 3 x 3
 // orientation as SCRenderer::renderObjects turns it (libRealSpace's axes).

@@ -13,40 +13,60 @@ namespace r4fly {
 
 namespace {
 
-constexpr float kLeftW = 290, kRightW = 360, kPerfH = 400;
+constexpr float kLeftW = 290;
+constexpr float kRightW = 360;
+constexpr float kPerfH = 400;
 
 const char *typeName(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Group: return "Group";
-    case scene::NodeType::Geode: return "Geode";
-    case scene::NodeType::Switch: return "Switch";
-    case scene::NodeType::LOD: return "LOD";
-    case scene::NodeType::Billboard: return "Billboard";
-    case scene::NodeType::Instancer: return "Instancer";
+    case scene::NodeType::Group:
+        return "Group";
+    case scene::NodeType::Geode:
+        return "Geode";
+    case scene::NodeType::Switch:
+        return "Switch";
+    case scene::NodeType::LOD:
+        return "LOD";
+    case scene::NodeType::Billboard:
+        return "Billboard";
+    case scene::NodeType::Instancer:
+        return "Instancer";
     }
     return "?";
 }
 
 const char *typeTag(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Group: return "GRP";
-    case scene::NodeType::Geode: return "GEO";
-    case scene::NodeType::Switch: return "SW";
-    case scene::NodeType::LOD: return "LOD";
-    case scene::NodeType::Billboard: return "BB";
-    case scene::NodeType::Instancer: return "INST";
+    case scene::NodeType::Group:
+        return "GRP";
+    case scene::NodeType::Geode:
+        return "GEO";
+    case scene::NodeType::Switch:
+        return "SW";
+    case scene::NodeType::LOD:
+        return "LOD";
+    case scene::NodeType::Billboard:
+        return "BB";
+    case scene::NodeType::Instancer:
+        return "INST";
     }
     return "?";
 }
 
 ui::Color typeColor(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Geode: return ui::Color::rgb(0.55f, 0.85f, 0.55f);
-    case scene::NodeType::Switch: return ui::Color::rgb(0.95f, 0.75f, 0.35f);
-    case scene::NodeType::LOD: return ui::Color::rgb(0.5f, 0.75f, 1.0f);
-    case scene::NodeType::Billboard: return ui::Color::rgb(0.9f, 0.6f, 0.9f);
-    case scene::NodeType::Instancer: return ui::Color::rgb(1.0f, 0.55f, 0.5f);
-    default: return ui::Color::rgb(0.85f, 0.85f, 0.88f);
+    case scene::NodeType::Geode:
+        return ui::Color::rgb(0.55f, 0.85f, 0.55f);
+    case scene::NodeType::Switch:
+        return ui::Color::rgb(0.95f, 0.75f, 0.35f);
+    case scene::NodeType::LOD:
+        return ui::Color::rgb(0.5f, 0.75f, 1.0f);
+    case scene::NodeType::Billboard:
+        return ui::Color::rgb(0.9f, 0.6f, 0.9f);
+    case scene::NodeType::Instancer:
+        return ui::Color::rgb(1.0f, 0.55f, 0.5f);
+    default:
+        return ui::Color::rgb(0.85f, 0.85f, 0.88f);
     }
 }
 
@@ -57,12 +77,14 @@ std::string fmt(const char *f, double a, double b = 0, double c = 0) {
 }
 
 float average(const std::deque<float> &v, size_t last) {
-    if (v.empty())
+    if (v.empty()) {
         return 0;
+    }
     size_t n = std::min(last, v.size());
     float s = 0;
-    for (size_t i = v.size() - n; i < v.size(); i++)
+    for (size_t i = v.size() - n; i < v.size(); i++) {
         s += v[i];
+    }
     return s / n;
 }
 
@@ -82,14 +104,18 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     g.message(fmt("X%.1f Y%.1f Z%.1f", e.x, e.y, e.z).append(fmt("  H %.0f P %.0f R %.0f", b.heading, b.pitch, b.roll)).c_str());
 
     g.columns(2);
-    if (g.button("Quit"))
+    if (g.button("Quit")) {
         app.quit = true;
-    if (g.button("GUI Off (F1)"))
+    }
+    if (g.button("GUI Off (F1)")) {
         app.showGui = false;
-    if (g.button("Frame All (R)"))
+    }
+    if (g.button("Frame All (R)")) {
         app.resetView();
-    if (g.button("Snap Screen"))
+    }
+    if (g.button("Snap Screen")) {
         app.snapRequest = "r4fly.ppm";
+    }
     g.toggle("Scene Graph", app.showGraph);
     g.toggle("Stats", app.showPerf);
     g.columns(1);
@@ -97,10 +123,12 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         g.toggle("Show Tree", app.showTree);
         g.slider("Show Tree X Pan", app.treePanX, -1, 1, "%.3f");
         g.slider("Show Tree Y Pan", app.treePanY, -1, 1, "%.3f");
-        if (app.treeScale > 0)
+        if (app.treeScale > 0) {
             g.slider("Show Tree Scale", app.treeScale, 0.02f, 4, "%.2f", true);
-        if (g.slider("Show Tree Depth", app.treeDepth, 1, 20, "%.0f"))
+        }
+        if (g.slider("Show Tree Depth", app.treeDepth, 1, 20, "%.0f")) {
             app.treeScale = -1;
+        }
         if (g.button("Fit the Tree")) {
             app.treePanX = app.treePanY = 0;
             app.treeScale = -1; // fitted at the next drawing
@@ -112,25 +140,37 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         bool turned = g.slider("Yaw (Heading)", b.heading, -180, 180, "%.1f");
         turned |= g.slider("Pitch", b.pitch, -89, 89, "%.1f");
         turned |= g.slider("Roll", b.roll, -180, 180, "%.1f");
-        if (turned)
+        if (turned) {
             b.writeAngles();
+        }
         int mode = b.turntable ? 1 : 0;
-        if (g.menu("Mouse", mode, {"Trackball (screen axes)", "Turntable (no roll)"}))
+        if (g.menu("Mouse", mode, {"Trackball (screen axes)", "Turntable (no roll)"})) {
             b.turntable = mode == 1;
+        }
         g.slider("Distance", b.distance, b.radius * 0.01f, b.radius * 50, "%.3g", true);
         g.toggle("Automatic Clip Planes", b.autoClip);
         g.slider("Near Clip", b.znear, b.radius * 1e-4f, b.radius * 10, "%.4g", true, !b.autoClip);
         g.slider("Far Clip", b.zfar, b.radius * 0.1f, b.radius * 1000, "%.4g", true, !b.autoClip);
         g.columns(4);
-        if (g.button("Front")) b.setAngles(0, 0, 0);
-        if (g.button("Side")) b.setAngles(90, 0, 0);
-        if (g.button("Top")) b.setAngles(0, 89.9f, 0);
-        if (g.button("3/4")) b.setAngles(30, 25, 0);
+        if (g.button("Front")) {
+            b.setAngles(0, 0, 0);
+        }
+        if (g.button("Side")) {
+            b.setAngles(90, 0, 0);
+        }
+        if (g.button("Top")) {
+            b.setAngles(0, 89.9f, 0);
+        }
+        if (g.button("3/4")) {
+            b.setAngles(30, 25, 0);
+        }
         g.columns(2);
-        if (g.button("Level (No Roll)"))
+        if (g.button("Level (No Roll)")) {
             b.setAngles(b.heading, b.pitch, 0);
-        if (g.button("Recenter"))
+        }
+        if (g.button("Recenter")) {
             b.pan = {};
+        }
         g.columns(1);
     }
     if (g.section("Lighting", app.openLight)) {
@@ -145,24 +185,28 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     }
     if (g.section("Environment", app.openEnv)) {
         Vec3 bg{env.clearColor.x, env.clearColor.y, env.clearColor.z};
-        if (g.color("Background", bg))
+        if (g.color("Background", bg)) {
             env.clearColor = {bg.x, bg.y, bg.z, 1};
+        }
         int fog = env.fog ? 1 : 0;
-        if (g.menu("Fog", fog, {"Off", "Linear"}))
+        if (g.menu("Fog", fog, {"Off", "Linear"})) {
             env.fog = fog != 0;
+        }
         if (env.fog) {
             float r = app.ball.radius;
             g.slider("Near Fog", env.fogStart, r * 0.01f, r * 50, "%.3g", true);
             g.slider("Far Fog", env.fogEnd, r * 0.01f, r * 100, "%.3g", true);
             g.color("Fog Color", env.fogColor);
-            if (g.button("Fog Color = Background"))
+            if (g.button("Fog Color = Background")) {
                 env.fogColor = bg;
+            }
         }
     }
     if (g.section("Rendering", app.openRender)) {
         int style = app.renderer->wireframe() ? 1 : 0;
-        if (g.menu("Style", style, {"Filled", "Lines"}))
+        if (g.menu("Style", style, {"Filled", "Lines"})) {
             app.renderer->setWireframe(style == 1);
+        }
         g.toggle("Textures", o.textures);
         g.toggle("Flat Shading", o.flatShading);
         // the shadows of the light: their reach about the size of the scene
@@ -173,28 +217,33 @@ void settingsPanel(App &app, ui::Context &g, float height) {
             g.slider("Shadow Strength", o.shadowStrength, 0, 1, "%.2f");
             int sizes[] = {1024, 2048, 4096};
             int sel = o.shadowMapSize <= 1024 ? 0 : o.shadowMapSize <= 2048 ? 1 : 2;
-            if (g.menu("Shadow Map", sel, {"1024", "2048", "4096"}))
+            if (g.menu("Shadow Map", sel, {"1024", "2048", "4096"})) {
                 o.shadowMapSize = sizes[sel];
+            }
         }
         // the state bits of the camera (flight: 1 body, 2 gear, 4 far,
         // 8 shadow, the high byte the weapons)
         g.bits("State Mask", app.camera.mask, 16);
         g.columns(2);
-        if (g.button("All States"))
+        if (g.button("All States")) {
             app.camera.mask = ~0u;
-        if (g.button("No State"))
+        }
+        if (g.button("No State")) {
             app.camera.mask = 0;
+        }
         g.columns(1);
     }
     if (g.section("Culling", app.openCull)) {
         int mode = o.frustumCulling ? 1 : 0;
-        if (g.menu("Cull Mode", mode, {"None", "View Frustum"}))
+        if (g.menu("Cull Mode", mode, {"None", "View Frustum"})) {
             o.frustumCulling = mode == 1;
+        }
         g.toggle("Freeze Culling", o.freezeCulling);
         g.slider("LOD Scale", o.lodScale, 0.05f, 20, "%.2f", true);
     }
-    if (g.section("Post Process", app.openPost))
+    if (g.section("Post Process", app.openPost)) {
         ui::postProcessControls(g, app.post->settings);
+    }
     if (g.section("Optimisations", app.openOptim)) {
         g.toggle("Sort by State", o.sortByState);
         g.toggle("Instancing", o.instancing);
@@ -205,14 +254,12 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         }
     }
     g.space(4);
-    for (const LoadedFile &f : app.files)
-        g.message(fmt("%.0f tris, %.0f lines, %.0f points", (double)f.triangles, (double)f.lines, (double)f.points)
-                      .insert(0, baseName(f.path) + ": ")
-                      .c_str());
-    if (app.forest)
-        g.message(fmt("forest: %.0f instances, %.0f levels", (double)app.forest->instances().size(),
-                      (double)app.forest->levels().size())
-                      .c_str());
+    for (const LoadedFile &f : app.files) {
+        g.message(fmt("%.0f tris, %.0f lines, %.0f points", (double)f.triangles, (double)f.lines, (double)f.points).insert(0, baseName(f.path) + ": ").c_str());
+    }
+    if (app.forest) {
+        g.message(fmt("forest: %.0f instances, %.0f levels", (double)app.forest->instances().size(), (double)app.forest->levels().size()).c_str());
+    }
     g.endPanel();
 }
 
@@ -220,18 +267,21 @@ void settingsPanel(App &app, ui::Context &g, float height) {
 
 void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int depth) {
     Mat4 world = parent * n.matrix();
-    if (app.selected == &n)
+    if (app.selected == &n) {
         app.selectedWorld = world;
+    }
     auto it = app.openNodes.find(&n);
-    if (it == app.openNodes.end())
+    if (it == app.openNodes.end()) {
         it = app.openNodes.emplace(&n, depth < 2).first;
+    }
     bool open = it->second;
     bool visible = app.hiddenMasks.count(&n) == 0;
     std::string label = n.name().empty() ? std::string("(") + typeName(n.type()) + ")" : n.name();
-    if (n.type() == scene::NodeType::Instancer)
+    if (n.type() == scene::NodeType::Instancer) {
         label += fmt("  [%.0f]", (double)static_cast<scene::Instancer &>(n).instances().size());
-    else if (n.type() == scene::NodeType::Geode || n.type() == scene::NodeType::Billboard)
+    } else if (n.type() == scene::NodeType::Geode || n.type() == scene::NodeType::Billboard) {
         label += fmt("  [%.0f]", (double)static_cast<scene::Geode &>(n).drawables().size());
+    }
     ui::Context::TreeRow row;
     row.id = &n;
     row.depth = depth;
@@ -241,8 +291,9 @@ void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int 
     row.hasChildren = !n.children().empty();
     row.selected = app.selected == &n;
     bool wasVisible = visible;
-    if (g.treeRow(row, open, visible))
+    if (g.treeRow(row, open, visible)) {
         app.selected = app.selected == &n ? nullptr : &n;
+    }
     it->second = open;
     if (visible != wasVisible) {
         // hidden: the mask of the node set to 0, the old one kept
@@ -254,9 +305,11 @@ void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int 
             app.hiddenMasks.erase(&n);
         }
     }
-    if (open)
-        for (const auto &c : n.children())
+    if (open) {
+        for (const auto &c : n.children()) {
             nodeTree(app, g, *c, world, depth + 1);
+        }
+    }
 }
 
 void nodePanel(App &app, ui::Context &g, ui::Rect r) {
@@ -269,36 +322,35 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
     }
     g.message((std::string(typeName(n->type())) + "  " + n->name()).c_str());
     g.toggle("Show Bounds", app.showSelectedBounds);
-    uint32_t mask = n->mask(), filter = n->stateFilter();
-    if (g.bits("Mask", mask, 16))
+    uint32_t mask = n->mask();
+    uint32_t filter = n->stateFilter();
+    if (g.bits("Mask", mask, 16)) {
         n->setMask(mask);
-    if (g.bits("State Filter", filter, 16))
+    }
+    if (g.bits("State Filter", filter, 16)) {
         n->setStateFilter(filter);
+    }
     const Mat4 &m = n->matrix();
     Vec3 t = translationOf(m);
     Sphere bs = n->bounds();
     std::vector<std::pair<std::string, std::string>> rows = {
-        {"Translation", fmt("%.4g %.4g %.4g", t.x, t.y, t.z)},
-        {"Scale", fmt("%.4g", maxScale(m))},
-        {"Bounds center", fmt("%.4g %.4g %.4g", bs.center.x, bs.center.y, bs.center.z)},
-        {"Bounds radius", fmt("%.4g", bs.radius)},
-        {"Children", fmt("%.0f", (double)n->children().size())},
+        {"Translation", fmt("%.4g %.4g %.4g", t.x, t.y, t.z)}, {"Scale", fmt("%.4g", maxScale(m))}, {"Bounds center", fmt("%.4g %.4g %.4g", bs.center.x, bs.center.y, bs.center.z)}, {"Bounds radius", fmt("%.4g", bs.radius)}, {"Children", fmt("%.0f", (double)n->children().size())},
     };
     switch (n->type()) {
     case scene::NodeType::LOD: {
         std::string s;
-        for (float v : static_cast<scene::LOD &>(*n).ranges())
+        for (float v : static_cast<scene::LOD &>(*n).ranges()) {
             s += fmt("%.4g ", v);
+        }
         rows.push_back({"Ranges", s});
         break;
     }
     case scene::NodeType::Instancer: {
         auto &in = static_cast<scene::Instancer &>(*n);
         rows.push_back({"Instances", fmt("%.0f", (double)in.instances().size())});
-        for (size_t i = 0; i < in.levels().size(); i++)
-            rows.push_back({fmt("Level %.0f", (double)i),
-                            fmt("%.0f parts, to %.4g", (double)in.levels()[i].parts.size(),
-                                in.levels()[i].maxDistance)});
+        for (size_t i = 0; i < in.levels().size(); i++) {
+            rows.push_back({fmt("Level %.0f", (double)i), fmt("%.0f parts, to %.4g", (double)in.levels()[i].parts.size(), in.levels()[i].maxDistance)});
+        }
         break;
     }
     default:
@@ -308,41 +360,48 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
     if (n->type() == scene::NodeType::Switch) {
         auto &sw = static_cast<scene::Switch &>(*n);
         float v = (float)sw.value();
-        if (g.slider("Switch Value (-1 all, -2 none)", v, -2, (float)n->children().size() - 1, "%.0f"))
+        if (g.slider("Switch Value (-1 all, -2 none)", v, -2, (float)n->children().size() - 1, "%.0f")) {
             sw.setValue((int)std::lround(v));
+        }
     }
     if (n->type() == scene::NodeType::Billboard) {
         auto &bb = static_cast<scene::Billboard &>(*n);
         int mode = bb.mode() == scene::Billboard::Mode::Point;
-        if (g.radio("Mode", mode, {"Axis", "Point"}))
+        if (g.radio("Mode", mode, {"Axis", "Point"})) {
             bb.setMode(mode ? scene::Billboard::Mode::Point : scene::Billboard::Mode::Axis);
+        }
     }
     if (n->type() == scene::NodeType::Geode || n->type() == scene::NodeType::Billboard) {
         std::vector<std::pair<std::string, std::string>> d;
         for (const scene::Drawable &dr : static_cast<scene::Geode &>(*n).drawables()) {
             std::string what;
             if (dr.mesh) {
-                uint32_t per = dr.mesh->primitive == assets::Primitive::Triangles ? 3
-                               : dr.mesh->primitive == assets::Primitive::Lines ? 2 : 1;
+                uint32_t per = dr.mesh->primitive == assets::Primitive::Triangles ? 3 : dr.mesh->primitive == assets::Primitive::Lines ? 2 : 1;
                 const char *kind = per == 3 ? " tris" : per == 2 ? " lines" : " points";
                 what = fmt("%.0f", (double)(dr.mesh->indexCount / per)) + kind;
             }
             if (dr.material) {
                 const assets::Material &p = dr.material->params;
-                if (dr.material->texture)
+                if (dr.material->texture) {
                     what += " tex";
-                if (p.alpha == assets::AlphaMode::Blend)
+                }
+                if (p.alpha == assets::AlphaMode::Blend) {
                     what += " blend";
-                if (p.alpha == assets::AlphaMode::Additive)
+                }
+                if (p.alpha == assets::AlphaMode::Additive) {
                     what += " additive";
-                if (p.decal)
+                }
+                if (p.decal) {
                     what += " decal";
-                if (p.shading == assets::Shading::Unlit)
+                }
+                if (p.shading == assets::Shading::Unlit) {
                     what += " unlit";
+                }
             }
             std::string name = dr.mesh && !dr.mesh->name.empty() ? dr.mesh->name : "mesh";
-            if (dr.material && !dr.material->params.name.empty())
+            if (dr.material && !dr.material->params.name.empty()) {
                 name += " / " + dr.material->params.name;
+            }
             d.push_back({name, what});
             if (d.size() >= 40) {
                 d.push_back({"...", ""});
@@ -362,7 +421,7 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
 struct TreeBox {
     scene::Node *node;
     int depth;
-    float x; // in slots
+    float x;    // in slots
     int parent; // index, -1 for the root
 };
 
@@ -373,11 +432,13 @@ float layoutTree(App &app, scene::Node &n, int depth, int parent, float &nextLea
         out[me].x = nextLeaf++;
         return out[me].x;
     }
-    float first = 0, last = 0;
+    float first = 0;
+    float last = 0;
     for (size_t i = 0; i < n.children().size(); i++) {
         float x = layoutTree(app, *n.children()[i], depth + 1, me, nextLeaf, out);
-        if (i == 0)
+        if (i == 0) {
             first = x;
+        }
         last = x;
     }
     out[me].x = (first + last) * 0.5f;
@@ -389,16 +450,21 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
     float leaves = 0;
     layoutTree(app, *app.models, 0, -1, leaves, boxes);
     int depth = 0;
-    for (const TreeBox &b : boxes)
+    for (const TreeBox &b : boxes) {
         depth = std::max(depth, b.depth);
+    }
     // the sizes at scale 1, in points; a scale < 0 asks to fit the area
-    const float bw = 112, bh = 30, sx = 124, sy = 62;
+    const float bw = 112;
+    const float bh = 30;
+    const float sx = 124;
+    const float sy = 62;
     if (app.treeScale < 0) {
         float fit = std::min(area.w / (leaves * sx + 20), area.h / ((depth + 1) * sy + 20));
         app.treeScale = std::max(0.1f, std::min(fit, 2.0f));
     }
     float k = app.treeScale;
-    float width = leaves * sx * k, height = (depth + 1) * sy * k;
+    float width = leaves * sx * k;
+    float height = (depth + 1) * sy * k;
     // the pans move the tree by its own size
     float ox = area.x + (area.w - width) * 0.5f - app.treePanX * width;
     float oy = area.y + 16 - app.treePanY * height;
@@ -408,23 +474,27 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
         return ui::Rect{ox + (b.x * sx + (sx - bw) * 0.5f) * k, oy + b.depth * sy * k, bw * k, bh * k};
     };
     // the links, then the boxes over them
-    for (const TreeBox &b : boxes)
+    for (const TreeBox &b : boxes) {
         if (b.parent >= 0) {
-            ui::Rect p = boxRect(boxes[b.parent]), c = boxRect(b);
-            g.line(p.x + p.w * 0.5f, p.y + p.h, c.x + c.w * 0.5f, c.y, ui::Color::rgb(0.85f, 0.85f, 0.6f),
-                   std::max(1.0f, k));
+            ui::Rect p = boxRect(boxes[b.parent]);
+            ui::Rect c = boxRect(b);
+            g.line(p.x + p.w * 0.5f, p.y + p.h, c.x + c.w * 0.5f, c.y, ui::Color::rgb(0.85f, 0.85f, 0.6f), std::max(1.0f, k));
         }
+    }
     for (const TreeBox &b : boxes) {
         ui::Rect r = boxRect(b);
-        if (r.x > area.x + area.w || r.x + r.w < area.x || r.y > area.y + area.h || r.y + r.h < area.y)
+        if (r.x > area.x + area.w || r.x + r.w < area.x || r.y > area.y + area.h || r.y + r.h < area.y) {
             continue;
+        }
         bool selected = app.selected == b.node;
         bool hidden = app.hiddenMasks.count(b.node) > 0;
-        if (g.clickable(b.node, r))
+        if (g.clickable(b.node, r)) {
             app.selected = selected ? nullptr : b.node;
+        }
         ui::Color face = selected ? ui::Color::rgb(0.35f, 0.45f, 0.85f) : typeColor(b.node->type());
-        if (hidden)
+        if (hidden) {
             face = ui::Color::rgb(0.45f, 0.45f, 0.48f);
+        }
         g.fill(r, face);
         g.bevel(r, selected);
         if (k >= 0.45f) {
@@ -457,14 +527,18 @@ void perfPanel(App &app, ui::Context &g, ui::Rect r) {
         // the last 240 frames, the newest on the right
         float buf[240] = {};
         int n = (int)std::min<size_t>(v.size(), 240);
-        for (int i = 0; i < n; i++)
+        for (int i = 0; i < n; i++) {
             buf[240 - n + i] = v[v.size() - n + i];
-        float avg = average(v, 60), peak = 0;
-        for (int i = 0; i < 240; i++)
+        }
+        float avg = average(v, 60);
+        float peak = 0;
+        for (int i = 0; i < 240; i++) {
             peak = std::max(peak, buf[i]);
+        }
         float scale = minScale;
-        while (scale < peak * 1.1f)
+        while (scale < peak * 1.1f) {
             scale *= 2;
+        }
         char overlay[64];
         std::snprintf(overlay, sizeof overlay, "%s %.3f ms", name, avg);
         g.plot(buf, 240, scale, c, overlay);
@@ -507,10 +581,12 @@ void guiFrame(App &app, int width, int height, float pixelScale) {
             g.endPanel();
             nodePanel(app, g, {x, treeH, kRightW, gh - treeH});
         }
-        if (app.showPerf)
+        if (app.showPerf) {
             perfPanel(app, g, {x, h - perfH, kRightW, perfH});
-        if (app.showTree)
+        }
+        if (app.showTree) {
             treeDiagram(app, g, sceneViewport(app, width, height));
+        }
     }
     g.endFrame();
 }
@@ -518,12 +594,15 @@ void guiFrame(App &app, int width, int height, float pixelScale) {
 ui::Rect sceneViewport(const App &app, int width, int height) {
     float left = app.showGui ? kLeftW : 0;
     float right = app.showGui && (app.showGraph || app.showPerf) ? kRightW : 0;
-    if (left + right > width * 0.7f)
+    if (left + right > width * 0.7f) {
         left = right = 0; // a small window: the scene under the panels
+    }
     return {left, 0, std::max(1.0f, width - left - right), (float)height};
 }
 
-bool guiWantsMouse(const App &app) { return app.showGui && app.ui->wantsMouse(); }
+bool guiWantsMouse(const App &app) {
+    return app.showGui && app.ui->wantsMouse();
+}
 
 std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     // three circles of radius 1, about X, Y and Z
@@ -531,9 +610,11 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     m.name = "bounds";
     m.primitive = assets::Primitive::Lines;
     const int n = 64;
-    for (int axis = 0; axis < 3; axis++)
+    for (int axis = 0; axis < 3; axis++) {
         for (int i = 0; i < n; i++) {
-            float a = 2 * kPi * i / n, c = std::cos(a), s = std::sin(a);
+            float a = 2 * kPi * i / n;
+            float c = std::cos(a);
+            float s = std::sin(a);
             assets::Vertex v;
             v.position = axis == 0 ? Vec3{0, c, s} : axis == 1 ? Vec3{c, 0, s} : Vec3{c, s, 0};
             v.color = 0xff20e0ffu; // yellow
@@ -541,6 +622,7 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
             m.indices.push_back(axis * n + i);
             m.indices.push_back(axis * n + (i + 1) % n);
         }
+    }
     m.computeBounds();
     assets::Material mat;
     mat.name = "bounds";

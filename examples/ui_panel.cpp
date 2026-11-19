@@ -13,8 +13,9 @@ using namespace r4;
 
 int main(int argc, char **argv) {
     example::Window win;
-    if (!win.open("ui_panel", argc, argv))
+    if (!win.open("ui_panel", argc, argv)) {
         return 1;
+    }
     render::Renderer renderer(*win.device);
     renderer.environment().lightDirection = normalize(Vec3{0.4f, 0.7f, -0.6f}); // from behind the eye
 
@@ -28,9 +29,13 @@ int main(int argc, char **argv) {
     spinner->addChild(geode);
 
     // what the panel changes
-    bool spin = true, lighting = true;
-    float speed = 45, angle = 0, fov = 45;
-    Vec3 color{0.9f, 0.55f, 0.2f}, last{-1, -1, -1};
+    bool spin = true;
+    bool lighting = true;
+    float speed = 45;
+    float angle = 0;
+    float fov = 45;
+    Vec3 color{0.9f, 0.55f, 0.2f};
+    Vec3 last{-1, -1, -1};
     int style = 0;
     bool openColor = true;
 
@@ -45,22 +50,25 @@ int main(int argc, char **argv) {
         gui.message("Drag in the view to turn.");
         gui.columns(2);
         gui.toggle("Spin", spin);
-        if (gui.button("Reset"))
+        if (gui.button("Reset")) {
             angle = 0;
+        }
         gui.columns(1);
         gui.slider("Speed", speed, 0, 360, "%.0f deg/s");
         gui.slider("Field of View", fov, 20, 90, "%.0f");
         gui.menu("Style", style, {"Filled", "Lines"});
         gui.toggle("Lighting", lighting);
-        if (gui.section("Color", openColor))
+        if (gui.section("Color", openColor)) {
             gui.color("Box", color);
+        }
         win.cameraControls(30);
         gui.endPanel();
         win.endGui();
 
         // the scene follows
-        if (spin)
+        if (spin) {
             angle += speed / 60.0f;
+        }
         spinner->setMatrix(rotate(radians(angle), {0, 0, 1}));
         if (color != last) {
             // a material is immutable on the GPU: a new one when the color changes

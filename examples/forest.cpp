@@ -17,8 +17,9 @@ using namespace r4;
 
 int main(int argc, char **argv) {
     example::Window win;
-    if (!win.open("forest", argc, argv))
+    if (!win.open("forest", argc, argv)) {
         return 1;
+    }
     render::Renderer renderer(*win.device);
     renderer.environment().clearColor = {0.55f, 0.7f, 0.9f, 1};
     renderer.environment().fog = true;
@@ -26,7 +27,8 @@ int main(int argc, char **argv) {
     renderer.environment().fogStart = 150;
     renderer.environment().fogEnd = 450;
 
-    Vec4 bark{0.45f, 0.3f, 0.18f, 1}, leaves{0.2f, 0.5f, 0.2f, 1};
+    Vec4 bark{0.45f, 0.3f, 0.18f, 1};
+    Vec4 leaves{0.2f, 0.5f, 0.2f, 1};
     // the near tree: a trunk and two cones; the far one: a single cone
     std::vector<scene::InstancePart> near = {
         {example::drawable(renderer, example::cylinder(0.25f, 0.18f, 0, 2), bark), Mat4(1.0f)},
@@ -38,20 +40,26 @@ int main(int argc, char **argv) {
     };
 
     auto forest = scene::make<scene::Instancer>();
-    forest->addLevel(near, 60);  // up to 60 m
-    forest->addLevel(far, 500);  // then up to 500 m
+    forest->addLevel(near, 60); // up to 60 m
+    forest->addLevel(far, 500); // then up to 500 m
     // the trees: always the same places for a count
     auto plant = [&](int count) {
         std::mt19937 rng(7);
-        std::uniform_real_distribution<float> place(-240, 240), turn(0, 6.2832f), size(0.7f, 1.4f);
+        std::uniform_real_distribution<float> place(-240, 240);
+        std::uniform_real_distribution<float> turn(0, 6.2832f);
+        std::uniform_real_distribution<float> size(0.7f, 1.4f);
         std::vector<Mat4> trees;
         for (int i = 0; i < count; i++) {
-            float x = place(rng), y = place(rng), a = turn(rng), k = size(rng);
+            float x = place(rng);
+            float y = place(rng);
+            float a = turn(rng);
+            float k = size(rng);
             trees.push_back(translate({x, y, 0}) * rotate(a, {0, 0, 1}) * scale({k, k, k}));
         }
         forest->setInstances(std::move(trees));
     };
-    float count = 20000, planted = 0;
+    float count = 20000;
+    float planted = 0;
 
     auto root = scene::make<scene::Group>();
     auto ground = scene::make<scene::Geode>();

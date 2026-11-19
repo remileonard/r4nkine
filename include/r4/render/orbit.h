@@ -22,38 +22,49 @@ public:
     Vec3 target{0, 0, 0}; // the point it turns about
     float distance = 10;
 
-    Orbit() { setAngles(30, 25, 0); }
+    Orbit() {
+        setAngles(30, 25, 0);
+    }
 
     // heading: degrees about the up (axes::kUp); pitch: degrees of the eye above the target;
     // roll: degrees about the line of sight
     void setAngles(float heading, float pitch, float roll) {
-        q_ = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight) *
-             glm::angleAxis(radians(roll), axes::kForward);
+        q_ = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight) * glm::angleAxis(radians(roll), axes::kForward);
     }
     void angles(float &heading, float &pitch, float &roll) const {
-        Vec3 f = forward(), u = up();
+        Vec3 f = forward();
+        Vec3 u = up();
         pitch = -axes::pitchOf(f); // the eye above the target: the sight goes down
         heading = axes::headingOf(f);
         // the up and the right without roll, for that heading and pitch
-        glm::quat base =
-            glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight);
-        Vec3 u0 = base * axes::kUp, r0 = base * axes::kRight;
+        glm::quat base = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight);
+        Vec3 u0 = base * axes::kUp;
+        Vec3 r0 = base * axes::kRight;
         roll = degrees(std::atan2(dot(u, r0), dot(u, u0)));
     }
 
     // the mouse: dx turns about the up of the screen (yaw), dy about its
     // right (pitch); degrees
     void turn(float dx, float dy) {
-        q_ = glm::normalize(q_ * glm::angleAxis(radians(-dx), axes::kUp) *
-                            glm::angleAxis(radians(-dy), axes::kRight));
+        q_ = glm::normalize(q_ * glm::angleAxis(radians(-dx), axes::kUp) * glm::angleAxis(radians(-dy), axes::kRight));
     }
     // the target moved in the plane of the screen, by world units
-    void pan(float right, float up) { target += this->right() * right + this->up() * up; }
+    void pan(float right, float up) {
+        target += this->right() * right + this->up() * up;
+    }
 
-    Vec3 forward() const { return q_ * axes::kForward; }
-    Vec3 right() const { return q_ * axes::kRight; }
-    Vec3 up() const { return q_ * axes::kUp; }
-    Vec3 eye() const { return target - forward() * distance; }
+    Vec3 forward() const {
+        return q_ * axes::kForward;
+    }
+    Vec3 right() const {
+        return q_ * axes::kRight;
+    }
+    Vec3 up() const {
+        return q_ * axes::kUp;
+    }
+    Vec3 eye() const {
+        return target - forward() * distance;
+    }
 
     void apply(Camera &camera, float fovyDeg, float aspect, float znear, float zfar) const {
         camera.lookAt(eye(), target, up());

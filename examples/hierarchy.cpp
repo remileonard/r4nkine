@@ -29,13 +29,16 @@ struct Missile {
 
 int main(int argc, char **argv) {
     example::Window win;
-    if (!win.open("hierarchy", argc, argv))
+    if (!win.open("hierarchy", argc, argv)) {
         return 1;
+    }
     render::Renderer renderer(*win.device);
     renderer.environment().clearColor = {0.55f, 0.7f, 0.9f, 1};
     renderer.environment().lightDirection = normalize(Vec3{0.3f, 0.5f, -0.8f});
-    Vec4 grey{0.7f, 0.72f, 0.75f, 1}, dark{0.3f, 0.32f, 0.35f, 1}, white{0.95f, 0.95f, 0.95f, 1},
-        red{0.85f, 0.2f, 0.15f, 1};
+    Vec4 grey{0.7f, 0.72f, 0.75f, 1};
+    Vec4 dark{0.3f, 0.32f, 0.35f, 1};
+    Vec4 white{0.95f, 0.95f, 0.95f, 1};
+    Vec4 red{0.85f, 0.2f, 0.15f, 1};
 
     auto root = scene::make<scene::Group>();
     root->setName("world");
@@ -55,7 +58,7 @@ int main(int argc, char **argv) {
     lod->addChild(detailed);
     auto body = scene::make<scene::Geode>();
     body->addDrawable(example::drawable(renderer, example::box({1, 7, 1}), grey));
-    body->addDrawable(example::drawable(renderer, example::box({9, 2, 0.2f}), grey));    // the wings
+    body->addDrawable(example::drawable(renderer, example::box({9, 2, 0.2f}), grey));     // the wings
     body->addDrawable(example::drawable(renderer, example::box({3.4f, 1, 0.15f}), dark)); // the tail
     detailed->addChild(body);
     auto tail = scene::make<scene::Geode>();
@@ -96,20 +99,22 @@ int main(int argc, char **argv) {
         pylon->addChild(missiles.back().node);
     }
     auto reload = [&]() {
-        for (Missile &m : missiles)
+        for (Missile &m : missiles) {
             if (!m.pylon) {
                 root->removeChild(m.node.get());
                 m.node->setMatrix(rotate(radians(-90), {1, 0, 0}));
-                for (const auto &c : detailed->children())
+                for (const auto &c : detailed->children()) {
                     if (c->name() == "pylon" && c->children().empty()) {
                         m.pylon = std::static_pointer_cast<scene::Group>(c);
                         m.pylon->addChild(m.node);
                         break;
                     }
+                }
             }
+        }
     };
     auto fire = [&]() {
-        for (Missile &m : missiles)
+        for (Missile &m : missiles) {
             if (m.pylon) {
                 // its world matrix: plane, pylon, then its own
                 Mat4 world = plane->matrix() * m.pylon->matrix() * m.node->matrix();
@@ -120,48 +125,60 @@ int main(int argc, char **argv) {
                 m.velocity = normalize(transformVector(plane->matrix(), {0, 1, 0})) * 35.0f;
                 return;
             }
+        }
     };
 
     win.distance = 28;
     win.orbit.setAngles(30, 20, 0);
     render::Camera camera;
-    float t = 0, speed = 0.4f, bank = 25, lodFar = 120;
+    float t = 0;
+    float speed = 0.4f;
+    float bank = 25;
+    float lodFar = 120;
     bool follow = true;
     auto toggleGear = [&]() {
         gear->setValue(gear->value() == scene::Switch::kAll ? scene::Switch::kNone : scene::Switch::kAll);
     };
     while (win.poll([&](const SDL_Event &e) {
-        if (e.type != SDL_KEYDOWN)
+        if (e.type != SDL_KEYDOWN) {
             return;
-        if (e.key.keysym.sym == SDLK_SPACE)
+        }
+        if (e.key.keysym.sym == SDLK_SPACE) {
             fire();
-        if (e.key.keysym.sym == SDLK_r)
+        }
+        if (e.key.keysym.sym == SDLK_r) {
             reload();
-        if (e.key.keysym.sym == SDLK_g)
+        }
+        if (e.key.keysym.sym == SDLK_g) {
             toggleGear();
+        }
     })) {
         int hanging = 0;
-        for (const Missile &m : missiles)
+        for (const Missile &m : missiles) {
             hanging += m.pylon != nullptr;
+        }
         ui::Context &gui = win.beginGui();
         gui.beginPanel("plane", {0, 0, 250, (float)win.pointHeight}, "hierarchy");
         char msg[96];
-        std::snprintf(msg, sizeof msg, "%d missiles on the pylons\n%d in flight", hanging,
-                      (int)missiles.size() - hanging);
+        std::snprintf(msg, sizeof msg, "%d missiles on the pylons\n%d in flight", hanging, (int)missiles.size() - hanging);
         gui.message(msg);
         gui.columns(2);
-        if (gui.button("Fire (Space)", hanging > 0))
+        if (gui.button("Fire (Space)", hanging > 0)) {
             fire();
-        if (gui.button("Reload (R)"))
+        }
+        if (gui.button("Reload (R)")) {
             reload();
+        }
         gui.columns(1);
         bool down = gear->value() == scene::Switch::kAll;
-        if (gui.toggle("Landing Gear (G)", down))
+        if (gui.toggle("Landing Gear (G)", down)) {
             toggleGear();
+        }
         gui.slider("Turn Rate", speed, 0, 1.5f, "%.2f rad/s");
         gui.slider("Bank", bank, -60, 60, "%.0f deg");
-        if (gui.slider("LOD Switch", lodFar, 20, 500, "%.0f m", true))
+        if (gui.slider("LOD Switch", lodFar, 20, 500, "%.0f m", true)) {
             lod->setRanges({0, lodFar, 5000});
+        }
         gui.toggle("Follow the Plane", follow);
         win.cameraControls(300);
         gui.endPanel();
@@ -170,12 +187,13 @@ int main(int argc, char **argv) {
         float dt = 1 / 60.0f;
         t += dt * speed;
         // the flight: a circle of 40 m at 12 m, nose along the circle, banked
-        Mat4 flight = translate({40 * std::cos(t), 40 * std::sin(t), 12}) * rotate(t, {0, 0, 1}) *
-                      rotate(radians(-bank), {0, 1, 0});
+        Mat4 flight = translate({40 * std::cos(t), 40 * std::sin(t), 12}) * rotate(t, {0, 0, 1}) * rotate(radians(-bank), {0, 1, 0});
         plane->setMatrix(flight);
-        for (Missile &m : missiles)
-            if (!m.pylon)
+        for (Missile &m : missiles) {
+            if (!m.pylon) {
                 m.node->setMatrix(translate(m.velocity * dt) * m.node->matrix());
+            }
+        }
         win.target = follow ? translationOf(flight) : Vec3{0, 0, 10};
         win.apply(camera, 0.5f, 3000);
         renderer.render(*root, camera, 0, 0, win.width, win.height);
