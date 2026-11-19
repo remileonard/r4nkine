@@ -51,6 +51,8 @@ public:
     }
     // R4nkine's axes; false out of the map
     bool groundHeight(r4::Vec3 p, float &height) const;
+    // the map, without the skirts that run to the edge of the world
+    r4::Sphere mapBounds() const;
 
     r4::scene::NodePtr root() const {
         return root_;

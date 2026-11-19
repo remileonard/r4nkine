@@ -108,6 +108,121 @@ r4::assets::Image indexTexture(const RSImage &src, const VGAPalette &palette) {
     return img;
 }
 
+// RSArea::BuildSkirts at one level: the border of the map, clockwise, each vertex joined to the edge of the world (twice the map on each side) at height 0;
+// the colors smoothed along the ring, the outer ones their mean
+struct SkirtRing {
+    std::vector<const MapVertex *> inner;
+    std::vector<r4::Vec2> outer;
+    std::vector<int> block;
+    std::vector<uint32_t> color;
+    uint32_t outerColor = 0;
+};
+
+SkirtRing skirtRing(RSArea *area, int level) {
+    SkirtRing ring;
+    const int n = BLOCK_PER_MAP_SIDE;
+    const float worldHalf = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE * 2.0f;
+    std::vector<r4::Vec3> colors;
+    auto push = [&](int blockIndex, const MapVertex *p, float ox, float oz) {
+        ring.inner.push_back(p);
+        ring.outer.push_back({ox, oz});
+        ring.block.push_back(blockIndex);
+        colors.push_back({p->color[0], p->color[1], p->color[2]});
+    };
+    auto blockAt = [&](int index) {
+        return area->GetAreaBlockByID(level, index);
+    };
+    for (int index = 0; index < BLOCKS_PER_MAP; index++) {
+        AreaBlock *b = blockAt(index);
+        if (!b || b->sideSize < 2) {
+            return ring;
+        }
+    }
+    for (int bx = 0; bx < n; bx++) {
+        AreaBlock *b = blockAt(bx);
+        for (int x = 0; x < b->sideSize; x++) {
+            if (bx == 0 && x == 0) {
+                continue;
+            }
+            if (bx == n - 1 && x == b->sideSize - 1) {
+                break;
+            }
+            const MapVertex *p = b->GetVertice(x, 0);
+            push(bx, p, p->v.x, -worldHalf);
+        }
+    }
+    AreaBlock *topRight = blockAt(n - 1);
+    push(n - 1, topRight->GetVertice(topRight->sideSize - 1, 0), worldHalf, -worldHalf);
+    for (int by = 0; by < n; by++) {
+        int index = by * n + n - 1;
+        AreaBlock *b = blockAt(index);
+        for (int y = 0; y < b->sideSize; y++) {
+            if (by == 0 && y == 0) {
+                continue;
+            }
+            if (by == n - 1 && y == b->sideSize - 1) {
+                break;
+            }
+            const MapVertex *p = b->GetVertice(b->sideSize - 1, y);
+            push(index, p, worldHalf, p->v.z);
+        }
+    }
+    AreaBlock *bottomRight = blockAt(n * n - 1);
+    push(n * n - 1, bottomRight->GetVertice(bottomRight->sideSize - 1, bottomRight->sideSize - 1), worldHalf, worldHalf);
+    for (int bx = n - 1; bx >= 0; bx--) {
+        int index = (n - 1) * n + bx;
+        AreaBlock *b = blockAt(index);
+        for (int x = b->sideSize - 1; x >= 0; x--) {
+            if (bx == n - 1 && x == b->sideSize - 1) {
+                continue;
+            }
+            if (bx == 0 && x == 0) {
+                break;
+            }
+            const MapVertex *p = b->GetVertice(x, b->sideSize - 1);
+            push(index, p, p->v.x, worldHalf);
+        }
+    }
+    AreaBlock *bottomLeft = blockAt((n - 1) * n);
+    push((n - 1) * n, bottomLeft->GetVertice(0, bottomLeft->sideSize - 1), -worldHalf, worldHalf);
+    for (int by = n - 1; by >= 0; by--) {
+        int index = by * n;
+        AreaBlock *b = blockAt(index);
+        for (int y = b->sideSize - 1; y >= 0; y--) {
+            if (by == n - 1 && y == b->sideSize - 1) {
+                continue;
+            }
+            if (by == 0 && y == 0) {
+                break;
+            }
+            const MapVertex *p = b->GetVertice(0, y);
+            push(index, p, -worldHalf, p->v.z);
+        }
+    }
+    push(0, blockAt(0)->GetVertice(0, 0), -worldHalf, -worldHalf);
+
+    const size_t m = ring.inner.size();
+    r4::Vec3 mean{0, 0, 0};
+    for (const r4::Vec3 &c : colors) {
+        mean += c;
+    }
+    mean /= (float)m;
+    auto pack = [](r4::Vec3 c) {
+        const float rgba[4] = {c.x, c.y, c.z, 1};
+        return packColor(rgba);
+    };
+    ring.outerColor = pack(mean);
+    const int halfWidth = 8;
+    for (size_t i = 0; i < m; i++) {
+        r4::Vec3 sum{0, 0, 0};
+        for (int k = -halfWidth; k <= halfWidth; k++) {
+            sum += colors[(i + m + k) % m];
+        }
+        ring.color.push_back(pack(sum / (float)(2 * halfWidth + 1)));
+    }
+    return ring;
+}
+
 } // namespace
 
 std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &palette, const std::vector<float> &lodRanges, const TerrainLight &light) {
@@ -315,6 +430,48 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
 
     model->nodes.push_back(Node{});
     model->nodes[0].name = "terrain";
+    Material skirtMaterial;
+    skirtMaterial.name = "terrain skirts";
+    skirtMaterial.shading = Shading::UNLIT;
+    skirtMaterial.vertexColors = true;
+    skirtMaterial.diffuse = {1, 1, 1, 1};
+    skirtMaterial.doubleSided = true;
+    skirtMaterial.castShadows = false;
+    model->materials.push_back(skirtMaterial);
+    const int skirts = (int)model->materials.size() - 1;
+    std::vector<SkirtRing> rings;
+    std::vector<std::map<int, std::vector<size_t>>> ringOfBlock(NUM_LODS);
+    for (int level = 0; level < NUM_LODS; level++) {
+        rings.push_back(skirtRing(area, level));
+        for (size_t k = 0; k < rings[level].block.size(); k++) {
+            ringOfBlock[level][rings[level].block[k]].push_back(k);
+        }
+    }
+    auto addSkirt = [&](int level, int blockIndex) {
+        const SkirtRing &ring = rings[level];
+        const size_t m = ring.inner.size();
+        auto found = ringOfBlock[level].find(blockIndex);
+        if (found == ringOfBlock[level].end()) {
+            return;
+        }
+        for (size_t i : found->second) {
+            size_t j = (i + 1) % m;
+            MapVertex outerA = *ring.inner[i];
+            MapVertex outerB = *ring.inner[j];
+            outerA.v.x = ring.outer[i].x;
+            outerA.v.y = 0;
+            outerA.v.z = ring.outer[i].y;
+            outerB.v.x = ring.outer[j].x;
+            outerB.v.y = 0;
+            outerB.v.z = ring.outer[j].y;
+            add(skirts, ring.inner[i], ring.color[i], {0, 0});
+            add(skirts, ring.inner[j], ring.color[j], {0, 0});
+            add(skirts, &outerB, ring.outerColor, {0, 0}, ring.inner[j]);
+            add(skirts, ring.inner[i], ring.color[i], {0, 0});
+            add(skirts, &outerB, ring.outerColor, {0, 0}, ring.inner[j]);
+            add(skirts, &outerA, ring.outerColor, {0, 0}, ring.inner[i]);
+        }
+    };
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
         Node block;
         block.name = "block " + std::to_string(i % BLOCK_PER_MAP_SIDE) + "," + std::to_string(i / BLOCK_PER_MAP_SIDE);
@@ -322,6 +479,16 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         lod.name = "levels of detail";
         lod.kind = NodeKind::LOD;
         lod.lodRanges = lodRanges;
+        AreaBlock *finest = area->GetAreaBlockByID(0, i);
+        if (ringOfBlock[0].count(i) && finest && finest->sideSize >= 2) {
+            r4::Box box;
+            for (int v = 0; v < finest->sideSize * finest->sideSize; v++) {
+                const MapVertex *p = &finest->vertice[v];
+                box.extend({p->v.x, p->v.y, p->v.z});
+            }
+            lod.lodCenter = box.center();
+            lod.hasLodCenter = true;
+        }
         std::vector<Node> levels;
         for (int level = 0; level < NUM_LODS; level++) {
             currentLevel = level;
@@ -376,8 +543,12 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     dc.v.y -= kSkirt;
                     uint32_t ca = dynamic ? topTone(a->type) : packColor(a->color);
                     uint32_t cc = dynamic ? topTone(c->type) : packColor(c->color);
-                    add(0, a, ca, {0, 0}), add(0, c, cc, {0, 0}), add(0, &dc, cc, {0, 0}, c);
-                    add(0, a, ca, {0, 0}), add(0, &dc, cc, {0, 0}, c), add(0, &da, ca, {0, 0}, a);
+                    add(0, a, ca, {0, 0});
+                    add(0, c, cc, {0, 0});
+                    add(0, &dc, cc, {0, 0}, c);
+                    add(0, a, ca, {0, 0});
+                    add(0, &dc, cc, {0, 0}, c);
+                    add(0, &da, ca, {0, 0}, a);
                 };
                 for (int x = 0; x < endX; x++) {
                     skirt(at(x, 0), at(x + 1, 0));
@@ -388,6 +559,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     skirt(at(endX, y), at(endX, y + 1));
                 }
             }
+            addSkirt(level, i);
             levels.push_back(takeMeshes("LVL" + std::to_string(level) + " (" + std::to_string(b ? b->sideSize * b->sideSize : 0) + " vertices)"));
         }
         int blockIndex = (int)model->nodes.size();

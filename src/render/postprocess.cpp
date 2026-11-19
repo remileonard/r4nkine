@@ -55,8 +55,7 @@ void main() {
     float reduce = max((lNW + lNE + lSW + lSE) * (0.25 / 8.0), 1.0 / 128.0);
     float rcpMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + reduce);
     dir = clamp(dir * rcpMin, vec2(-8.0), vec2(8.0)) * inv;
-    vec3 a = 0.5 * (texture(source, vUV + dir * (1.0 / 3.0 - 0.5)).rgb +
-                    texture(source, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
+    vec3 a = 0.5 * (texture(source, vUV + dir * (1.0 / 3.0 - 0.5)).rgb + texture(source, vUV + dir * (2.0 / 3.0 - 0.5)).rgb);
     vec3 b = a * 0.5 + 0.25 * (texture(source, vUV - dir * 0.5).rgb + texture(source, vUV + dir * 0.5).rgb);
     float lB = dot(b, luma);
     fragColor = vec4((lB < lMin || lB > lMax) ? a : b, center.a);

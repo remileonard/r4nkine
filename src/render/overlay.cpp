@@ -54,8 +54,7 @@ void main() {
             vec2 q = p - 0.5;
             ivec2 b = ivec2(floor(q));
             vec2 f = q - vec2(b);
-            c = mix(mix(lookup(b), lookup(b + ivec2(1, 0)), f.x),
-                    mix(lookup(b + ivec2(0, 1)), lookup(b + ivec2(1, 1)), f.x), f.y);
+            c = mix(mix(lookup(b), lookup(b + ivec2(1, 0)), f.x), mix(lookup(b + ivec2(0, 1)), lookup(b + ivec2(1, 1)), f.x), f.y);
         } else {
             c = lookup(ivec2(floor(p)));
         }

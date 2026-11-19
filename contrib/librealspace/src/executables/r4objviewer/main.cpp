@@ -620,9 +620,7 @@ int main(int argc, char **argv) {
                 showScenes.assign(world.scenes().size() + 1, true);
                 showScenes.back() = false;
                 graph.reset();
-                std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %zu bâtiments, "
-                            "%zu arbres, %.0f ms\n",
-                            worlds[index].label.c_str(), world.terrainTriangles, world.mapObjects().size(), world.parts().size(), world.buildings, world.forestTrees, world.loadMs);
+                std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %zu bâtiments, %zu arbres, %.0f ms\n", worlds[index].label.c_str(), world.terrainTriangles, world.mapObjects().size(), world.parts().size(), world.buildings, world.forestTrees, world.loadMs);
                 if (index < (int)worldScroll || index >= (int)worldScroll + listRows) {
                     worldScroll = (float)std::max(0, index - listRows / 2);
                 }
@@ -641,7 +639,7 @@ int main(int argc, char **argv) {
             auto selectWorld = [&](int index) {
                 loadWorld(index);
                 if (world.parts().empty()) {
-                    r4::Sphere b = world.root()->bounds();
+                    r4::Sphere b = world.mapBounds();
                     target = b.center;
                     distance = b.radius * 1.6f;
                 } else {
@@ -1067,7 +1065,7 @@ int main(int argc, char **argv) {
                     gui.toggle("Follow the Ground", followGround);
                     gui.columns(2);
                     if (gui.button("Whole Map")) {
-                        r4::Sphere b = world.root()->bounds();
+                        r4::Sphere b = world.mapBounds();
                         target = b.center;
                         distance = b.radius * 1.6f;
                     }
@@ -1194,7 +1192,7 @@ int main(int argc, char **argv) {
                 orbit.distance = distance;
                 bool showWorld = mode == 1 && currentWorld >= 0;
                 if (showWorld) {
-                    orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f), distance + 600000.0f);
+                    orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f), distance + 1500000.0f);
                     env.lightDirection = -sunTowards();
                 } else {
                     orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f, distance + bounds.radius * 400);

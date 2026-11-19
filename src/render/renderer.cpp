@@ -288,8 +288,7 @@ void main() {
         if (nl > 0.0 && specular.w > 0.0) {
             spec = pow(max(dot(n, normalize(l + v)), 0.0), specular.w);
         }
-        color = emissive.rgb + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) +
-                specular.rgb * lightColor.rgb * spec;
+        color = emissive.rgb + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) + specular.rgb * lightColor.rgb * spec;
     }
     fragColor = vec4(fogged(color), base.a);
 }

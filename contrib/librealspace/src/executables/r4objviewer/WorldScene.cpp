@@ -524,6 +524,10 @@ void WorldScene::setTerrainLight(bool dynamic, float relief) {
     }
 }
 
+r4::Sphere WorldScene::mapBounds() const {
+    return {{0, 0, 0}, BLOCK_WIDTH * BLOCK_PER_MAP_SIDE * 0.5f * std::sqrt(2.0f)};
+}
+
 bool WorldScene::groundHeight(r4::Vec3 p, float &height) const {
     if (!area_) {
         return false;
