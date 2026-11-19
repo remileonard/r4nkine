@@ -469,11 +469,35 @@ static void testUpscale() {
     CHECK(std::string(upscaleName(Upscale::Xbr4x)) == "xBR 4x");
 }
 
+// the compact instances: their matrix about the up axis, their bounds
+static void testPlacements() {
+    using namespace r4::scene;
+    Instancer inst;
+    Placement p;
+    p.position = {10, 20, 30};
+    p.heading = r4::radians(90.0f);
+    p.scale = 2;
+    p.scaleUp = 3;
+    // Z up: x turns to y, scaled by 2; z scaled by 3
+    Mat4 m = inst.matrixOf(p);
+    CHECK(near(transformPoint(m, {1, 0, 0}), {10, 22, 30}));
+    CHECK(near(transformPoint(m, {0, 0, 1}), {10, 20, 33}));
+    // Y up (a subgraph of Y-up data): y scaled by 3
+    inst.setUp({0, 1, 0});
+    m = inst.matrixOf(p);
+    CHECK(near(transformPoint(m, {0, 1, 0}), {10, 23, 30}));
+    CHECK(near(transformPoint(m, {1, 0, 0}), {10, 20, 28}));
+    CHECK(inst.count() == 0);
+    inst.setPlacements({p, p});
+    CHECK(inst.count() == 2);
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
     testAxes();
     testUpscale();
+    testPlacements();
     testBounds();
     testScene();
     testLoaders(dir);

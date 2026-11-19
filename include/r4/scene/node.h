@@ -9,6 +9,7 @@
 // the next cull recomputes what was marked.
 #pragma once
 
+#include "r4/axes.h"
 #include "r4/math.h"
 
 #include <cstdint>
@@ -183,6 +184,16 @@ struct InstancePart {
 // the same geometry at many places, each one culled on its own, with levels
 // of detail by distance: level i is used up to its distance. The renderer
 // draws the visible instances of each part in one call (GPU instancing).
+// a compact instance, for the many objects that stand on the ground (the
+// trees of a forest): its place, its turn about the up axis of its
+// Instancer, its scales across and along that axis; 24 bytes instead of the
+// 64 of a matrix, the matrix made when it is visited
+struct Placement {
+    Vec3 position;
+    float heading = 0; // radians, about the up axis
+    float scale = 1, scaleUp = 1;
+};
+
 class Instancer : public Node {
 public:
     Instancer() : Node(NodeType::Instancer) {}
@@ -209,6 +220,20 @@ public:
         markDirty();
     }
     const std::vector<Mat4> &instances() const { return instances_; }
+    // the compact instances, drawn with the matrices; their up axis (R4nkine's
+    // by default; (0, 1, 0) in a subgraph of Y-up data)
+    void setPlacements(std::vector<Placement> p) {
+        placements_ = std::move(p);
+        markDirty();
+    }
+    const std::vector<Placement> &placements() const { return placements_; }
+    void setUp(Vec3 up) {
+        up_ = normalize(up);
+        markDirty();
+    }
+    Vec3 up() const { return up_; }
+    Mat4 matrixOf(const Placement &p) const;
+    size_t count() const { return instances_.size() + placements_.size(); }
     // the level for a distance, -1: none (farther than the last)
     int select(float distance) const;
 
@@ -218,6 +243,8 @@ protected:
 private:
     std::vector<Level> levels_;
     std::vector<Mat4> instances_;
+    std::vector<Placement> placements_;
+    Vec3 up_ = axes::kUp;
 };
 
 // the drawables under a node with their matrices (the node's own included),

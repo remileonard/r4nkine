@@ -136,7 +136,7 @@ private:
     std::vector<r4::scene::LOD *> terrainLods_;
     struct ForestNode {
         r4bridge::ForestChunk chunk;
-        std::shared_ptr<r4::scene::Instancer> trees[2];
+        std::shared_ptr<r4::scene::Instancer> trees[r4bridge::kTreeSpecies];
     };
     std::vector<ForestNode> forestNodes_;
     r4bridge::ForestSettings forestSettings_;

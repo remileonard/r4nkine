@@ -530,21 +530,33 @@ void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Fr
     Sphere one;
     for (const auto &l : levels)
         one.extend(l.bounds);
-    for (const Mat4 &m : node.instances()) {
+    auto visit = [&](const Mat4 &m) {
         stats_.instancesVisited++;
         Mat4 w = world * m;
         Sphere s = one.transformed(w);
         if (!inside && frustum.test(s) == Frustum::Outside) {
             stats_.instancesCulled++;
-            continue;
+            return;
         }
         int level = node.select(length(s.center - eye) * options_.lodScale);
         if (level < 0) {
             stats_.instancesCulled++;
-            continue;
+            return;
         }
         for (const scene::InstancePart &p : levels[level].parts)
             addItem(p.drawable, w * p.local, eye);
+    };
+    for (const Mat4 &m : node.instances())
+        visit(m);
+    // the compact ones: those beyond the last level left before their matrix is made
+    float reach = levels.back().maxDistance / std::max(options_.lodScale, 1e-6f) + one.radius * maxScale(world) * 4;
+    for (const scene::Placement &p : node.placements()) {
+        if (length(transformPoint(world, p.position) - eye) > reach) {
+            stats_.instancesVisited++;
+            stats_.instancesCulled++;
+            continue;
+        }
+        visit(node.matrixOf(p));
     }
 }
 

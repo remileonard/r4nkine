@@ -434,8 +434,8 @@ void WorldScene::buildForests() {
     if (chunks.empty())
         return;
     // the 2 species, each detailed then simple
-    std::vector<r4::scene::InstancePart> parts[2][2];
-    for (int sp = 0; sp < 2; sp++)
+    std::vector<r4::scene::InstancePart> parts[r4bridge::kTreeSpecies][2];
+    for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++)
         for (int level = 0; level < 2; level++) {
             auto model = r4bridge::treeModel(sp, level != 0, *palette_.GetColorPalette(), palette_.ranges, lighting);
             parts[sp][level] = r4::scene::collectParts(*renderer_.upload(*model));
@@ -450,9 +450,10 @@ void WorldScene::buildForests() {
         lod->setCenter(f.chunk.center);
         lod->setRanges({0, kTreeFar + f.chunk.radius});
         auto group = r4::scene::make<r4::scene::Group>();
-        for (int sp = 0; sp < 2; sp++) {
+        for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++) {
             f.trees[sp] = r4::scene::make<r4::scene::Instancer>();
-            f.trees[sp]->setName(sp == 0 ? "conifers" : "broadleaves");
+            f.trees[sp]->setName(std::string(sp % 2 == 0 ? "conifers" : "broadleaves") + (sp >= 2 ? " (jungle)" : ""));
+            f.trees[sp]->setUp({0, 1, 0}); // libRealSpace's axes
             f.trees[sp]->addLevel(parts[sp][0], kTreeNear);
             f.trees[sp]->addLevel(parts[sp][1], kTreeFar);
             group->addChild(f.trees[sp]);
@@ -460,9 +461,9 @@ void WorldScene::buildForests() {
         // its trees, all planted at the load (about 2 million on TURKEY,
         // 140 MB of matrices)
         r4bridge::plantForest(area_.get(), forestSettings_, f.chunk);
-        for (int sp = 0; sp < 2; sp++) {
+        for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++) {
             forestTrees += f.chunk.trees[sp].size();
-            f.trees[sp]->setInstances(std::move(f.chunk.trees[sp]));
+            f.trees[sp]->setPlacements(std::move(f.chunk.trees[sp]));
             f.chunk.trees[sp].clear();
         }
         lod->addChild(group);

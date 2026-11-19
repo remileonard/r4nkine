@@ -120,17 +120,31 @@ int Instancer::select(float distance) const {
     return -1;
 }
 
+Mat4 Instancer::matrixOf(const Placement &p) const {
+    // translate . rotate about up . scale (scale across, scaleUp along up)
+    Mat4 s(1.0f);
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++)
+            s[j][i] = (i == j ? p.scale : 0.0f) + (p.scaleUp - p.scale) * up_[i] * up_[j];
+    return translate(p.position) * rotate(p.heading, up_) * s;
+}
+
 Sphere Instancer::contentBounds() const {
     Sphere one;
     for (const Level &l : levels_)
         one.extend(l.bounds);
-    if (one.empty() || instances_.empty())
+    if (one.empty() || count() == 0)
         return {};
     // the box of the centers, grown by the largest radius
     Box b;
     float r = 0;
     for (const Mat4 &m : instances_) {
         Sphere s = one.transformed(m);
+        b.extend(s.center);
+        r = std::max(r, s.radius);
+    }
+    for (const Placement &p : placements_) {
+        Sphere s = one.transformed(matrixOf(p));
         b.extend(s.center);
         r = std::max(r, s.radius);
     }

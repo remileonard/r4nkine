@@ -537,7 +537,9 @@ namespace {
 
 constexpr int kMapSide = BLOCK_PER_MAP_SIDE * 20; // the vertices of LVL0 on a side
 constexpr float kCell = BLOCK_WIDTH / 20.0f;      // between two of them
-constexpr int kGreen = 3, kWater = 0;
+// the green types: 3 the green of the palette from 64 (meadows and woods),
+// 4 the darker one from 128 (the jungle of NICARAGA)
+constexpr int kGreen = 3, kJungle = 4, kWater = 0;
 // the density at the heart of a wood, and between the woods, x perKm2
 constexpr float kWoodCore = 25, kScattered = 0.1f;
 
@@ -561,7 +563,8 @@ const MapVertex *highest(const MapVertex *a, const MapVertex *b, const MapVertex
 }
 
 bool green(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
-    return highest(a, b, c)->type == kGreen && a->type != kWater && b->type != kWater && c->type != kWater;
+    int type = highest(a, b, c)->type;
+    return (type == kGreen || type == kJungle) && a->type != kWater && b->type != kWater && c->type != kWater;
 }
 
 // each cell of a chunk: its 4 corners, the lower triangle then the upper
@@ -617,8 +620,8 @@ std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &st) {
 }
 
 void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
-    chunk.trees[0].clear();
-    chunk.trees[1].clear();
+    for (auto &t : chunk.trees)
+        t.clear();
     if (!area)
         return;
     // the boxes of the runways, and their surroundings
@@ -648,15 +651,16 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
     };
     forEachTriangle(area, chunk.cx, chunk.cz, cellsPerChunk(st),
                     [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key) {
-        if (!green(a, b, c))
+        if (!green(a, b, c) || st.bare.count(image))
             return;
+        const bool jungle = highest(a, b, c)->type == kJungle;
         auto it = st.images.find(image);
         bool woodImage = image != 0xFF && it != st.images.end();
         r4::Vec3 pa{a->v.x, a->v.y, a->v.z}, pb{b->v.x, b->v.y, b->v.z}, pc{c->v.x, c->v.y, c->v.z};
         float areaKm2 = 0.5f * std::abs((pb.x - pa.x) * (pc.z - pa.z) - (pc.x - pa.x) * (pb.z - pa.z)) / 1e6f;
         Random rnd{key * 2654435761u + st.seed * 97u + 1};
         // the candidates at the highest density, kept by the density of their place
-        float top = (woodImage ? it->second : st.perKm2 * kWoodCore) * st.density;
+        float top = (woodImage ? it->second : st.perKm2 * kWoodCore) * st.density * (jungle ? st.jungleDensity : 1.0f);
         float expected = top * areaKm2;
         int n = (int)expected + (rnd.next() < expected - (int)expected ? 1 : 0);
         for (int i = 0; i < n; i++) {
@@ -671,18 +675,22 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
             // woods: their density everywhere
             if (!woodImage) {
                 float wood = valueNoise(p.x, p.z, 2500, st.seed) * 0.7f + valueNoise(p.x, p.z, 600, st.seed + 7) * 0.3f;
-                float share = std::clamp((wood - 0.6f) * 5.0f, 0.0f, 1.0f) + kScattered / kWoodCore;
+                // the jungle: woods over most of it
+                float share = std::clamp((wood - (jungle ? 0.45f : 0.6f)) * 5.0f, 0.0f, 1.0f) + kScattered / kWoodCore;
                 if (keep > share)
                     continue;
             }
             if (!free(p.x, p.z))
                 continue;
-            // conifers on the higher ground
-            int sp = species < 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f) ? 0 : 1;
-            r4::Mat4 m = r4::translate(p) * r4::rotate(turn * 6.2831853f, {0, 1, 0});
-            float k = (0.7f + size * 0.6f) * st.treeScale;
-            m = m * r4::scale({k, k * (0.85f + species * 0.3f), k});
-            chunk.trees[sp].push_back(m);
+            // conifers on the higher ground, few in the jungle
+            float conifers = jungle ? 0.1f : 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f);
+            int sp = (species < conifers ? 0 : 1) + (jungle ? 2 : 0);
+            r4::scene::Placement t;
+            t.position = p;
+            t.heading = turn * 6.2831853f;
+            t.scale = (0.7f + size * 0.6f) * st.treeScale;
+            t.scaleUp = t.scale * (0.85f + species * 0.3f);
+            chunk.trees[sp].push_back(t);
         }
     });
 }
@@ -691,7 +699,8 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
                                             const std::vector<PaletteRange> &ranges, Lighting lighting) {
     using namespace r4::assets;
     auto model = std::make_shared<Model>();
-    const std::string name = std::string(species == 0 ? "conifer" : "broadleaf") + (simple ? " simple" : "");
+    const std::string name = std::string(species % 2 == 0 ? "conifer" : "broadleaf") + (species >= 2 ? " (jungle)" : "") +
+                             (simple ? " simple" : "");
     model->images.push_back(rampImage(palette, ranges));
     Material m;
     m.name = "tree, palette ramp";
@@ -705,7 +714,8 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
     mesh.material = 0;
     // the colors at full light: their ramps darken them (the green ramp from
     // 64, the brown one from 96)
-    const uint32_t conifer = 64 + 13, leaves = 64 + 18, trunk = 96 + 10;
+    const uint32_t green = species >= 2 ? 128 : 64; // the ramp of their ground
+    const uint32_t conifer = green + 13, leaves = green + 18, trunk = 96 + 10;
     // a triangle with its face normal, turned outward from the center of its solid
     auto tri = [&](r4::Vec3 a, r4::Vec3 b, r4::Vec3 c, r4::Vec3 center, uint32_t color) {
         r4::Vec3 n = r4::cross(b - a, c - a);
@@ -752,7 +762,7 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
                 tri(lo[0], lo[i], lo[i + 1], center, color);
         }
     };
-    if (species == 0) {
+    if (species % 2 == 0) {
         if (simple) {
             solid({{5.5f, 2}, {0, 25}}, 4, conifer, 0.5f);
         } else {

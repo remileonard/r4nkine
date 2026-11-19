@@ -196,15 +196,21 @@ Le terrain (`WorldScene` et `R4World`) :
   - Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128. Leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
   - Les images sont réunies dans un atlas, avec des bords répétés (le `GL_CLAMP_TO_EDGE` du jeu).
 - **Les forêts** (`forestChunks`, `plantForest` et `treeModel` dans R4World). RSArea n'a pas d'arbres : le jeu en peint seulement dans quelques textures (217 sur TURKEY). Le pont en génère sur le vert.
-  - **Où** : les triangles de LVL0 de type 3 (la rampe verte de la palette, type pris au sommet le plus haut comme `RSArea`) et sans sommet d'eau.
+  - **Où** : les triangles de LVL0 de type 3 (la rampe verte de la palette) ou de type 4 (la jungle, rampe verte foncée à partir de 128), sans sommet d'eau. Le type est celui du sommet le plus haut, comme dans `RSArea`. Les cellules de la ville et du port (224, 225, 229, 231) restent nues.
+  - **La jungle** (NICARAGA) : des bois sur la plus grande partie, mais moins denses (×0,4), et presque seulement des feuillus, dans la rampe verte foncée de leur sol.
   - **Densité** : un bruit de quelques km fait des bois, jusqu'à 750 arbres/km² en leur cœur, et des arbres isolés entre eux. Sous les textures de bois (216 et 217), la densité est fixe. Il n'y a pas d'arbre près des pistes ni des objets de la carte et de la mission.
   - **Les mêmes arbres à chaque chargement** : le tirage est calé sur la cellule.
   - **Les modèles** : deux essences en low poly, à faces plates, dans les rampes de la palette (PaletteRamp) :
     - un conifère, plus fréquent en altitude ;
     - un feuillu.
+
     Chacune a une version détaillée jusqu'à 1 500 et une version simple (pyramide, octaèdre) jusqu'à 6 000.
   - **Le graphe** : la carte est découpée en carrés de 5 km, chacun un nœud `LOD` coupé au-delà de 6 000 avec un `Instancer` par essence. Le renderer cule chaque arbre et choisit son niveau ; les arbres projettent leur ombre.
-  - **Tout au chargement** : environ 2,1 millions d'arbres sur TURKEY, soit environ 140 Mo de matrices, plantés en environ 1 s. Pendant le vol, les carrés hors du champ ou au-delà de 6 km sont écartés d'un bloc par leur nœud `LOD`.
+  - **Tout au chargement**, en `Placement` compactes de R4nkine (24 octets par arbre) :
+    - TURKEY : environ 2,1 millions d'arbres, 50 Mo, plantés en environ 1 s ;
+    - NICARAGA : environ 11 millions d'arbres, 270 Mo, plantés en environ 1,5 s.
+
+    Seuls les arbres visités par le renderer reçoivent une matrice. Pendant le vol, les carrés hors du champ ou au-delà de 6 km sont écartés d'un bloc par leur nœud `LOD`.
 - **Les villes** (`cityModel` dans R4World ; couche **Buildings** du viewer). Une texture de ville du jeu couvre une cellule entière, et des immeubles y sont posés sur ce qu'elle montre :
   - **229**, le centre-ville de NICARAGA : 14 immeubles relevés à la main sur l'image (des rectangles en texels), de 25 à 200 de haut ;
   - **231**, les maisons : chaque tache de texels gris clair (un toit) devient une maison de 11 à 16 de haut, soit environ 200 par cellule. Les maisons seulement dessinées en contour ne sont pas reconnues et restent à plat.

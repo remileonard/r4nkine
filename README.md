@@ -42,6 +42,9 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   **Instancer** nodes. An Instancer draws the same geometry at many places
   (forests, villages), culls each instance and picks its level of detail by
   distance. `collectParts` turns any loaded model into instancer parts.
+  Its instances are matrices, or compact **placements** (position, heading
+  about its up axis, scales: 24 bytes instead of 64) for millions of objects
+  standing on the ground.
   Bounding spheres are kept up to date lazily, so the graph can change at
   run time.
 - `r4::render`: culling of whole subtrees, a draw list sorted by state,
