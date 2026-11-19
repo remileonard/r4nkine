@@ -201,6 +201,21 @@ Le terrain (`WorldScene` et `R4World`) :
   - Un triangle à la couleur 255 prend sa couleur de palette ; les autres prennent l'image `GetImageByID(color + 255)`, avec les UV / 128. Leurs pixels transparents prennent la couleur de palette du triangle, comme sous `GL_DECAL`.
   - Les images sont réunies dans un atlas, avec des bords répétés (le `GL_CLAMP_TO_EDGE` du jeu).
 - **Les forêts** (`forestChunks`, `plantForest` et `treeModel` dans R4World). RSArea n'a pas d'arbres : le jeu en peint seulement dans quelques textures (217 sur TURKEY). Le pont en génère sur le vert.
+  Deux sources, au choix (menu **Forest Source**, `-woods 0|1`) :
+  - **Green Terrain + Noise** (`ForestMode::Noise`, par défaut) : le vert du terrain et un bruit, décrits ci-dessous.
+  - **Woods of the Textures** (`ForestMode::Textures`) : un arbre sur les bois peints dans les textures du jeu, comme pour les bâtiments.
+    - **Texels d'arbre** : vert foncé, et pas un aplat (leurs voisins varient), car les arbres dessinés sont ombrés alors qu'un aplat de jungle est uni.
+    - **Textures retenues** : celles qui ont au moins 8 % de texels d'arbre, soit les bois, les vergers, les bosquets des villages et des parcs, et les buissons des cratères. Les rangs de culture des champs (232, 233) sont écartés.
+    - **Densité** : un arbre par 400 de surface, les couronnes se touchent. Les arbres sont posés par les UV de chaque triangle.
+    - **Comparaison** :
+
+      | Carte | Noise | Textures |
+      |---|---|---|
+      | NICARAGA | 11,2 M arbres, 2,4 s | 3,8 M arbres, 0,5 s |
+      | TURKEY | 2,1 M arbres, 1,2 s | 70 000 arbres, 0,3 s |
+      | MAURITAN | 2,5 M arbres, 1,4 s | 139 000 arbres, 0,4 s |
+
+  Le reste ci-dessous vaut pour les deux sources (modèles, graphe, chargement).
   - **Où** : les triangles de LVL0 de type 3 (la rampe verte de la palette) ou de type 4 (la jungle, rampe verte foncée à partir de 128), sans sommet d'eau. Le type est celui du sommet le plus haut, comme dans `RSArea`. Les cellules de la ville et du port (224, 225, 229, 231) restent nues.
   - **La jungle** (NICARAGA) : des bois sur la plus grande partie, mais moins denses (×0,4), et presque seulement des feuillus, dans la rampe verte foncée de leur sol.
   - **Densité** : un bruit de quelques km fait des bois, jusqu'à 750 arbres/km² en leur cœur, et des arbres isolés entre eux. Sous les textures de bois (216 et 217), la densité est fixe. Il n'y a pas d'arbre près des pistes ni des objets de la carte et de la mission.

@@ -83,7 +83,12 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
 // - the same trees at each load (a seed).
 // The trees by chunks of chunk x chunk (a whole number of cells), each its
 // matrices by species (the species of treeModel), in libRealSpace's axes (Y up).
+// where the trees come from: the green types of the terrain and a noise
+// (Noise), or the woods painted in the textures of the game (Textures)
+enum class ForestMode { Noise, Textures };
+
 struct ForestSettings {
+    ForestMode mode = ForestMode::Noise;
     float density = 1;                                     // multiplies all the densities
     // on the green: perKm2 x 25 at the heart of the woods (a noise of a few km),
     // perKm2 x 0.1 between them
@@ -95,6 +100,17 @@ struct ForestSettings {
     std::map<int, float> images{{217, 250}, {216, 120}, {218, 300}, {219, 300}};
     // no tree under these: the city, the harbor
     std::set<int> bare{224, 225, 229, 231};
+    // Textures: a tree on the texels of trees of the textures (dark green, and
+    // not a flat fill: their neighbors vary), one by areaPerTree (the crowns
+    // touching), on the textures with minTreeShare of trees at least, but
+    // these (the dark green rows of the crops)
+    const VGAPalette *palette = nullptr; // to read the textures
+    std::set<int> notWoods{232, 233};
+    float minTreeShare = 0.08f;
+    float areaPerTree = 400;
+    // the texels of trees by image, found once
+    std::shared_ptr<std::map<int, std::vector<uint32_t>>> treeTexels =
+        std::make_shared<std::map<int, std::vector<uint32_t>>>();
     // the side of a chunk (a whole number of cells): small, so that the
     // chunks out of the view are left whole, few trees tested one by one
     float chunk = 2000;

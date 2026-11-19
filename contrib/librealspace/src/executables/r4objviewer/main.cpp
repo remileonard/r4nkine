@@ -34,6 +34,8 @@
 //  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
 //  -mipmaps  les textures avec leurs mipmaps
 //  -aniso N  le filtrage anisotrope (1, 2, 4, 8, 16)
+//  -woods N  les arbres : 0 sur le vert et un bruit, 1 sur les bois peints dans
+//            les textures du jeu
 //  -forests N les forêts sur le vert du terrain : 0 aucune, 1 clairsemées,
 //            2 normales (par défaut), 3 denses
 //  -diag DIR avec -mission : les types de terrain et les textures de la carte,
@@ -283,6 +285,7 @@ int main(int argc, char **argv) {
     bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false, shadowsAtStart = false;
     int forestsAtStart = 2;
     std::string gameAtStart;
+    int woodsAtStart = 0;
     int upscaleAtStart = 0;
     bool mipmapsAtStart = false;
     float anisoAtStart = 1;
@@ -329,6 +332,8 @@ int main(int argc, char **argv) {
             mipmapsAtStart = true;
         else if (a == "-aniso" && i + 1 < argc)
             anisoAtStart = std::max(1.0f, (float)std::atof(argv[++i]));
+        else if (a == "-woods" && i + 1 < argc) // 0 : le vert et un bruit ; 1 : les bois des textures
+            woodsAtStart = std::clamp(std::atoi(argv[++i]), 0, 1);
         else if (a == "-game" && i + 1 < argc) // sc, to : le jeu au départ
             gameAtStart = argv[++i];
         else if (a == "-forests" && i + 1 < argc) // 0..3 : aucune .. denses
@@ -554,6 +559,8 @@ int main(int argc, char **argv) {
         int forests = forestsAtStart;
         const float kForestDensity[] = {0, 0.4f, 1, 2.5f};
         world.setForestDensity(kForestDensity[forests]);
+        int woods = woodsAtStart; // la source des arbres
+        world.setForestMode((r4bridge::ForestMode)woods);
         std::vector<bool> showScenes; // by scene, then "no scene"
         GraphView graph;
         bool showGraph = graphAtStart;
@@ -594,9 +601,10 @@ int main(int argc, char **argv) {
             showScenes.assign(world.scenes().size() + 1, true);
             showScenes.back() = false; // the parts of no scene: hidden at first
             graph.reset();
-            std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %.0f ms\n",
+            std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %zu bâtiments, "
+                        "%zu arbres, %.0f ms\n",
                         worlds[index].label.c_str(), world.terrainTriangles, world.mapObjects().size(),
-                        world.parts().size(), world.loadMs);
+                        world.parts().size(), world.buildings, world.forestTrees, world.loadMs);
             if (index < (int)worldScroll || index >= (int)worldScroll + listRows)
                 worldScroll = (float)std::max(0, index - listRows / 2);
         };
@@ -1055,6 +1063,8 @@ int main(int argc, char **argv) {
                     if (gui.toggle("Buildings", showBuildings))
                         world.showBuildings(showBuildings);
                     gui.columns(1);
+                    if (gui.menu("Forest Source", woods, {"Green Terrain + Noise", "Woods of the Textures"}))
+                        world.setForestMode((r4bridge::ForestMode)woods);
                     if (gui.menu("Forest Density", forests, {"None", "Sparse", "Normal", "Dense"}))
                         world.setForestDensity(kForestDensity[forests]);
                     if (gui.menu("Terrain Detail", terrainLod, {"By Distance (LOD)", "Fine (400 per block)", "Medium (100)", "Coarse (25)"}))

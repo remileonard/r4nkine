@@ -70,6 +70,10 @@ public:
     // the forests on the green of the terrain (r4bridge::forestOf), made again
     // at this density (0: none)
     void setForestDensity(float density);
+    // where the trees come from (r4bridge::ForestMode): the green and a noise,
+    // or the woods painted in the textures; the forests made again
+    void setForestMode(r4bridge::ForestMode mode);
+    r4bridge::ForestMode forestMode() const { return forestMode_; }
     float forestDensity() const { return forestDensity_; }
     size_t forestTrees = 0, forestChunks = 0;
     // the trees: the detailed ones up to the first, the simple ones up to the second
@@ -133,6 +137,7 @@ private:
     bool terrainDynamic_ = false;
     float terrainRelief_ = 4;
     float forestDensity_ = 1;
+    r4bridge::ForestMode forestMode_ = r4bridge::ForestMode::Noise;
     int terrainLod_ = 0;
     std::vector<r4::scene::LOD *> terrainLods_;
     struct ForestNode {

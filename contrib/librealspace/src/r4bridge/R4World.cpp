@@ -578,12 +578,56 @@ template <class F> void forEachTriangle(RSArea *area, int cx, int cz, int cellsP
             if (!cur || !right || !bottomRight || !bottom)
                 continue;
             uint32_t key = (uint32_t)(y * kMapSide + x) * 2;
-            f(cur, bottomRight, bottom, (int)cur->lowerImageID, key);
-            f(cur, right, bottomRight, (int)cur->upperImageID, key + 1);
+            f(cur, bottomRight, bottom, (int)cur->lowerImageID, key, cur->lowerUV);
+            f(cur, right, bottomRight, (int)cur->upperImageID, key + 1, cur->upperUV);
         }
 }
 
 int cellsPerChunk(const ForestSettings &st) { return std::max(1, (int)std::lround(st.chunk / kCell)); }
+
+// the texels of trees of a texture (ForestMode::Textures): dark green, and
+// not a flat fill (their neighbors vary); none when they are too few
+const std::vector<uint32_t> &treeTexelsOf(RSArea *area, const ForestSettings &st, int id) {
+    static const std::vector<uint32_t> none;
+    if (id == 0xFF || !st.palette || st.notWoods.count(id) || st.bare.count(id))
+        return none;
+    auto &cache = *st.treeTexels;
+    auto it = cache.find(id);
+    if (it != cache.end())
+        return it->second;
+    std::vector<uint32_t> &out = cache[id];
+    RSImage *img = area->GetImageByID(id);
+    if (!img || !img->data || !img->width || !img->height)
+        return out;
+    const int w = (int)img->width, h = (int)img->height;
+    auto lum = [&](int x, int y) {
+        const Texel &t = st.palette->colors[img->data[(size_t)y * w + x]];
+        return (t.r + t.g + t.b) / 3;
+    };
+    size_t visible = 0;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            uint8_t k = img->data[(size_t)y * w + x];
+            if (k == 255)
+                continue;
+            visible++;
+            const Texel &t = st.palette->colors[k];
+            if (t.g < t.r + 6 || t.g < t.b + 6 || (t.r + t.g + t.b) / 3 > 78)
+                continue;
+            int lo = 255, hi = 0;
+            for (int yy = std::max(0, y - 1); yy <= std::min(h - 1, y + 1); yy++)
+                for (int xx = std::max(0, x - 1); xx <= std::min(w - 1, x + 1); xx++)
+                    if (img->data[(size_t)yy * w + xx] != 255) {
+                        int l = lum(xx, yy);
+                        lo = std::min(lo, l), hi = std::max(hi, l);
+                    }
+            if (hi - lo >= 10)
+                out.push_back((uint32_t)(y * w + x));
+        }
+    if (out.size() < st.minTreeShare * visible)
+        out.clear();
+    return out;
+}
 
 } // namespace
 
@@ -598,8 +642,10 @@ std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &st) {
         for (int cx = 0; cx < perSide; cx++) {
             bool any = false;
             float low = 1e30f, high = -1e30f;
-            forEachTriangle(area, cx, cz, cells, [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int, uint32_t) {
-                if (!green(a, b, c))
+            forEachTriangle(area, cx, cz, cells,
+                            [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t,
+                                const float(*)[2]) {
+                if (st.mode == ForestMode::Textures ? treeTexelsOf(area, st, image).empty() : !green(a, b, c))
                     return;
                 any = true;
                 for (const MapVertex *v : {a, b, c})
@@ -650,8 +696,53 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
                 return false;
         return true;
     };
+    // a tree: its species by its ground (conifers on the higher ground, few
+    // in the jungle), its turn and size; the 4 numbers drawn for each
+    auto plant = [&](r4::Vec3 p, bool jungle, float species, float turn, float size) {
+        float conifers = jungle ? 0.1f : 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f);
+        int sp = (species < conifers ? 0 : 1) + (jungle ? 2 : 0);
+        r4::scene::Placement t;
+        t.position = p;
+        t.heading = turn * 6.2831853f;
+        t.scale = (0.7f + size * 0.6f) * st.treeScale;
+        t.scaleUp = t.scale * (0.85f + species * 0.3f);
+        chunk.trees[sp].push_back(t);
+    };
     forEachTriangle(area, chunk.cx, chunk.cz, cellsPerChunk(st),
-                    [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key) {
+                    [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key,
+                        const float (*uv)[2]) {
+        if (st.mode == ForestMode::Textures) {
+            // the trees painted in the texture: a tree on its texels of trees
+            // (each by chance: one by areaPerTree), through the triangle's uvs
+            const std::vector<uint32_t> &texels = treeTexelsOf(area, st, image);
+            if (texels.empty())
+                return;
+            RSImage *img = area->GetImageByID(image);
+            const float w = (float)img->width, h = (float)img->height;
+            r4::Vec2 t0{uv[0][0] * w, uv[0][1] * h}, t1{uv[1][0] * w, uv[1][1] * h}, t2{uv[2][0] * w, uv[2][1] * h};
+            float det = (t1.x - t0.x) * (t2.y - t0.y) - (t2.x - t0.x) * (t1.y - t0.y);
+            if (std::abs(det) < 1e-6f)
+                return;
+            r4::Vec3 pa{a->v.x, a->v.y, a->v.z}, pb{b->v.x, b->v.y, b->v.z}, pc{c->v.x, c->v.y, c->v.z};
+            const bool jungle = highest(a, b, c)->type == kJungle;
+            const float chance = (kCell / w) * (kCell / h) / st.areaPerTree * st.density;
+            Random rnd{key * 2654435761u + st.seed * 97u + 1};
+            for (uint32_t texel : texels) {
+                r4::Vec2 tex{(float)(texel % (uint32_t)w) + rnd.next(), (float)(texel / (uint32_t)w) + rnd.next()};
+                float keep = rnd.next(), species = rnd.next(), turn = rnd.next(), size = rnd.next();
+                if (keep >= chance)
+                    continue;
+                // in this triangle (the texels of the other half are the other's)
+                float s = ((tex.x - t0.x) * (t2.y - t0.y) - (t2.x - t0.x) * (tex.y - t0.y)) / det;
+                float t = ((t1.x - t0.x) * (tex.y - t0.y) - (tex.x - t0.x) * (t1.y - t0.y)) / det;
+                if (s < 0 || t < 0 || s + t > 1)
+                    continue;
+                r4::Vec3 p = pa + (pb - pa) * s + (pc - pa) * t;
+                if (free(p.x, p.z))
+                    plant(p, jungle, species, turn, size);
+            }
+            return;
+        }
         if (!green(a, b, c) || st.bare.count(image))
             return;
         const bool jungle = highest(a, b, c)->type == kJungle;
@@ -681,17 +772,8 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
                 if (keep > share)
                     continue;
             }
-            if (!free(p.x, p.z))
-                continue;
-            // conifers on the higher ground, few in the jungle
-            float conifers = jungle ? 0.1f : 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f);
-            int sp = (species < conifers ? 0 : 1) + (jungle ? 2 : 0);
-            r4::scene::Placement t;
-            t.position = p;
-            t.heading = turn * 6.2831853f;
-            t.scale = (0.7f + size * 0.6f) * st.treeScale;
-            t.scaleUp = t.scale * (0.85f + species * 0.3f);
-            chunk.trees[sp].push_back(t);
+            if (free(p.x, p.z))
+                plant(p, jungle, species, turn, size);
         }
     });
 }

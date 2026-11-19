@@ -436,6 +436,8 @@ void WorldScene::buildForests() {
         return;
     forestSettings_ = {};
     forestSettings_.density = forestDensity_;
+    forestSettings_.mode = forestMode_;
+    forestSettings_.palette = palette_.GetColorPalette();
     // none on the objects of the map and of the mission (R4nkine's (x, y) is
     // libRealSpace's (x, -z))
     for (const auto *list : {&parts_, &mapObjects_})
@@ -492,6 +494,12 @@ void WorldScene::buildForests() {
         block->addChild(lod);
     }
     forestChunks = forestNodes_.size();
+}
+
+void WorldScene::setForestMode(r4bridge::ForestMode mode) {
+    forestMode_ = mode;
+    if (area_)
+        buildForests();
 }
 
 void WorldScene::setForestDensity(float density) {
