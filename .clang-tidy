@@ -1,0 +1,3 @@
+Checks: '-*,readability-isolate-declaration,readability-braces-around-statements'
+WarningsAsErrors: ''
+HeaderFilterRegex: '(include/r4|src|apps|examples|tests|contrib)/.*'
