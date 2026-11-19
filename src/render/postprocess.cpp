@@ -1,5 +1,4 @@
-// postprocess.cpp - the effects on the whole frame: a pass of FXAA when
-// asked, then one pass for everything else (CRT, colors, palette).
+// postprocess.cpp - an FXAA pass when asked, then one pass for the CRT, the colors and the palette.
 #include "r4/render/postprocess.h"
 
 #include <algorithm>
@@ -27,12 +26,12 @@ void main() {
 // FXAA 3.11, the light version (Timothy Lottes)
 const char *kFxaa = R"(#version 330
 layout(std140) uniform Post {
-    vec4 size;      // of the source: w, h, 1/w, 1/h
-    vec4 grade;     // brightness, contrast, saturation, gamma
-    vec4 tint;      // rgb, fade
-    vec4 fadeColor; // rgb, pixelate
-    vec4 crt;       // scanline strength, scanline size, curvature, aberration
-    vec4 misc;      // vignette, quantize, dither, output height
+    vec4 size;
+    vec4 grade;
+    vec4 tint;
+    vec4 fadeColor;
+    vec4 crt;
+    vec4 misc;
 };
 uniform sampler2D source;
 in vec2 vUV;
@@ -74,7 +73,7 @@ layout(std140) uniform Post {
     vec4 misc;
 };
 uniform sampler2D source;
-uniform sampler2D lut; // 32 x 32 x 32 colors: x = r + 32 b, y = g
+uniform sampler2D lut;
 in vec2 vUV;
 out vec4 fragColor;
 
@@ -85,7 +84,6 @@ float bayer4(ivec2 p) {
 
 void main() {
     vec2 uv = vUV;
-    // the bulge of the glass
     if (crt.z > 0.0) {
         vec2 c = uv * 2.0 - 1.0;
         c += c * (c.yx * c.yx) * crt.z;
@@ -95,7 +93,6 @@ void main() {
             return;
         }
     }
-    // big pixels
     float px = max(fadeColor.w, 1.0);
     vec2 cells = size.xy / px;
     vec2 suv = px > 1.0 ? (floor(uv * cells) + 0.5) / cells : uv;
@@ -106,14 +103,12 @@ void main() {
     } else {
         col = texture(source, suv).rgb;
     }
-    // the colors
     col = (col - 0.5) * grade.y + 0.5 + grade.x;
     float l = dot(col, vec3(0.299, 0.587, 0.114));
     col = mix(vec3(l), col, grade.z);
     col = pow(max(col, vec3(0.0)), vec3(1.0 / max(grade.w, 0.01)));
     col *= tint.rgb;
     col = mix(col, fadeColor.rgb, tint.a);
-    // the palette
     if (misc.y > 0.5) {
         col = clamp(col, 0.0, 1.0);
         if (misc.z > 0.5) {
@@ -122,7 +117,6 @@ void main() {
         ivec3 q = ivec3(col * 31.0 + 0.5);
         col = texelFetch(lut, ivec2(q.r + 32 * q.b, q.g), 0).rgb;
     }
-    // the lines of the screen, following the bulge
     if (crt.x > 0.0) {
         float line = fract(uv.y * misc.w / max(crt.y, 1.0));
         col *= 1.0 - crt.x * (0.5 - 0.5 * cos(6.2831853 * line));
@@ -183,7 +177,6 @@ struct PostProcess::Impl {
         scene = temp = {};
     }
 
-    // the nearest color of the palette for each of 32 x 32 x 32 colors
     void buildLut(const raster::Palette &p, int count) {
         std::vector<uint32_t> px(1024 * 32);
         for (int g = 0; g < 32; g++) {

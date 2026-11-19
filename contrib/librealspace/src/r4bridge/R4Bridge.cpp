@@ -2,7 +2,7 @@
 //  R4Bridge.cpp
 //  libRealSpace
 //
-//  RSEntity -> r4::assets::Model. See R4Bridge.h.
+//  RSEntity as r4::assets::Model.
 //
 #include "R4Data.h"
 #include "R4Bridge.h"
@@ -62,11 +62,8 @@ uint32_t shade(const VGAPalette &palette, const std::vector<PaletteRange> &range
     return pack(a.r + (b.r - a.r) * f, a.g + (b.g - a.g) * f, a.b + (b.b - a.b) * f);
 }
 
-// a point of libRealSpace in the axes asked: R4nkine's (Z up), a turn of
-// 90 degrees about X that keeps the handedness (and the faces' winding),
-// or libRealSpace's own (Y up), for a world turned once at its root
+// R4nkine's Z up by a turn of 90 degrees about X, which keeps the winding, or libRealSpace's Y up
 r4::Vec3 toAxes(const Vector3D &v, Axes axes) {
-    // libRealSpace is Y-up as OpenGL: r4::axes::fromYUp, (x, y, z) -> (x, -z, y)
     return axes == Axes::R4 ? r4::axes::fromYUp({v.x, v.y, v.z}) : r4::Vec3{v.x, v.y, v.z};
 }
 
@@ -103,7 +100,6 @@ void bleedClearTexels(r4::assets::Image &img) {
     if (!any) {
         return;
     }
-    // rings of the clear texels next to colored ones, until all are colored
     for (bool changed = true; changed;) {
         changed = false;
         std::vector<uint8_t> next = known;
@@ -155,7 +151,7 @@ void finishTexture(r4::assets::Image &img) {
     const TextureQuality &q = textureQuality();
     if (q.upscale != r4::assets::Upscale::NONE) {
         img = r4::assets::upscale(img, q.upscale);
-        bleedClearTexels(img); // the clear texels it made
+        bleedClearTexels(img);
     }
     img.mipmaps = q.mipmaps;
 }
@@ -181,10 +177,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         return true;
     };
 
-    // --- the normals of the vertices, as SCRenderer::objectNormals ----------------------
-    // The game draws with glFrontFace(GL_CW): its faces turn clockwise seen
-    // from the outside, and its normal of (a, b, c) is (a - b) x (c - b).
-    // R4nkine's faces turn the other way: they are emitted (a, c, b) below.
     std::vector<r4::Vec3> normals(vertexCount, r4::Vec3(0));
     auto faceNormal = [&](uint16_t a, uint16_t b, uint16_t c) {
         r4::Vec3 A = toAxes(e->vertices[a], axes);
@@ -218,13 +210,10 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         }
     }
 
-    // --- the materials ------------------------------------------------------------------
-    // image 0: the shades along the ramps (the colored faces); image 1: the
-    // colors times the intensity, no ramp (the clear faces)
     model->images.push_back(rampImage(palette, ranges));
     model->images.push_back(rampImage(palette, {}));
     model->images[1].name = "palette, no ramps";
-    std::map<std::string, int> materials; // by a key of their settings
+    std::map<std::string, int> materials;
     auto material = [&](const std::string &key, Material m) {
         auto it = materials.find(key);
         if (it != materials.end()) {
@@ -243,7 +232,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         m.doubleSided = twoSided;
         return material(twoSided ? "color2" : "color1", m);
     };
-    // the clear faces (property 2): added to what is behind (glBlendFunc(GL_ONE, GL_ONE))
     auto clearMaterial = [&](bool twoSided) {
         Material m;
         m.name = twoSided ? "clear, two-sided" : "clear";
@@ -252,8 +240,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         m.alpha = AlphaMode::ADDITIVE;
         return material(twoSided ? "clear2" : "clear1", m);
     };
-    // the textures: indices through the palette, 255 clear (the alpha test of
-    // the game); the first frame of the animated ones
     std::vector<int> textureImage(e->images.size(), -1);
     for (size_t i = 0; i < e->images.size(); i++) {
         RSImage *src = e->images[i];
@@ -270,20 +256,13 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
             for (int x = 0; x < img.width; x++) {
                 uint8_t index = src->data[(size_t)y * img.width + x];
                 uint32_t c = rgba(palette.colors[index], index == PALETTE_CLEAR ? 0 : 255);
-                // R4nkine's images start at the bottom row
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
         }
-        // as SCRenderer::createTextureInGPU (GL_LINEAR, GL_CLAMP_TO_EDGE), or better
         finishTexture(img);
         model->images.push_back(std::move(img));
         textureImage[i] = (int)model->images.size() - 1;
     }
-    // as SCRenderer::drawModelTexturePass: blended (GL_SRC_ALPHA,
-    // GL_ONE_MINUS_SRC_ALPHA) with the alpha test of drawModel (GL_GREATER 0.1);
-    // property 6 or 9: the texture is the face (GL_LESS, the depth written);
-    // the others over the colored face, where its depth is (GL_EQUAL, the
-    // depth not written)
     auto textureMaterial = [&](int texture, bool replaces, bool twoSided) {
         Material m;
         m.name = std::string(e->images[texture]->name) + (replaces ? "" : " (decal)") + (twoSided ? ", two-sided" : "");
@@ -301,13 +280,11 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         return material("tex" + std::to_string(texture) + (replaces ? "r" : "d") + (twoSided ? "2" : "1"), m);
     };
 
-    // --- the meshes of a level -------------------------------------------------------------
     struct Level {
-        std::map<int, Mesh> meshes; // by material
+        std::map<int, Mesh> meshes;
         Axes axes;
         void add(const RSEntity *e, const std::vector<r4::Vec3> &normals, int material, const uint16_t *ids, int n, uint32_t color, const UV *uvs = nullptr, float w = 1, float h = 1) {
             Mesh &m = meshes[material];
-            // the fan of the polygon, each triangle turned the way of R4nkine
             for (int k = 1; k + 1 < n; k++) {
                 for (int j : {0, k + 1, k}) {
                     Vertex v;
@@ -327,7 +304,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         return (uint32_t)(index & 0xff) | 0xff000000u;
     };
 
-    // the levels: the LODs of the object, else all its triangles
     std::vector<std::pair<float, std::vector<uint16_t>>> lods;
     for (const Lod &lod : e->lods) {
         lods.push_back({(float)lod.dist, std::vector<uint16_t>(lod.triangleIDs, lod.triangleIDs + lod.numTriangles)});
@@ -345,8 +321,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         Level out;
         out.axes = axes;
         for (uint16_t id : lods[level].second) {
-            // the face of the entry: through ATTR (T triangle, Q quad, L line),
-            // or, without ATTR, the number of a triangle and of a quad
             bool isTriangle = true;
             bool isQuad = true;
             bool quadTwoSided = false;
@@ -381,7 +355,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 }
             }
         }
-        // the textures, on the most detailed level only, as SCRenderer::drawModelTexturePass
         if (level == 0) {
             for (const uvxyEntry &u : e->uvs) {
                 if (u.textureID >= e->images.size() || textureImage[u.textureID] < 0 || u.triangleID >= e->triangles.size()) {
@@ -427,7 +400,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         levelNodes.push_back(node);
     }
 
-    // --- the tree: the root, a LOD over the levels -----------------------------------------
     Node root;
     root.name = e->name;
     model->nodes.push_back(root);
@@ -437,7 +409,6 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         Node lod;
         lod.name = "levels of detail";
         lod.kind = NodeKind::LOD;
-        // level i from its distance to the next one's
         for (size_t i = 0; i < lods.size(); i++) {
             lod.lodRanges.push_back(i == 0 ? 0.0f : lods[i].first);
         }

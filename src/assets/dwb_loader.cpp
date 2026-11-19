@@ -1,22 +1,5 @@
-// dwb_loader.cpp - the Designer's Workbench files (.dwb, Coryphaeus) of the
-// F-18 demo. A port of the loader of legacy_opengl_demo (src/f18/dwb.c),
-// rebuilt from pfdLoad_dwb of the IRIX demo.
-//
-// Big-endian records: a 16-bit opcode, a 16-bit length, the data.
-//   0x1771 header    +0x00 units, +0x04 version, +0x86 up axis (2: Y up)
-//   0x1772 group     +0x34 flags: bit 26 layer (decals on the first child),
-//                    bit 24 sequence (animation frames, +0x80 seconds each)
-//   0x1773 LOD       +0x08 switch out, +0x0c switch in, +0x10 center
-//   0x1775 polygon   +0x04 vertices, +0x10 texture, +0x2c color 0xAABBGGRR,
-//                    +0x36 material
-//   0x177a, 0x177c   vertices, 44 bytes: index, x y z, normal, s t, 2 floats
-//   0x1798 name, 0x179c texture file name, 0x17ca push, 0x17cb pop
-//   0x17ea material  +0x04 diffuse, +0x10 ambient, +0x1c shininess,
-//                    +0x20 specular, +0x2c emission, +0x38 alpha
-//   0x17eb texture
-// The textures of the demo were encrypted (SGI images with 4 at 0x6c): their
-// pixels are xor'ed with a table of 1633 seeds, decrypted here (when the
-// image is not already in clear).
+// dwb_loader.cpp - the Designer's Workbench files (.dwb, Coryphaeus) of the F-18 demo, port of src/f18/dwb.c.
+// Big-endian records of a 16-bit opcode and a 16-bit length; the encrypted textures (SGI images with 4 at 0x6c) are decrypted.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 
@@ -77,7 +60,6 @@ bool isEncrypted(const std::string &path) {
 }
 
 // ScrambleImageToImage of the demo: xor with the seeds, the pixel i of a row
-// for the channels 0 and 2, the pixel width - 1 - i for the channels 1 and 3
 void unscramble(Image &img) {
     static unsigned char seed[0x661];
     seed[0] = 0x67;
@@ -109,7 +91,6 @@ void unscramble(Image &img) {
 }
 
 // the sum of the differences between neighbor pixels: a decrypted image is
-// smooth, a still encrypted one is noise
 double roughness(const Image &img) {
     double r = 0;
     int zs = img.channels;
@@ -125,8 +106,7 @@ double roughness(const Image &img) {
     return r;
 }
 
-// the encrypted images are decrypted; some copies of the data carry the
-// mark of encryption but were already decrypted: the smoother one is kept
+// some copies marked encrypted are already clear: the smoother one is kept
 void decryptIfNeeded(Image &img) {
     Image dec = img;
     unscramble(dec);
@@ -261,7 +241,6 @@ struct Loader {
             return it->second;
         }
         Material mat;
-        // the colors of the polygons drive the ambient and diffuse
         mat.vertexColors = true;
         mat.diffuse = {1, 1, 1, 1};
         mat.ambient = {1, 1, 1};
@@ -292,7 +271,6 @@ struct Loader {
     int batch(Level &lv, int t, int m, bool transp) {
         bool decal = false;
         if (lv.layer) {
-            // each polygon in its own geode, the ones after the first are decals
             decal = lv.layerPolys++ > 0;
             lv.geode = newNode("layer polygon", lv.node);
         } else {
@@ -336,7 +314,7 @@ struct Loader {
             out.position = Vec3{bef(v + 4), bef(v + 8), bef(v + 12)} * scale;
             out.normal = {bef(v + 16), bef(v + 20), bef(v + 24)};
             out.uv = {bef(v + 28), bef(v + 32)};
-            out.color = polyColor; // 0xAABBGGRR: R in the low byte
+            out.color = polyColor;
             mesh.vertices.push_back(out);
         }
         for (int i = 1; i + 1 < n; i++) {
@@ -373,7 +351,6 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
     Loader L(*model);
     size_t slash = path.find_last_of("/\\");
     L.dir = slash == std::string::npos ? std::string() : path.substr(0, slash + 1);
-    // node 0: the root (turned when the file is Y-up), node 1: the content
     L.newNode(path, -1);
     int content = L.newNode("dwb", 0);
     std::vector<Level> stack(1);
@@ -406,7 +383,6 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
             uint32_t flags = len >= 0x38 ? be32(b + 0x34) : 0;
             int n = L.newNode("group", lv.node);
             if (flags & kSequence) {
-                // an animation: its first frame
                 model->nodes[n].kind = NodeKind::SWITCH;
                 model->nodes[n].switchValue = 0;
             }
@@ -449,7 +425,6 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
                 m = -1;
             }
             bool transp = (color >> 24) < 255 || (m >= 0 && L.mtl[m].alpha < 0.95f) || L.hasAlpha(t);
-            // a polygon inside a polygon (a subface) goes with its parent
             size_t d = stack.size() - 1;
             while (d > 0 && stack[d].polygon) {
                 d--;
@@ -526,7 +501,6 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
             if (stack.size() > 1) {
                 Level top = stack.back();
                 stack.pop_back();
-                // the batches of a level stay with its geode
                 if (!top.polygon && top.node == stack.back().node) {
                     stack.back().batches = top.batches;
                     stack.back().geode = top.geode;
@@ -540,7 +514,6 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
             break;
         }
     }
-    // the empty meshes go
     for (Node &n : model->nodes) {
         std::vector<int> keep;
         for (int mi : n.meshes) {

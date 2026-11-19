@@ -1,6 +1,4 @@
-// ui.cpp - the GUI of r4::ui, in the look of the panels of IRIS Performer
-// (pfuGUI): the colors and the reliefs are those of the port of perfly in
-// legacy_opengl_demo.
+// ui.cpp - the GUI of r4::ui, in the colors and reliefs of pfuGUI (IRIS Performer).
 #include "r4/ui/ui.h"
 
 #include "font_data.h"
@@ -24,7 +22,6 @@ const detail::BakedFont &F = detail::bakedFont();
 #define kGlyphMetrics (F.glyphs)
 using detail::glyphIndex;
 
-// --- the colors of pfuGUI -----------------------------------------------------
 const Color kPanel = Color::rgb(0.55f, 0.55f, 0.6f);
 const Color kFace = Color::rgb(0.78f, 0.78f, 0.82f);
 const Color kFaceHot = Color::rgb(0.83f, 0.83f, 0.87f);
@@ -167,7 +164,6 @@ struct Context::Impl {
     explicit Impl(gpu::Device &dev) : device(dev) {
     }
 
-    // --- drawing ---------------------------------------------------------------
     void setClip(bool on, Rect r, gpu::TextureHandle image = {}) {
         if (!cmds.empty() && cmds.back().count == 0) {
             cmds.back().clip = on;
@@ -262,7 +258,6 @@ struct Context::Impl {
             }
             const short *b = kGlyphBox[f][g];
             if (b[2] > b[0]) {
-                // on the pixels of the screen
                 float gx = std::floor((pen + kGlyphMetrics[f][g][0] * k) * pixelScale + 0.5f) / pixelScale;
                 float gy = std::floor((base + kGlyphMetrics[f][g][1] * k) * pixelScale + 0.5f) / pixelScale;
                 float w = (b[2] - b[0]) * k;
@@ -275,7 +270,7 @@ struct Context::Impl {
     }
     float lineHeight(Font f) const {
         int i = (int)f;
-        return std::ceil(kFontMetrics[i][1] - kFontMetrics[i][2]); // the 1x metrics: the layout in points
+        return std::ceil(kFontMetrics[i][1] - kFontMetrics[i][2]);
     }
     // the text centered vertically in a rectangle
     void textIn(Rect r, float dx, const char *s, Color c, Font f = Font::REGULAR, bool center = false) {
@@ -290,7 +285,6 @@ struct Context::Impl {
         }
     }
 
-    // --- layout ---------------------------------------------------------------
     Rect next(float h) {
         if (!inPanel) {
             return {};
@@ -315,7 +309,6 @@ struct Context::Impl {
         return r;
     }
 
-    // --- interaction ------------------------------------------------------------
     bool visible(Rect r) const {
         return r.y + r.h > clip.y && r.y < clip.y + clip.h;
     }
@@ -350,7 +343,6 @@ struct Context::Impl {
 
 Context::Context(gpu::Device &device) : d(std::make_unique<Impl>(device)) {
     gpu::Device &dev = device;
-    // the atlas, rows from the bottom for the device
     const std::vector<uint8_t> &top = F.pixels;
     std::vector<uint8_t> bottom(top.size());
     for (int y = 0; y < kAtlasHeight; y++) {
@@ -364,7 +356,6 @@ Context::Context(gpu::Device &device) : d(std::make_unique<Impl>(device)) {
     td.mipmaps = false;
     td.wrapS = td.wrapT = gpu::Wrap::CLAMP;
     d->atlas = dev.createTexture(td, bottom.data());
-    // the white texels: the bottom right corner of the atlas (rows from the top)
     d->whiteU = (kAtlasWidth - 1.0f) / kAtlasWidth;
     d->whiteV = 1 - (kAtlasHeight - 1.0f) / kAtlasHeight;
 
@@ -404,7 +395,6 @@ void main() { fragColor = vec4(vColor.rgb, vColor.a * texture(atlas, vUV).r); }
     pd.depthTest = false;
     pd.depthWrite = false;
     d->pipeline = dev.createPipeline(pd);
-    // the images: their colors, multiplied by the vertex color
     sd.fragment = R"(#version 330
 uniform sampler2D atlas;
 in vec2 vUV;
@@ -451,7 +441,6 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
     s.lastPanelRects = s.panelRects;
     s.panelRects.clear();
 
-    // the open menu takes the clicks: an item, or elsewhere to close it
     if (s.menuId) {
         bool inList = s.menuRect.contains(input.mouseX, input.mouseY);
         if (s.released && inList) {
@@ -463,7 +452,7 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
         } else if (s.pressed && !inList) {
             s.menuId = 0;
             s.active = 0;
-            s.pressed = false; // the click only closes the menu
+            s.pressed = false;
         }
     }
     if (!input.left && !input.right && !s.released) {
@@ -476,7 +465,6 @@ void Context::endFrame() {
     if (!s.menuId) {
         return;
     }
-    // the list of the open menu, over everything
     s.setClip(false, {});
     float ih = s.menuRect.h / std::max<size_t>(1, s.menuItems.size());
     for (size_t i = 0; i < s.menuItems.size(); i++) {
@@ -509,7 +497,6 @@ void Context::render() {
     dev.updateBuffer(s.ubo, 0, screen, sizeof screen);
     gpu::ClearValues none;
     none.color = none.depth = false;
-    // the points of the layout on the pixels of the framebuffer
     float k = s.pixelScale;
     int pw = (int)std::lround(s.width * k);
     int ph = (int)std::lround(s.height * k);
@@ -556,8 +543,6 @@ bool Context::wantsMouse() const {
     return false;
 }
 
-// --- panels ---------------------------------------------------------------------
-
 void Context::beginPanel(const char *id, Rect r, const char *title) {
     Impl &s = *d;
     s.panelId = hashOf(id, 2166136261u);
@@ -575,7 +560,6 @@ void Context::beginPanel(const char *id, Rect r, const char *title) {
         top = t.y + t.h + 1;
     }
     s.clip = {r.x + 1, top, r.w - 2, r.y + r.h - 1 - top};
-    // the wheel scrolls the panel under the mouse
     if (s.menuId == 0 && s.in.wheel != 0 && s.clip.contains(s.in.mouseX, s.in.mouseY)) {
         s.ps->scroll -= s.in.wheel * 40;
     }
@@ -595,7 +579,6 @@ void Context::endPanel() {
     }
     float contentTop = s.clip.y - s.ps->scroll;
     s.ps->contentH = s.cursorY - contentTop + kMargin;
-    // the scroll bar, when the widgets are taller than the panel
     if (s.ps->contentH > s.clip.h + 1) {
         float frac = s.clip.h / s.ps->contentH;
         float pos = s.ps->scroll / s.ps->contentH;
@@ -628,7 +611,7 @@ Rect Context::next(float height) {
 
 void Context::image(gpu::TextureHandle texture, float aspect, float maxHeight) {
     Impl &s = *d;
-    float w = s.panel.w - 2 * 4.0f; // the width of the panel
+    float w = s.panel.w - 2 * 4.0f;
     float h = aspect > 0 ? w / aspect : w;
     if (maxHeight > 0 && h > maxHeight) {
         h = maxHeight;
@@ -646,7 +629,6 @@ void Context::image(gpu::TextureHandle texture, float aspect, float maxHeight) {
 void Context::image(gpu::TextureHandle texture, Rect r) {
     Impl &s = *d;
     Command back = s.cmds.back();
-    // its own draw, then the glyphs again with the same clip
     s.setClip(back.clip, back.rect, texture);
     s.quad(r.x, r.y, r.x + r.w, r.y + r.h, 0, 1, 1, 0, Color::rgb(1, 1, 1));
     s.setClip(back.clip, back.rect);
@@ -669,7 +651,7 @@ bool Context::clickable(const void *id, Rect r) {
     Impl &s = *d;
     uint32_t h = hashOf("click", (uint32_t)(uintptr_t)id * 2654435761u ^ s.panelId);
     if (s.hover(r)) {
-        s.panelRects.push_back(r); // the mouse is the GUI's there
+        s.panelRects.push_back(r);
     }
     return s.behave(h, r, true);
 }
@@ -703,8 +685,6 @@ float Context::text(float x, float y, const char *s, Color c, Font font, float m
 float Context::textWidth(const char *s, Font font) const {
     return d->textWidth(s, font);
 }
-
-// --- widgets ----------------------------------------------------------------------
 
 bool Context::button(const char *label, bool enabled) {
     Impl &s = *d;
@@ -753,7 +733,6 @@ bool Context::menu(const char *label, int &selected, const std::vector<std::stri
         s.hot = id;
     }
     if (enabled && over && s.pressed && s.active == 0 && !items.empty()) {
-        // the list under the button, or above it when there is no room
         float ih = std::max(18.0f, r.h * 0.9f);
         float h = ih * items.size();
         float y = r.y + r.h;
@@ -957,7 +936,6 @@ bool Context::color(const char *label, Vec3 &c) {
     columns(1);
     bool changed = false;
 
-    // the button: the name, the swatch, the arrow; it opens the picker
     Rect r = s.next(kRowH);
     bool held = false;
     if (s.behave(id, r, true, &held)) {
@@ -980,7 +958,6 @@ bool Context::color(const char *label, Vec3 &c) {
     if (pk.open) {
         Vec3 hsv = rgbToHsv(c, pk.hue);
         pk.hue = hsv.x;
-        // the square: saturation across, value up; the bar: the hue
         Rect area = s.next(112);
         Rect sq{area.x + 2, area.y + 2, area.w - 28, area.h - 4};
         Rect bar{area.x + area.w - 22, area.y + 2, 20, area.h - 4};
@@ -1023,7 +1000,6 @@ bool Context::color(const char *label, Vec3 &c) {
                 Color cb = Color::rgb(b.x, b.y, b.z);
                 s.gradient({bar.x, bar.y + bar.h * i / 6, bar.w, bar.h / 6}, ca, ca, cb, cb);
             }
-            // the marks: a ring on the square, a notch on the bar
             float mx = std::floor(sq.x + hsv.y * sq.w);
             float my = std::floor(sq.y + (1 - hsv.z) * sq.h);
             Color ring = hsv.z > 0.5f ? kText : kWhite;
@@ -1034,7 +1010,6 @@ bool Context::color(const char *label, Vec3 &c) {
             float hy = std::floor(bar.y + hsv.x * bar.h);
             s.box({bar.x - 2, hy - 2, bar.w + 4, 5}, kKnob, false);
         }
-        // the exact values
         columns(3);
         std::string sid = std::string("##") + label;
         changed |= slider(("R" + sid + "r").c_str(), c.x, 0, 1, "%.2f");
@@ -1055,8 +1030,6 @@ bool Context::section(const char *label, bool &open) {
     columns(1);
     s.cursorY += 2;
     Rect r = s.next(kRowH);
-    // its own ids: a section often holds a widget of its name ("Lighting",
-    // the toggle of the lighting), which would take its clicks
     uint32_t id = hashOf("section", s.idOf(label));
     if (s.behave(id, r, true)) {
         open = !open;
@@ -1135,7 +1108,6 @@ void Context::plot(const float *values, int count, float max, Color curve, const
     }
     s.box(r, kDark, true);
     Rect in{r.x + 2, r.y + 14, r.w - 4, r.h - 16};
-    // the grid: the quarters of the scale
     for (int i = 1; i < 4; i++) {
         s.fill({in.x, std::floor(in.y + in.h * i / 4), in.w, 1}, Color::rgb(0.2f, 0.2f, 0.26f));
     }
@@ -1144,7 +1116,6 @@ void Context::plot(const float *values, int count, float max, Color curve, const
         for (int i = 0; i < count; i++) {
             float v = std::max(0.0f, std::min(values[i] / max, 1.0f));
             float y = in.y + in.h * (1 - v);
-            // a bar per sample, the curve on top
             s.fill({in.x + i * dx, y, std::max(1.0f, dx), in.y + in.h - y}, Color{curve.r, curve.g, curve.b, 70});
             s.fill({in.x + i * dx, y - 1, std::max(1.0f, dx), 2}, curve);
         }
@@ -1184,7 +1155,6 @@ bool Context::treeRow(const TreeRow &row, bool &open, bool &visible) {
     } else if (s.hot == (id ^ 3)) {
         s.fill(r, Color::rgb(0.6f, 0.6f, 0.66f));
     }
-    // the guides of the depth
     for (int i = 0; i < row.depth; i++) {
         s.fill({r.x + 2 + i * 14 + 6, r.y, 1, r.h}, Color::rgb(0.47f, 0.47f, 0.52f));
     }
@@ -1200,7 +1170,6 @@ bool Context::treeRow(const TreeRow &row, bool &open, bool &visible) {
         }
     }
     s.light(eye.x + 7, r.y + r.h * 0.5f, 4, visible, true);
-    // the type, in a little colored box
     float tw = s.textWidth(row.tagText, Font::SMALL) + 8;
     Rect tag{text.x, r.y + 2, tw, r.h - 4};
     s.box(tag, row.tag, false);

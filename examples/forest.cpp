@@ -1,9 +1,4 @@
-// forest - an Instancer: up to 50000 trees on a ground, two levels of detail.
-//
-// Each tree is culled on its own and takes its level by its distance; the
-// visible trees of each part are one draw call (GPU instancing). The panel
-// changes the number of trees, the distances of the levels and the stages
-// of the renderer, and shows what they cost.
+// forest - an Instancer: up to 50000 trees on a ground, each culled on its own and drawn with the others of its level in one call.
 #include "common/example.h"
 #include "common/shapes.h"
 
@@ -29,7 +24,6 @@ int main(int argc, char **argv) {
 
     Vec4 bark{0.45f, 0.3f, 0.18f, 1};
     Vec4 leaves{0.2f, 0.5f, 0.2f, 1};
-    // the near tree: a trunk and two cones; the far one: a single cone
     std::vector<scene::InstancePart> near = {
         {example::drawable(renderer, example::cylinder(0.25f, 0.18f, 0, 2), bark), Mat4(1.0f)},
         {example::drawable(renderer, example::cylinder(1.6f, 0, 1.5f, 4.2f), leaves), Mat4(1.0f)},
@@ -40,9 +34,8 @@ int main(int argc, char **argv) {
     };
 
     auto forest = scene::make<scene::Instancer>();
-    forest->addLevel(near, 60); // up to 60 m
-    forest->addLevel(far, 500); // then up to 500 m
-    // the trees: always the same places for a count
+    forest->addLevel(near, 60);
+    forest->addLevel(far, 500);
     auto plant = [&](int count) {
         std::mt19937 rng(7);
         std::uniform_real_distribution<float> place(-240, 240);

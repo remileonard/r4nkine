@@ -1,9 +1,4 @@
-// obj_loader.cpp - the Wavefront OBJ format and its MTL materials.
-//
-// Faces of any size (fans), negative indices, v/vt/vn in any combination,
-// groups and usemtl. One mesh per material: the vertices with the same
-// position/uv/normal triple are shared. The old OBJ of the SGI demos often
-// have no normals: smooth ones are made.
+// obj_loader.cpp - Wavefront OBJ and its MTL materials: one mesh per material, smooth normals made when the file has none.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 
@@ -39,7 +34,6 @@ bool readLines(const std::string &path, std::vector<std::string> &lines) {
         if (line.empty() || line.back() != '\n') {
             continue;
         }
-        // a line ending with a backslash continues on the next one
         std::string t = trim(line);
         if (!t.empty() && t.back() == '\\') {
             line = t.substr(0, t.size() - 1) + " ";
@@ -117,7 +111,6 @@ void loadMTL(const std::string &path, Model &model, std::map<std::string, int> &
                 m->shading = Shading::UNLIT;
             }
         } else if (!std::strcmp(tag, "map_Kd")) {
-            // the last word is the file; the options before it are skipped
             std::string file = trim(rest);
             size_t sp = file.find_last_of(" \t");
             if (sp != std::string::npos) {
@@ -190,7 +183,7 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
     std::vector<Vec2> uvs;
     std::map<std::string, int> materialByName;
     std::map<std::string, int> images;
-    std::map<int, Builder> builders; // by material, in the order met
+    std::map<int, Builder> builders;
     std::vector<int> order;
     int material = -1;
 
@@ -260,7 +253,6 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
                 b.mesh.indices.push_back(corners[i + 1]);
             }
         } else if (!std::strncmp(s, "mtllib", 6)) {
-            // several files may follow
             std::string names = trim(s + 6);
             size_t pos = 0;
             while (pos < names.size()) {
@@ -278,7 +270,6 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
             std::string name = trim(s + 6);
             auto it = materialByName.find(name);
             if (it == materialByName.end()) {
-                // a material of a missing library: a grey one with its name
                 Material m;
                 m.name = name;
                 it = materialByName.emplace(name, (int)model->materials.size()).first;
@@ -290,7 +281,6 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
 
     Node root;
     root.name = path;
-    // OBJ is Y-up, R4nkine is Z-up: the root turns +Y into +Z
     root.local = axes::fromYUpMatrix();
     for (int m : order) {
         Builder &b = builders[m];

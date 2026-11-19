@@ -1,22 +1,5 @@
-// gobj_loader.cpp - the .d objects of the SGI flight simulator (libgobj).
-//
-// A text file of sections (the old files give the counts only, in this
-// order):
-//   R<radius>
-//   B<count>  branch nodes: "statebits,modebits", the transforms
-//             "count,t,t...", the children "count,B1,G2,..." (B: branch,
-//             G: geometry)
-//   T<count>  transforms: "0|1|2,tenths of degrees" (rotation about X, Y,
-//             Z), "3,x,y,z" (translation), "4,x,y,z" (scale)
-//   G<count>  geometries: a type then its data (see readGeometry)
-//   M<count>  materials: ambient; diffuse and alpha; specular; shininess;
-//             emission
-// A node is drawn when the state given to drawobj meets its statebits (the
-// main body 0x1, the landing gear 0x2, the far model 0x4, the shadows 0x8
-// and 0x10, the weapons 0xff00...): these become the node masks, and the
-// default state of the model is body, gear and weapons. The modebits: 0x1
-// back faces culled (two-sided otherwise), 0x2 transparent, 0x4 no depth
-// writes. The objects of flight are Y-up.
+// gobj_loader.cpp - the .d objects of the SGI flight simulator (libgobj), Y-up.
+// Sections R (radius), B (branches), T (transforms), G (geometries), M (materials); the statebits of a node become its mask, the modebits its culling and transparency.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 
@@ -200,7 +183,6 @@ class Reader {
 public:
     explicit Reader(FILE *f) : f_(f) {
     }
-    // the next line that is not empty nor a comment
     bool next() {
         char buf[1024];
         while (std::fgets(buf, sizeof buf, f_)) {
@@ -209,7 +191,6 @@ public:
                 continue;
             }
             cur_ = buf;
-            // the lines ending with a backslash go on
             while (true) {
                 size_t e = cur_.find_last_not_of(" \t\r\n");
                 if (e == std::string::npos || cur_[e] != '\\') {
@@ -233,8 +214,7 @@ public:
         return line_;
     }
 
-    // the numbers of the line until a comment: ints, hex with %i, or floats;
-    // B/G letters marked in kinds
+    // ints, hex with %i or floats until a comment; B/G letters marked in kinds
     std::vector<double> numbers(std::vector<char> *kinds = nullptr) const {
         std::vector<double> out;
         const char *p = cur_.c_str();
@@ -373,14 +353,14 @@ bool readGeometry(Reader &r, Geometry &g) {
         return true;
     };
     switch (g.type) {
-    case LPV: // per vertex normals
-    case LTV: // the same in triangle strips
+    case LPV:
+    case LTV:
         return header(g.material) && readVertices(r, g, VertexLayout::XYZ_NORMAL) && readPolygons(r, g, PolygonPrefix::NONE);
-    case LPU: // a normal per polygon
+    case LPU:
         return header(g.material) && readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NORMAL);
-    case TLPU: // textured, a normal per polygon
+    case TLPU:
         return header(g.material) && readVertices(r, g, VertexLayout::XYZ_UV) && readPolygons(r, g, PolygonPrefix::NORMAL);
-    case LPS: { // one normal for all
+    case LPS: {
         if (!header(g.material) || !r.next()) {
             return false;
         }
@@ -389,7 +369,7 @@ bool readGeometry(Reader &r, Geometry &g) {
         g.normal = {(float)n[0], (float)n[1], (float)n[2]};
         return readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NONE);
     }
-    case CSECT: // one color: polygons, lines or points
+    case CSECT:
     case CLS:
     case CDS:
         return header(g.color) && readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NONE);
@@ -462,7 +442,6 @@ struct Loader {
                 }
             }
         }
-        // the ambient of IRIS materials is relative to the ambient light
         applyMode(m, mode);
         int index = (int)model.materials.size();
         model.materials.push_back(m);
@@ -487,7 +466,6 @@ struct Loader {
         return index;
     }
 
-    // the meshes of a geometry drawn in a mode: triangles, lines, points
     std::vector<int> meshesOf(int gi, uint32_t mode) {
         auto key = std::make_pair(gi, mode);
         auto it = geomMeshes.find(key);
@@ -559,9 +537,9 @@ struct Loader {
                     tris.vertices.push_back(vertexOf(p, c, normal));
                 }
                 for (int c = 1; c + 1 < n; c++) {
-                    if (kind == PolygonKind::POLYGON) { // a fan
+                    if (kind == PolygonKind::POLYGON) {
                         tris.indices.insert(tris.indices.end(), {base, base + c, base + c + 1});
-                    } else if (c % 2) { // a strip, the odd triangles turned
+                    } else if (c % 2) {
                         tris.indices.insert(tris.indices.end(), {base + c - 1, base + c, base + c + 1});
                     } else {
                         tris.indices.insert(tris.indices.end(), {base + c, base + c - 1, base + c + 1});
@@ -744,7 +722,6 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
             break;
         default:
             if (s[0] >= '0' && s[0] <= '9') {
-                // the old files: the counts in the order B, T, G
                 int count = std::atoi(s);
                 switch (oldOrder++) {
                 case OLD_BRANCHES:
@@ -773,7 +750,6 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
         return nullptr;
     }
 
-    // node 0: the root turning Y-up into Z-up; branch i: node 1 + i
     model->nodes.resize(1 + L.branches.size());
     model->nodes[0].name = path;
     model->nodes[0].local = axes::fromYUpMatrix();
@@ -804,14 +780,13 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
                 break;
             }
         }
-        // filled after: model->nodes may grow (the views of an eight view node)
         model->nodes[1 + i].name = "B" + std::to_string(i);
         model->nodes[1 + i].local = m;
         model->nodes[1 + i].mask = b.state & ~kCull;
     }
     for (size_t i = 0; i < L.branches.size(); i++) {
         const Branch &b = L.branches[i];
-        size_t first = (b.state & kCull) ? 1 : 0; // a culling volume, not drawn
+        size_t first = (b.state & kCull) ? 1 : 0;
         bool eight = (b.mode & kEightView) != 0;
         if (eight) {
             model->nodes[1 + i].kind = NodeKind::SWITCH;
@@ -841,7 +816,6 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
             }
         }
     }
-    // the plane of flight: body, landing gear, weapons; not far, not shadows
     model->defaultState = 0xff03;
     return model;
 }

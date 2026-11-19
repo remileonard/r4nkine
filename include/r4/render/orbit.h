@@ -1,10 +1,4 @@
-// r4/render/orbit.h - a camera turning about a point, as the trackball of
-// perfly: the mouse turns the view in the axes of the screen.
-//
-// Its orientation is a quaternion, so it turns freely; heading (yaw about
-// Z), pitch (the elevation of the eye) and roll (about the line of sight)
-// are read from it and written to it for the sliders. The camera looks
-// along its +Y, with +X to the right and +Z up, as everything in R4nkine.
+// r4/render/orbit.h - a camera turning about a point, as the trackball of perfly; a quaternion, read and written as heading, pitch and roll.
 #pragma once
 
 #include "r4/axes.h"
@@ -19,36 +13,33 @@ namespace r4::render {
 
 class Orbit {
 public:
-    Vec3 target{0, 0, 0}; // the point it turns about
+    Vec3 target{0, 0, 0};
     float distance = 10;
 
     Orbit() {
         setAngles(30, 25, 0);
     }
 
-    // heading: degrees about the up (axes::kUp); pitch: degrees of the eye above the target;
-    // roll: degrees about the line of sight
+    // degrees: heading about axes::kUp, pitch of the eye above the target, roll about the line of sight
     void setAngles(float heading, float pitch, float roll) {
         q_ = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight) * glm::angleAxis(radians(roll), axes::kForward);
     }
     void angles(float &heading, float &pitch, float &roll) const {
         Vec3 f = forward();
         Vec3 u = up();
-        pitch = -axes::pitchOf(f); // the eye above the target: the sight goes down
+        pitch = -axes::pitchOf(f);
         heading = axes::headingOf(f);
-        // the up and the right without roll, for that heading and pitch
         glm::quat base = glm::angleAxis(radians(heading), axes::kUp) * glm::angleAxis(radians(-pitch), axes::kRight);
         Vec3 u0 = base * axes::kUp;
         Vec3 r0 = base * axes::kRight;
         roll = degrees(std::atan2(dot(u, r0), dot(u, u0)));
     }
 
-    // the mouse: dx turns about the up of the screen (yaw), dy about its
-    // right (pitch); degrees
+    // dx about the up of the screen, dy about its right, in degrees
     void turn(float dx, float dy) {
         q_ = glm::normalize(q_ * glm::angleAxis(radians(-dx), axes::kUp) * glm::angleAxis(radians(-dy), axes::kRight));
     }
-    // the target moved in the plane of the screen, by world units
+    // in world units
     void pan(float right, float up) {
         target += this->right() * right + this->up() * up;
     }

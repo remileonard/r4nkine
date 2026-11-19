@@ -1,11 +1,4 @@
-// hierarchy - a plane and its missiles in the scene graph.
-//
-// The plane flies in circles: its Group carries the matrix of the flight,
-// and everything under it follows. Its missiles hang on pylons under the
-// wings; Space fires the next one: it leaves its pylon for the root, with
-// the world matrix it had, and flies on its own. R reloads. G shows or
-// hides the landing gear (a Switch). Far away, a LOD shows a simpler plane.
-// The panel does the same, and changes the flight.
+// hierarchy - a plane and its missiles in the scene graph: Space fires a missile, R reloads, G the landing gear (a Switch), a LOD far away.
 #include "common/example.h"
 #include "common/shapes.h"
 
@@ -46,11 +39,9 @@ int main(int argc, char **argv) {
     ground->addDrawable(example::drawable(renderer, example::ground(400), {0.35f, 0.45f, 0.3f, 1}));
     root->addChild(ground);
 
-    // the plane, nose along +Y: a Group with the flight matrix...
     auto plane = scene::make<scene::Group>();
     plane->setName("plane");
     root->addChild(plane);
-    // ...a LOD: the detailed plane up to 120 m, a box beyond
     auto lod = scene::make<scene::LOD>();
     lod->setRanges({0, 120, 2000});
     plane->addChild(lod);
@@ -58,8 +49,8 @@ int main(int argc, char **argv) {
     lod->addChild(detailed);
     auto body = scene::make<scene::Geode>();
     body->addDrawable(example::drawable(renderer, example::box({1, 7, 1}), grey));
-    body->addDrawable(example::drawable(renderer, example::box({9, 2, 0.2f}), grey));     // the wings
-    body->addDrawable(example::drawable(renderer, example::box({3.4f, 1, 0.15f}), dark)); // the tail
+    body->addDrawable(example::drawable(renderer, example::box({9, 2, 0.2f}), grey));
+    body->addDrawable(example::drawable(renderer, example::box({3.4f, 1, 0.15f}), dark));
     detailed->addChild(body);
     auto tail = scene::make<scene::Geode>();
     tail->setMatrix(translate({0, -3, 0.9f}));
@@ -69,7 +60,6 @@ int main(int argc, char **argv) {
     coarse->addDrawable(example::drawable(renderer, example::box({9, 7, 1}), grey));
     lod->addChild(coarse);
 
-    // the landing gear, in a Switch: all the children or none
     auto gear = scene::make<scene::Switch>();
     gear->setName("gear");
     for (Vec3 at : {Vec3{0, 2.5f, -0.9f}, Vec3{-1.5f, -0.5f, -0.9f}, Vec3{1.5f, -0.5f, -0.9f}}) {
@@ -80,11 +70,10 @@ int main(int argc, char **argv) {
     }
     detailed->addChild(gear);
 
-    // the pylons under the wings, a missile on each
     auto missileGeode = [&]() {
         auto m = scene::make<scene::Geode>();
         m->setName("missile");
-        m->setMatrix(rotate(radians(-90), {1, 0, 0})); // the cylinders go along Z, the missile along Y
+        m->setMatrix(rotate(radians(-90), {1, 0, 0}));
         m->addDrawable(example::drawable(renderer, example::cylinder(0.13f, 0.13f, -1.2f, 1.0f, 10), white));
         m->addDrawable(example::drawable(renderer, example::cylinder(0.13f, 0, 1.0f, 1.4f, 10), red));
         return m;
@@ -116,7 +105,6 @@ int main(int argc, char **argv) {
     auto fire = [&]() {
         for (Missile &m : missiles) {
             if (m.pylon) {
-                // its world matrix: plane, pylon, then its own
                 Mat4 world = plane->matrix() * m.pylon->matrix() * m.node->matrix();
                 m.pylon->removeChild(m.node.get());
                 m.pylon = nullptr;
@@ -186,7 +174,6 @@ int main(int argc, char **argv) {
 
         float dt = 1 / 60.0f;
         t += dt * speed;
-        // the flight: a circle of 40 m at 12 m, nose along the circle, banked
         Mat4 flight = translate({40 * std::cos(t), 40 * std::sin(t), 12}) * rotate(t, {0, 0, 1}) * rotate(radians(-bank), {0, 1, 0});
         plane->setMatrix(flight);
         for (Missile &m : missiles) {

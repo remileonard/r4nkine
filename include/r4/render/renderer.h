@@ -1,12 +1,4 @@
-// r4/render/renderer.h - from the scene graph to the GPU.
-//
-// Each frame: the graph is culled against the view (bounding spheres, a
-// branch fully inside is not tested further), the visible drawables go to a
-// draw list, the list is sorted (opaque by pipeline, material and mesh to
-// keep the state changes few; transparent from back to front), the matrices
-// of the objects are written in one buffer of instances, then the draws are
-// sent: the consecutive items with the same mesh, material and pipeline go
-// in one instanced draw (a forest of one tree model is a few draw calls).
+// r4/render/renderer.h - culls the graph, sorts the draws by state (the transparent from back to front) and draws runs of the same mesh, material and pipeline as one instanced draw.
 #pragma once
 
 #include "r4/axes.h"
@@ -22,7 +14,6 @@
 
 namespace r4::render {
 
-// a mesh on the GPU
 struct GpuMesh {
     gpu::BufferHandle vertices;
     gpu::BufferHandle indices;
@@ -32,7 +23,6 @@ struct GpuMesh {
     std::string name;
 };
 
-// a material on the GPU: its parameters in a uniform buffer
 struct MaterialInstance {
     assets::Material params;
     gpu::TextureHandle texture;
@@ -59,7 +49,7 @@ struct Camera {
 };
 
 struct Environment {
-    Vec3 lightDirection{-0.4f, -0.3f, -0.85f}; // where the light goes, world space
+    Vec3 lightDirection{-0.4f, -0.3f, -0.85f}; // where the light goes, in world space
     Vec3 lightColor{1, 1, 1};
     Vec3 ambient{0.25f, 0.25f, 0.28f};
     Vec4 clearColor{0.08f, 0.09f, 0.14f, 1};
@@ -69,39 +59,29 @@ struct Environment {
     float fogEnd = 1000;
 };
 
-// the switches of the renderer, for the viewers and the measures
 struct RenderOptions {
-    bool frustumCulling = true; // off: everything is drawn
+    bool frustumCulling = true; // off: everything drawn
     bool freezeCulling = false; // the culling and the LODs keep the eye of the moment it was set
-    bool sortByState = true;    // off: the opaque items in the order of the graph
+    bool sortByState = true;    // off: in the order of the graph
     bool instancing = true;     // off: one draw per item
     bool textures = true;
     bool lighting = true; // off: everything unlit
-    float lodScale = 1;   // the distances of the LODs and instancers are multiplied by it
-    // the normal of the face instead of the normals of the vertices: the flat
-    // shading of the old games
+    float lodScale = 1;   // multiplies the distances of the LODs and instancers
+    // the normal of the face instead of those of the vertices
     bool flatShading = false;
-    // PaletteRamp: the intensity computed at the vertices and interpolated
-    // (the Gouraud of the old games), not at each pixel; the back of a
-    // two-sided face lit by its face normal, as RealSpace
+    // PALETTE_RAMP lit at the vertices and interpolated; the back of a two-sided face lit by its face normal
     bool rampGouraud = false;
-    // the anisotropic filtering of the textures uploaded from then on (1: off;
-    // the device limits it)
+    // for the textures uploaded from then on; 1: off
     float anisotropy = 1;
-    // the shadows of the sun: one shadow map, an orthographic view from the
-    // light over the part of the view up to shadowDistance from the eye;
-    // they fade out at its end
+    // one shadow map, an orthographic view from the light over the view up to shadowDistance, faded at its end
     bool shadows = false;
     int shadowMapSize = 2048;
     float shadowDistance = 200;
-    // how far towards the light the casters are taken, beyond the view
-    // covered (an aircraft high above the ground it shades)
+    // how far towards the light the casters are taken beyond the view covered
     float shadowCasterReach = 2000;
-    // the unlit materials (the baked terrain, the runways) darkened in the
-    // shadow by this part; the lit ones lose their direct light
+    // the part of the light the unlit materials lose in the shadow
     float shadowStrength = 0.5f;
-    // against the acne: the receivers pushed along their normal by this many
-    // texels of the map, the depth compared minus this bias (0..1 of the range)
+    // against the acne: the receivers pushed along their normal by this many texels, the depth compared minus this bias
     float shadowNormalOffset = 1.5f;
     float shadowBias = 0.0005f;
 };
@@ -110,13 +90,13 @@ struct RenderStats {
     uint32_t nodesVisited = 0;
     uint32_t nodesCulled = 0;
     uint32_t drawables = 0;
-    uint32_t instancesVisited = 0; // of the instancers
+    uint32_t instancesVisited = 0;
     uint32_t instancesCulled = 0;
     uint32_t opaqueItems = 0;
     uint32_t transparentItems = 0;
-    uint32_t shadowCasters = 0; // the items drawn in the shadow map
-    double shadowMs = 0;        // CPU time of the shadow pass (its cull included)
-    double cullMs = 0;          // CPU times of the frame
+    uint32_t shadowCasters = 0;
+    double shadowMs = 0; // its cull included
+    double cullMs = 0;   // CPU times of the frame
     double sortMs = 0;
     double uploadMs = 0;
     double drawMs = 0;
@@ -134,14 +114,13 @@ public:
         return device_;
     }
 
-    // the GPU objects of a model, as a subgraph (nodes, geodes, drawables);
     // its parts for an Instancer: scene::collectParts(*upload(model))
     scene::NodePtr upload(const assets::Model &model);
     std::shared_ptr<GpuMesh> uploadMesh(const assets::Mesh &mesh);
     std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {});
     gpu::TextureHandle uploadImage(const assets::Image &image, bool mipmaps = true);
 
-    // draws the graph from the camera in the viewport (pixels, from the bottom left)
+    // the viewport in pixels, from the bottom left
     void render(scene::Node &root, const Camera &camera, int x, int y, int width, int height);
 
     Environment &environment() {
@@ -153,8 +132,7 @@ public:
     void setWireframe(bool on) {
         wireframe_ = on;
     }
-    // where render() draws: a render target (a post process), or the window
-    // when the handle is null
+    // a render target, or the window when the handle is null
     void setTarget(gpu::RenderTargetHandle target) {
         target_ = target;
     }
@@ -177,7 +155,7 @@ private:
         MaterialInstance *material;
         Mat4 world;
         float depth;
-        int order; // the drawOrder of its material
+        int order;
         uint64_t key;
         gpu::PipelineHandle pipeline;
     };
@@ -186,7 +164,7 @@ private:
     void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
     gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
     bool createShaders();
-    // the view of the shadow map over the camera's view; false: no shadow
+    // false: no shadow
     bool shadowView(const Camera &camera, Mat4 &lightViewProj, float &texel);
     void drawShadows(size_t base);
 
@@ -195,7 +173,7 @@ private:
     RenderOptions options_;
     gpu::RenderTargetHandle target_;
     RenderStats stats_;
-    // the eye of the culling, kept while it is frozen
+    // kept while it is frozen
     Mat4 cullViewProj_;
     Vec3 cullEye_;
     bool frozen_ = false;

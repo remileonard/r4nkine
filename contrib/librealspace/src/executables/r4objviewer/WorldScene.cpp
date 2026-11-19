@@ -64,7 +64,6 @@ std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &data
                 continue;
             }
             std::string label = name.substr(at + 10, name.size() - at - 14);
-            // a mission names its world; a world names its terrain
             RSMission mission;
             mission.InitFromRAM(e->data, e->size);
             WorldEntry entry;
@@ -88,7 +87,7 @@ std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &data
             }
             entry.terrain = findTerrain(dataDir, world->tera);
             if (entry.terrain.empty()) {
-                continue; // only what can be shown with its terrain
+                continue;
             }
             (entry.mission ? missions : worlds).push_back(entry);
         }
@@ -105,7 +104,6 @@ std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &data
 WorldScene::WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Renderer &renderer) : assets_(assets), palette_(palette), renderer_(renderer) {
     root_ = r4::scene::make<r4::scene::Group>();
     root_->setName("world (libRealSpace axes)");
-    // the one place where libRealSpace's axes (Y up) become R4nkine's (Z up)
     root_->setMatrix(r4bridge::realSpaceToR4());
     terrain_ = r4::scene::make<r4::scene::Switch>();
     terrain_->setName("terrain");
@@ -149,7 +147,6 @@ void WorldScene::clear() {
     objects_.clear();
     parts_.clear();
     mapObjects_.clear();
-    // the parts and the map objects point to the entities: those go last
     mission_.reset();
     area_.reset();
     world_.reset();
@@ -160,12 +157,10 @@ r4::scene::NodePtr WorldScene::object(const std::string &name, float *radius) {
     auto it = objects_.find(name);
     if (it == objects_.end()) {
         r4::scene::NodePtr node;
-        // as SCMission::LoadEntity
         TreEntry *e = assets_.GetEntryByName(upper(assets_.object_root_path + name + ".IFF"));
         if (e) {
             auto entity = std::make_unique<RSEntity>();
             entity->InitFromRAM(e->data, e->size, name);
-            // in libRealSpace's axes: the root of the world turns them all
             auto model = r4bridge::toModel(entity.get(), *palette_.GetColorPalette(), palette_.ranges, lighting, r4bridge::Axes::REAL_SPACE);
             if (model) {
                 node = renderer_.upload(*model);
@@ -200,7 +195,6 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     }
     worldName = entry.world;
     terrainName = entry.terrain;
-    // the light of the world, as SCMission gives it to SCRenderer::setObjectLight
     hasLight = world_->has_light;
     lighting = {};
     if (hasLight) {
@@ -209,16 +203,12 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
             lighting.ambient = world_->light_ambient_weight / total;
             lighting.light = world_->light_weight / total;
         }
-        // libRealSpace makes (c0, c2, -c1) of it; turned to R4nkine's axes,
-        // that is (c0, c1, c2): the values of the file as they are
         r4::Vec3 d{(float)world_->light_direction[0], (float)world_->light_direction[1], (float)world_->light_direction[2]};
         if (r4::length(d) > 0) {
             lightTowards = r4::normalize(d);
         }
     }
 
-    // the terrain (RSArea reads the PAK in the data folder, and the textures
-    // of the game in the TRE: it cannot do without them)
     if (!assets_.GetEntryByName(assets_.txm_filename) || !assets_.GetEntryByName(assets_.acc_filename)) {
         error = "no " + assets_.txm_filename + " or " + assets_.acc_filename + " in the TRE (TEXTURES.TRE)";
         return false;
@@ -226,7 +216,6 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
     buildTerrain();
-    // the runways and their ground, over the terrain
     if (auto overlays = r4bridge::overlayModel(area_.get(), *palette_.GetColorPalette())) {
         for (const r4::assets::Mesh &m : overlays->meshes) {
             overlayTriangles += m.indices.size() / 3;
@@ -234,7 +223,6 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
         overlays_->addChild(renderer_.upload(*overlays));
     }
 
-    // the objects of the map: as SCMission, each its entity
     for (MapObject &o : area_->objects) {
         float radius = 0;
         std::string name(o.name, strnlen(o.name, sizeof o.name));
@@ -251,14 +239,10 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
         mapObjects_.push_back({name, r4::transformPoint(r4bridge::realSpaceToR4(), r4::translationOf(m)), radius, node != nullptr});
     }
 
-    // the parts of the mission, where their scenes make them appear
     start = {0, 0, 0};
     if (mission_) {
         placeParts();
     }
-    // the buildings of the cities, villages, farms and harbors, on their
-    // textures; none where an object of the map or of the mission stands
-    // (R4nkine's (x, y) is libRealSpace's (x, -z))
     std::vector<r4::Vec3> keepOut;
     for (const auto *list : {&parts_, &mapObjects_}) {
         for (const Item &it : *list) {
@@ -268,24 +252,13 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     if (auto city = r4bridge::cityModel(area_.get(), *palette_.GetColorPalette(), lighting, keepOut, &buildings)) {
         buildings_->addChild(renderer_.upload(*city));
     }
-    // the forests, around the objects
     buildForests();
     loadMs = (SDL_GetPerformanceCounter() - t0) * 1000.0 / SDL_GetPerformanceFrequency();
     return true;
 }
 
-// SCMission::loadMission and SCMissionScene::spawnCast:
-// - the player: its position in the area of the mission it names
-//   (part position + areas[area_id]->position);
-// - the other parts appear with the first scene whose cast holds them (the
-//   cast numbers the parts in their list): placement 0, in their area (part
-//   position + areas[area_id]->position); placement 1 (relative to the player
-//   in the game, at the time the scene comes), at the center of the area of
-//   the scene, 4000 high for an aircraft;
-// - then on the ground when under it (RSArea::getY), an aircraft within 10 of
-//   it too;
-// - a part of no scene (brought by a program of the mission) is placed the
-//   same way, in a layer of its own, hidden at first.
+// as SCMission::loadMission and SCMissionScene::spawnCast: the player in its area; the others in the area of the first scene whose cast holds them (placement 1 at its center, 4000 high for an aircraft),
+// then on the ground when under it; the parts of no scene in a hidden layer of their own
 void WorldScene::placeParts() {
     MISN &data = mission_->mission_data;
     MISN_PART *player = mission_->getPlayerCoord();
@@ -313,7 +286,7 @@ void WorldScene::placeParts() {
     };
     for (size_t i = 0; i < data.parts.size(); i++) {
         MISN_PART *part = data.parts[i];
-        object(part->member_name, nullptr); // its entity, for its type
+        object(part->member_name, nullptr);
         if (part == player) {
             if (AREA *a = areaOf(part->area_id); a && part->area_id != r4bridge::AREA_NONE && part->placement == r4bridge::PLACEMENT_IN_AREA) {
                 part->position += a->position;
@@ -321,10 +294,9 @@ void WorldScene::placeParts() {
             continue;
         }
         if (part->area_id == r4bridge::AREA_NONE && part->placement == r4bridge::PLACEMENT_IN_AREA) {
-            continue; // a place of the world, as it is
+            continue;
         }
         if (part->placement != r4bridge::PLACEMENT_IN_AREA) {
-            // instead of SCMission::placeRelativeToPlayer: the center of the scene's area
             int s = sceneOf[i];
             AREA *a = s >= 0 ? areaOf(data.scenes[s]->area_id) : areaOf(part->area_id);
             if (a) {
@@ -339,16 +311,12 @@ void WorldScene::placeParts() {
         onGround(part);
     }
 
-    // the areas, to go to them
     for (size_t a = 0; a < data.areas.size(); a++) {
         AREA *ar = data.areas[a];
         r4::Vec3 at = r4::transformPoint(r4bridge::realSpaceToR4(), {ar->position.x, ar->position.y, ar->position.z});
         float radius = std::max(1000.0f, 0.5f * (float)std::max(ar->AreaWidth, ar->AreaHeight));
         areas_.push_back({"Area " + std::to_string(a) + ": " + ar->AreaName, at, radius, true});
     }
-    // the graph: a node by area of the mission (entering it starts its
-    // scenes), a layer by scene under its area, and one for the parts of no
-    // scene
     std::map<int, std::shared_ptr<r4::scene::Group>> areaNodes;
     auto areaNode = [&](int id) {
         auto it = areaNodes.find(id);
@@ -434,7 +402,6 @@ void WorldScene::buildTerrain() {
     if (!model) {
         return;
     }
-    // the triangles of the finest level (each colored triangle once)
     for (const r4::assets::Node &n : model->nodes) {
         if (n.name.compare(0, 4, "LVL0") == 0) {
             for (int mi : n.meshes) {
@@ -447,7 +414,6 @@ void WorldScene::buildTerrain() {
     terrainTextures = model->images.size();
     r4::scene::NodePtr node = renderer_.upload(*model);
     terrain_->addChild(node);
-    // the LOD nodes of the blocks, for setTerrainLod
     std::vector<r4::scene::Node *> stack{node.get()};
     while (!stack.empty()) {
         r4::scene::Node *n = stack.back();
@@ -474,8 +440,6 @@ void WorldScene::buildForests() {
     forestSettings_.density = forestDensity_;
     forestSettings_.mode = forestMode_;
     forestSettings_.palette = palette_.GetColorPalette();
-    // none on the objects of the map and of the mission (R4nkine's (x, y) is
-    // libRealSpace's (x, -z))
     for (const auto *list : {&parts_, &mapObjects_}) {
         for (const Item &it : *list) {
             forestSettings_.keepOut.push_back({it.position.x, -it.position.y, std::max(it.radius * 2, 150.0f)});
@@ -485,7 +449,6 @@ void WorldScene::buildForests() {
     if (chunks.empty()) {
         return;
     }
-    // the 2 species, each detailed then simple
     std::vector<r4::scene::InstancePart> parts[r4bridge::TREE_SPECIES_COUNT][2];
     for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
         for (int level = 0; level < 2; level++) {
@@ -498,7 +461,6 @@ void WorldScene::buildForests() {
     for (size_t i = 0; i < chunks.size(); i++) {
         ForestNode &f = forestNodes_[i];
         f.chunk = std::move(chunks[i]);
-        // a chunk is skipped as a whole beyond the trees' distance
         auto lod = r4::scene::make<r4::scene::LOD>();
         lod->setName("trees " + std::to_string(f.chunk.cx) + "," + std::to_string(f.chunk.cz));
         lod->setCenter(f.chunk.center);
@@ -507,13 +469,11 @@ void WorldScene::buildForests() {
         for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
             f.trees[sp] = r4::scene::make<r4::scene::Instancer>();
             f.trees[sp]->setName(std::string(r4bridge::isConifer(sp) ? "conifers" : "broadleaves") + (r4bridge::isJungleTree(sp) ? " (jungle)" : ""));
-            f.trees[sp]->setUp({0, 1, 0}); // libRealSpace's axes
+            f.trees[sp]->setUp({0, 1, 0});
             f.trees[sp]->addLevel(parts[sp][0], kTreeNear);
             f.trees[sp]->addLevel(parts[sp][1], kTreeFar);
             group->addChild(f.trees[sp]);
         }
-        // its trees, all planted at the load (about 2 million on TURKEY,
-        // 140 MB of matrices)
         r4bridge::plantForest(area_.get(), forestSettings_, f.chunk);
         for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
             forestTrees += f.chunk.trees[sp].size();
@@ -521,8 +481,6 @@ void WorldScene::buildForests() {
             f.chunk.trees[sp].clear();
         }
         lod->addChild(group);
-        // the chunks by block of the terrain (20 km): a few nodes tested
-        // against the view, then the chunks of the blocks in it
         int bx = (int)(f.chunk.cx * forestSettings_.chunk / BLOCK_WIDTH);
         int bz = (int)(f.chunk.cz * forestSettings_.chunk / BLOCK_WIDTH);
         auto &block = blocks[{bx, bz}];
@@ -570,7 +528,6 @@ bool WorldScene::groundHeight(r4::Vec3 p, float &height) const {
     if (!area_) {
         return false;
     }
-    // R4nkine's (x, y) is libRealSpace's (x, -z): r4::axes::toYUp
     const float half = BLOCK_WIDTH * BLOCK_PER_MAP_SIDE_DIV_2 - 1;
     if (std::abs(p.x) >= half || std::abs(p.y) >= half) {
         return false;
@@ -581,7 +538,6 @@ bool WorldScene::groundHeight(r4::Vec3 p, float &height) const {
 
 void WorldScene::setTerrainLod(int mode) {
     terrainLod_ = mode;
-    // 0: by distance; 1..3: the level mode - 1 everywhere (the world_detail of the game)
     std::vector<float> ranges = kTerrainRanges;
     if (mode > 0) {
         int level = mode - 1;

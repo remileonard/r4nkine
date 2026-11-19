@@ -60,7 +60,6 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) in vec4 inColor;
-// the model matrix of the instance, by columns
 layout(location = 4) in vec4 inModel0;
 layout(location = 5) in vec4 inModel1;
 layout(location = 6) in vec4 inModel2;
@@ -78,9 +77,8 @@ out vec3 vNormal;
 out vec3 vPosition;
 out vec2 vUV;
 out vec4 vColor;
-out float vRampIntensity; // PaletteRamp lit at the vertex (options.w)
-out vec4 vShadow;         // in the shadow map
-// the same vertices give the same depth in every draw (the GL_EQUAL decals)
+out float vRampIntensity;
+out vec4 vShadow;
 invariant gl_Position;
 void main() {
     mat4 model = mat4(inModel0, inModel1, inModel2, inModel3);
@@ -88,7 +86,6 @@ void main() {
     vec4 p = modelView * vec4(inPosition, 1.0);
     vShadow = vec4(0.0);
     if (shadowParams.x > 0.5) {
-        // pushed along its normal against the acne (normal offset)
         vec3 w = (model * vec4(inPosition, 1.0)).xyz;
         vec3 n = mat3(model) * inNormal;
         if (dot(n, n) > 1e-12) {
@@ -97,7 +94,6 @@ void main() {
         vShadow = lightViewProj * vec4(w, 1.0);
     }
     vPosition = p.xyz;
-    // the normals: the inverse transpose, right for non-uniform scales
     vNormal = transpose(inverse(mat3(modelView))) * inNormal;
     vUV = inUV;
     vColor = inColor;
@@ -142,14 +138,7 @@ in vec2 vUV;
 in vec4 vColor;
 in float vRampIntensity;
 out vec4 fragColor;
-vec3 faceDirection; // the normal of the face seen, towards the eye (set first in main)
-// the normal of the side of the face that is seen (two-sided lighting,
-// whatever the winding): turned over only when it is on the other side of
-// the face itself, whose normal from the derivatives always faces the eye.
-// Not the interpolated normal against the eye: smooth normals lean away
-// from the eye near the outlines of a surface, and flipping them there
-// lit the faces from the wrong side.
-// Flat shading (options.z): the normal of the face itself.
+vec3 faceDirection;
 vec3 seenNormal() {
     if (options.z > 0.5 && dot(faceDirection, faceDirection) > 0.0) {
         return normalize(faceDirection);
@@ -160,8 +149,6 @@ vec3 seenNormal() {
     }
     return n;
 }
-// the light of the sun that reaches the fragment, 0..1: 3 x 3 compared
-// texels of the shadow map (each a 2 x 2 PCF), faded out at its edges
 float shadowFactor() {
     if (shadowParams.x < 0.5 || flags3.x < 0.5 || vShadow.w <= 0.0) {
         return 1.0;
@@ -181,13 +168,11 @@ float shadowFactor() {
     return mix(s, 1.0, smoothstep(0.85, 1.0, max(e.x, e.y)));
 }
 void main() {
-    // the derivatives, out of any branch
     faceDirection = cross(dFdx(vPosition), dFdy(vPosition));
     float shadow = shadowFactor();
     vec4 base = diffuse;
     vec2 uv = vUV;
     if (flags2.x > 0.5) {
-        // the sphere map of IRIS GL and OpenGL 1.x
         vec3 u = normalize(vPosition);
         vec3 n = seenNormal();
         vec3 r = reflect(u, n);
@@ -195,13 +180,8 @@ void main() {
         uv = r.xy / m + 0.5;
     }
     if (flags2.y > 0.5 && options.y > 0.5 && dot(vNormal, vNormal) > 1e-12) {
-        // the lighting of the 8-bit games: an intensity from the light, then
-        // the shade along the ramp of the palette color (ramp: a table of 256
-        // colors x 32 intensities in the texture), or the texture times it
         vec3 n = seenNormal();
         float intensity = clamp(flags2.z + max(dot(n, lightDirection.xyz), 0.0) * flags2.w * shadow, 0.0, 1.0);
-        // by vertex (options.w), as RealSpace: the intensity of the vertices,
-        // interpolated; the back of a face by its face normal
         bool back = dot(faceDirection, faceDirection) > 0.0 && dot(vNormal, faceDirection) < 0.0;
         if (options.w > 0.5 && options.z < 0.5 && !back) {
             intensity = flags2.z + (vRampIntensity - flags2.z) * shadow;
@@ -240,12 +220,11 @@ void main() {
     }
     vec3 color;
     if (flags.w > 0.5 || options.y < 0.5 || dot(vNormal, vNormal) < 1e-12) {
-        color = base.rgb; // unlit, or no normal (lines, points)
+        color = base.rgb;
         if (flags.w > 0.5 && options.y > 0.5) {
             color *= mix(1.0, shadow, shadowParams.w);
         }
     } else {
-        // Blinn-Phong, both faces lit (the two-sided lighting)
         vec3 n = seenNormal();
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
@@ -265,7 +244,7 @@ void main() {
 }
 )";
 
-// the shadow map: the depth from the light, nothing else
+// the depth from the light
 const char *kShadowVertex = R"(#version 330
 layout(std140) uniform Frame {
     mat4 view;
@@ -377,7 +356,7 @@ bool Renderer::createShaders() {
         gpu::PipelineDesc pd;
         pd.shader = shadowShader_;
         pd.layout = vertexLayout();
-        pd.cull = gpu::CullMode::NONE; // the thin and the open models cast too
+        pd.cull = gpu::CullMode::NONE;
         pd.polygonOffsetFactor = 2;
         pd.polygonOffsetUnits = 4;
         shadowPipeline_ = device_.createPipeline(pd);
@@ -408,7 +387,7 @@ gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Pri
         d.depthCompare = gpu::CompareOp::EQUAL;
     }
     d.wireframe = wireframe_ && tris;
-    if (m.decal && !m.depthEqual) { // an equal depth needs the very same depth
+    if (m.decal && !m.depthEqual) {
         d.polygonOffsetFactor = -1;
         d.polygonOffsetUnits = -2;
     }
@@ -428,7 +407,6 @@ gpu::TextureHandle Renderer::uploadImage(const assets::Image &image, bool mipmap
     d.wrapS = image.clampS ? gpu::Wrap::CLAMP : gpu::Wrap::REPEAT;
     d.wrapT = image.clampT ? gpu::Wrap::CLAMP : gpu::Wrap::REPEAT;
     d.anisotropy = options_.anisotropy;
-    // grey images are expanded: the shader reads RGBA
     std::vector<uint8_t> rgba;
     const void *pixels = image.pixels.data();
     switch (image.channels) {
@@ -595,7 +573,6 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     stats_.drawables++;
 }
 
-// each instance culled on its own sphere, its level chosen by its distance
 void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye) {
     const auto &levels = node.levels();
     if (levels.empty()) {
@@ -625,7 +602,6 @@ void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Fr
     for (const Mat4 &m : node.instances()) {
         visit(m);
     }
-    // the compact ones: those beyond the last level left before their matrix is made
     float reach = levels.back().maxDistance / std::max(options_.lodScale, 1e-6f) + one.radius * maxScale(world) * 4;
     for (const scene::Placement &p : node.placements()) {
         if (length(transformPoint(world, p.position) - eye) > reach) {
@@ -653,7 +629,6 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
     }
     Mat4 world = parent * node.matrix();
     if (node.type() == scene::NodeType::BILLBOARD) {
-        // turned to the eye, about the origin of the node
         auto &bb = static_cast<scene::Billboard &>(node);
         world = world * bb.rotationFor(transformPoint(inverse(world), eye));
     }
@@ -705,7 +680,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     };
     auto t0 = clock::now();
     Mat4 viewProj = cam.projection * cam.view;
-    // the eye of the culling: the camera, or the one kept while frozen
     if (!options_.freezeCulling || !frozen_) {
         cullViewProj_ = viewProj;
         cullEye_ = cam.position;
@@ -713,7 +687,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     frozen_ = options_.freezeCulling;
     cull(root, Mat4(1.0f), Frustum::fromMatrix(cullViewProj_), !options_.frustumCulling, cam.mask, cullEye_);
     auto t1 = clock::now();
-    // by the drawOrder of the materials (their bins), then by state
     if (options_.sortByState) {
         std::sort(opaque_.begin(), opaque_.end(), [](const DrawItem &a, const DrawItem &b) {
             return a.order != b.order ? a.order < b.order : a.key < b.key;
@@ -723,7 +696,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
             return a.order < b.order;
         });
     }
-    // the transparent ones from back to front, from the eye of the camera
     for (DrawItem &it : transparent_) {
         it.depth = length(transformPoint(it.world, it.mesh->bounds.center) - cam.position);
     }
@@ -734,8 +706,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     stats_.opaqueItems = (uint32_t)opaque_.size();
     stats_.transparentItems = (uint32_t)transparent_.size();
 
-    // the casters: the graph culled again from the light (an object out of
-    // the view shades the ground in it), the levels chosen from the eye
     Mat4 lightViewProj(1.0f);
     float texel = 0;
     casters_.clear();
@@ -780,7 +750,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     }
     auto t2s = clock::now();
 
-    // the frame
     FrameBlock fb{};
     copyMat(fb.view, cam.view);
     copyMat(fb.projection, cam.projection);
@@ -805,7 +774,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.shadowParams2[0] = 1.0f / (float)std::max(1, shadowMapSize_);
     device_.updateBuffer(frameUniforms_, 0, &fb, sizeof fb);
 
-    // the matrices of the items, in the order of the draws
     size_t count = opaque_.size() + transparent_.size() + casters_.size();
     instanceData_.resize(std::max<size_t>(count, 1) * 16);
     size_t k = 0;
@@ -843,7 +811,6 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         const std::vector<DrawItem> &items = *list;
         for (size_t i = 0; i < items.size();) {
             const DrawItem &it = items[i];
-            // the run of the same mesh, material and pipeline: one draw
             size_t j = i + 1;
             while (options_.instancing && j < items.size() && items[j].mesh == it.mesh && items[j].material == it.material && items[j].pipeline == it.pipeline) {
                 j++;
@@ -875,9 +842,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     stats_.drawMs = ms(t3, t4);
 }
 
-// a sphere about the part of the view up to shadowDistance, seen from the
-// light along its direction: its size steady and its center on the texels
-// of the map, so that the shadows do not shimmer when the camera moves
+// a sphere about the view up to shadowDistance, its center snapped to the texels so that the shadows do not shimmer
 bool Renderer::shadowView(const Camera &cam, Mat4 &lightViewProj, float &texel) {
     if (length(env_.lightDirection) < 1e-6f) {
         return false;

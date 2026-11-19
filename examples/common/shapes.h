@@ -1,5 +1,4 @@
-// shapes.h - meshes made in code, so that the examples run without files:
-// boxes, cylinders, cones and a ground. Z is up, as everywhere in R4nkine.
+// shapes.h - boxes, cylinders, cones and a ground made in code, so that the examples run without files.
 #pragma once
 
 #include "r4/assets/model.h"
@@ -25,7 +24,7 @@ inline void addQuad(Mesh &m, Vec3 a, Vec3 b, Vec3 c, Vec3 d) {
     m.indices.insert(m.indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
 }
 
-// a box of the size given, centered on the origin
+// centered on the origin
 inline Mesh box(Vec3 size) {
     Mesh m;
     m.name = "box";
@@ -34,12 +33,12 @@ inline Mesh box(Vec3 size) {
     for (int i = 0; i < 8; i++) {
         p[i] = {i & 1 ? h.x : -h.x, i & 2 ? h.y : -h.y, i & 4 ? h.z : -h.z};
     }
-    addQuad(m, p[0], p[2], p[3], p[1]); // bottom
-    addQuad(m, p[4], p[5], p[7], p[6]); // top
-    addQuad(m, p[0], p[1], p[5], p[4]); // front (-Y)
-    addQuad(m, p[2], p[6], p[7], p[3]); // back
-    addQuad(m, p[0], p[4], p[6], p[2]); // left
-    addQuad(m, p[1], p[3], p[7], p[5]); // right
+    addQuad(m, p[0], p[2], p[3], p[1]);
+    addQuad(m, p[4], p[5], p[7], p[6]);
+    addQuad(m, p[0], p[1], p[5], p[4]);
+    addQuad(m, p[2], p[6], p[7], p[3]);
+    addQuad(m, p[0], p[4], p[6], p[2]);
+    addQuad(m, p[1], p[3], p[7], p[5]);
     m.computeBounds();
     return m;
 }

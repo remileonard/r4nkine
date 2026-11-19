@@ -1,14 +1,5 @@
-// pfb_loader.cpp - the binary files of IRIS Performer (.pfb), versions 1
-// (0xDB0ACE00) and 2 (0xDB0ACE01, scrambled coordinates). A port of the
-// loader of legacy_opengl_demo (src/mekton/pfb.c), whose layout was rebuilt
-// from the pfdLoadFile_pfb code of the IRIX executables.
-//
-// After a header (magic, version, 1, header size), chunks of records: type,
-// count, byte size. 0 materials, 1 textures, 2 texture environments, 3
-// geostates, 4..8 lists (lengths, coordinates, colors, normals, texture
-// coordinates), 10 geosets, 11 user data, 12 nodes, 14 morphs. Records
-// reference each other by their position in the chunks of their type; node
-// 0 is the root. Performer is Z-up, as R4nkine.
+// pfb_loader.cpp - the binary files of IRIS Performer (.pfb) versions 1 and 2 (scrambled coordinates), Z-up; port of src/mekton/pfb.c.
+// After the header, chunks of records referencing each other by their position in the chunks of their type; node 0 is the root.
 #include "r4/assets/model.h"
 
 #include <cmath>
@@ -266,7 +257,7 @@ struct File {
 void readGState(Reader &r, PGState &g) {
     std::vector<int> w = r.words();
     size_t i = 0;
-    while (i + 1 < w.size()) { // the last word is the user data
+    while (i + 1 < w.size()) {
         int key = w[i++];
         int v = i < w.size() ? w[i] : 0;
         switch (key) {
@@ -301,7 +292,7 @@ void readGState(Reader &r, PGState &g) {
         case GS_DECAL:
             g.decal = v;
             i += 3;
-            break; // mode, id, offset
+            break;
         case GS_LIGHTS:
             i += 1 + (v > 0 ? v : 0);
             break;
@@ -315,8 +306,8 @@ void readGState(Reader &r, PGState &g) {
 void readList(Reader &r, int type, PList &l, int version) {
     static const int comps[kListChunks] = {0, 0, 0, 0, 1, 3, 4, 3, 2};
     int n = r.i32();
-    r.i32(); // a cycle buffer
-    r.i32(); // user data
+    r.i32();
+    r.i32();
     if (n < 0 || r.error || r.p + 4L * n * comps[type] > r.end) {
         r.error = true;
         return;
@@ -346,23 +337,23 @@ void readGSet(Reader &r, PGSet &g) {
     for (int i = 0; i < 4; i++) {
         g.bind[i] = r.i32();
         g.list[i] = r.i32();
-        r.i32(); // index list: not used by the files of the demos
+        r.i32();
     }
-    r.i32(); // flat shading
-    r.i32(); // wireframe
-    r.i32(); // compile GL
+    r.i32();
+    r.i32();
+    r.i32();
     g.gstate = r.i32();
     r.i32();
-    r.f32(); // line width
-    r.f32(); // point size
-    r.i32(); // draw bin
-    r.u32(); // intersection mask
+    r.f32();
+    r.f32();
+    r.i32();
+    r.u32();
     r.i32();
     r.i32();
     for (int i = 0; i < 6; i++) {
-        r.f32(); // bounding box
+        r.f32();
     }
-    r.i32(); // user data
+    r.i32();
 }
 
 void readNode(Reader &r, PNode &nd) {
@@ -384,7 +375,6 @@ void readNode(Reader &r, PNode &nd) {
                 nd.bbPositions.push_back({wordFloat(w[2 + 3 * i]), wordFloat(w[3 + 3 * i]), wordFloat(w[4 + 3 * i])});
             }
             p = 2 + 3 * ngsets + 4;
-            // the axis, then the mode: 0 axial, else turned to the eye
             if (p - 1 < n) {
                 nd.bbPoint = w[p - 1] != 0;
             }
@@ -410,8 +400,6 @@ void readNode(Reader &r, PNode &nd) {
             p = 2;
             break;
         case NODE_LOD: {
-            // ranges (k + 1), transitions (k + 1), the center: kept when
-            // they look like distances
             int k = n > 1 && w[1] >= 0 && w[1] < n ? w[1] : 0;
             bool ok = 2 + 2 * (k + 1) + 3 <= n;
             for (int i = 0; ok && i <= k; i++) {
@@ -468,14 +456,13 @@ void readNode(Reader &r, PNode &nd) {
             }
         }
         if (p + 5 <= n) {
-            nd.travmask = (uint32_t)w[p]; // the cull traversal mask
+            nd.travmask = (uint32_t)w[p];
         }
     }
     nd.name = r.name();
 }
 
-// pfMorph: attributes (type, floats per element, elements, sources, dest
-// list, index flag, sources), then one weight per source
+// attributes (type, floats per element, elements, sources, dest list, index flag, sources), then one weight per source
 void applyMorph(File &f, const std::vector<int> &w) {
     static const int listType[6] = {0, CHUNK_COLORS, CHUNK_NORMALS, CHUNK_TEXCOORDS, CHUNK_COORDS, 0};
     if (w.empty()) {
@@ -555,7 +542,7 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
         case CHUNK_MATERIALS:
             for (int i = 0; i < count && !r.error; i++) {
                 PMtl m;
-                r.i32(); // side
+                r.i32();
                 m.alpha = r.f32();
                 m.shininess = r.f32();
                 for (float *v : {m.ambient, m.diffuse, m.specular, m.emission}) {
@@ -563,7 +550,7 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
                         v[k] = r.f32();
                     }
                 }
-                r.i32(); // color mode side
+                r.i32();
                 m.cmode = r.i32();
                 r.i32();
                 f.mtl.push_back(m);
@@ -628,7 +615,7 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
             }
             break;
         default:
-            break; // texture environments, user data, light points...
+            break;
         }
         r.p = next;
     }
@@ -696,7 +683,6 @@ struct Builder {
                 m.specular = {p.specular[0], p.specular[1], p.specular[2]};
                 m.emissive = {p.emission[0], p.emission[1], p.emission[2]};
                 m.shininess = p.shininess;
-                // the vertex colors drive ambient and diffuse (PFMTL_CMODE_AD)
                 if (vcolors && lit && p.cmode == CMODE_AMBIENT_AND_DIFFUSE) {
                     m.diffuse = {1, 1, 1, p.alpha};
                     m.ambient = {1, 1, 1};
@@ -720,7 +706,6 @@ struct Builder {
                 m.doubleSided = false;
             }
         }
-        // lit, the colors only count with the color mode; unlit, always
         m.vertexColors = vcolors && (!lit || (g && g->frontmtl >= 0 && g->frontmtl < (int)f.mtl.size() ? f.mtl[g->frontmtl].cmode == CMODE_AMBIENT_AND_DIFFUSE : true));
         int index = (int)model.materials.size();
         model.materials.push_back(m);
@@ -728,7 +713,6 @@ struct Builder {
         return index;
     }
 
-    // a geoset as one mesh (triangles, lines or points)
     int mesh(int gi, bool decal) {
         auto key = std::make_pair(gi, decal);
         auto it = meshes.find(key);
@@ -754,7 +738,7 @@ struct Builder {
         Mesh m;
         int prim = g.prim;
         m.primitive = prim == POINTS ? Primitive::POINTS : prim == LINES || prim == LINESTRIPS || prim == FLAT_LINESTRIPS ? Primitive::LINES : Primitive::TRIANGLES;
-        int vert = 0; // the next vertex of the lists
+        int vert = 0;
         auto attrib = [&](int a, int primIndex, int vertex, int comps) -> const float * {
             const PList *l = L[a];
             if (!l) {
@@ -766,7 +750,6 @@ struct Builder {
             }
             return &l->f[(size_t)i * comps];
         };
-        // flat strips: the colors and normals are per triangle, not per vertex
         auto vertexAt = [&](int primIndex, int v, int flatIndex) {
             Vertex out;
             const float *p = attrib(0, primIndex, v, 3);
@@ -788,7 +771,7 @@ struct Builder {
             }
             return out;
         };
-        int flatCounter = 0; // the per-vertex attributes of the flat primitives
+        int flatCounter = 0;
         for (int pi = 0; pi < g.nprims; pi++) {
             int len;
             switch (prim) {
@@ -869,7 +852,6 @@ struct Builder {
         }
         bool hasNormals = L[2] != nullptr;
         if (!hasNormals && m.primitive == Primitive::TRIANGLES) {
-            // no normals: lit only when the geostate says so; flat ones then
             for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
                 Vertex &a = m.vertices[m.indices[i]];
                 Vertex &b = m.vertices[m.indices[i + 1]];
@@ -887,7 +869,7 @@ struct Builder {
         return index;
     }
 
-    // the nodes; shared subgraphs are shared, except under the decal layers
+    // shared subgraphs stay shared, except under the decal layers
     std::map<std::pair<int, bool>, int> made;
     int node(int idx, bool decal, int depth) {
         if (idx < 0 || idx >= (int)f.node.size() || depth > 64) {
@@ -912,7 +894,6 @@ struct Builder {
         }
         std::vector<int> kids;
         if (pn.type == NODE_BBOARD) {
-            // the geosets at their positions, turned to the eye
             for (size_t i = 0; i < pn.gsets.size(); i++) {
                 int mi = mesh(pn.gsets[i], decal);
                 if (mi < 0) {
@@ -938,7 +919,6 @@ struct Builder {
             }
         }
         for (size_t i = 0; i < pn.children.size(); i++) {
-            // the children of a layer after the first are decals on it
             bool d = decal || (pn.type == NODE_LAYER && i > 0);
             int c = node(pn.children[i], d, depth + 1);
             if (c >= 0) {
@@ -947,8 +927,6 @@ struct Builder {
         }
         if (pn.type == NODE_SWITCH || pn.type == NODE_SEQUENCE || (pn.type == NODE_LOD && pn.lodRanges.empty())) {
             n.kind = NodeKind::SWITCH;
-            // Performer: PFSWITCH_ON -1, OFF -2 (a sequence shows its first frame,
-            // a LOD without ranges its most detailed child)
             n.switchValue = pn.type == NODE_SWITCH ? (pn.switchVal < -1 ? -2 : pn.switchVal) : pn.type == NODE_SEQUENCE ? std::max(0, pn.seqBegin) : 0;
         } else if (pn.type == NODE_LOD) {
             n.kind = NodeKind::LOD;

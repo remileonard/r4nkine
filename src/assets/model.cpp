@@ -26,8 +26,6 @@ void Mesh::computeNormals(float creaseDegrees) {
         return;
     }
     size_t triangles = indices.size() / 3;
-    // the faces: weighted by their area (the cross product not normalized),
-    // compared by their direction
     std::vector<Vec3> area(triangles);
     std::vector<Vec3> dir(triangles);
     for (size_t t = 0; t < triangles; t++) {
@@ -38,8 +36,6 @@ void Mesh::computeNormals(float creaseDegrees) {
         float l = length(area[t]);
         dir[t] = l > 0 ? area[t] / l : Vec3(0);
     }
-    // the faces around each position (not each vertex: the corners split
-    // for their uvs or colors are smoothed together)
     struct Less {
         bool operator()(const Vec3 &a, const Vec3 &b) const {
             return a.x != b.x ? a.x < b.x : a.y != b.y ? a.y < b.y : a.z < b.z;
@@ -52,8 +48,6 @@ void Mesh::computeNormals(float creaseDegrees) {
         }
     }
     float minCos = std::cos(radians(std::clamp(creaseDegrees, 0.0f, 180.0f)));
-    // each corner: the faces around it that are within the crease angle of
-    // its own; a vertex whose corners get different normals is split
     std::vector<Vertex> out;
     out.reserve(vertices.size());
     std::map<std::pair<uint32_t, std::array<int32_t, 3>>, uint32_t> made;
@@ -87,7 +81,6 @@ Box Model::bounds() const {
     if (nodes.empty()) {
         return box;
     }
-    // the meshes under the root, through the matrices of the nodes
     struct Item {
         int node;
         Mat4 m;
@@ -229,8 +222,6 @@ std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
     return nullptr;
 }
 
-// --- images ----------------------------------------------------------------
-
 static bool readFile(const std::string &path, std::vector<uint8_t> &data) {
     FILE *f = std::fopen(path.c_str(), "rb");
     if (!f) {
@@ -252,8 +243,7 @@ static uint32_t be32(const uint8_t *p) {
     return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3];
 }
 
-// the SGI image format of IRIX: verbatim or RLE, 1 or 2 bytes per channel,
-// rows from the bottom like OpenGL
+// SGI images: verbatim or RLE, 1 or 2 bytes per channel, rows from the bottom
 static bool loadSGI(const std::vector<uint8_t> &d, Image &img, std::string *error) {
     if (d.size() < 512 || be16(&d[0]) != 474) {
         if (error) {
@@ -415,11 +405,8 @@ static bool loadPNM(const std::vector<uint8_t> &d, Image &img, std::string *erro
     return true;
 }
 
-// the scrambled 16-bit images of perfly.face (.5551E): "SEn", the count of
-// inserted bytes, the width, the height (big-endian ints), then the bytes
-// xor'ed with 13 plus their position, runs of junk bytes inserted between
-// runs of image bytes, the image written from its last byte back to its
-// first; the pixels are RGBA 5551
+// the scrambled RGBA 5551 images of perfly.face (.5551E): "SEn", the count of inserted bytes, width, height, then the bytes xor'ed with 13 plus their position,
+// junk runs inserted between the image runs, written from the last byte back to the first
 static void numbers5551E(unsigned &s, unsigned &count, unsigned &skip) {
     const unsigned X = 10733;
     const unsigned Y = 951;

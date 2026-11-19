@@ -42,7 +42,6 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
         error = "pas de terrain";
         return false;
     }
-    // le sommet (x, y) de la carte, x vers l'est, y vers le sud (z de libRealSpace)
     auto vertex = [&](int x, int y) -> MapVertex * {
         AreaBlock *b = area->GetAreaBlockByCoo(0, x / r4bridge::BLOCK_SIDE_LVL0, y / r4bridge::BLOCK_SIDE_LVL0);
         if (!b || b->sideSize != r4bridge::BLOCK_SIDE_LVL0) {
@@ -51,8 +50,6 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
         return b->GetVertice(x % r4bridge::BLOCK_SIDE_LVL0, y % r4bridge::BLOCK_SIDE_LVL0);
     };
 
-    // la couleur d'un type : le ton le plus clair de sa rampe (l'eau bleue,
-    // le sable, la roche, le vert) ; magenta hors de la palette
     auto rampColor = [&](int t) -> Rgb {
         if (t >= (int)ranges.size()) {
             return {255, 0, 255};
@@ -78,11 +75,10 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
         }
     }
 
-    // les images : leur couleur moyenne (sans les texels clairs), leur usage
     struct Use {
         size_t triangles = 0;
-        std::map<int, size_t> onType;           // le type de terrain du sommet de la cellule
-        std::vector<std::pair<int, int>> cells; // les premières cellules (sommets de LVL0)
+        std::map<int, size_t> onType;
+        std::vector<std::pair<int, int>> cells;
         Rgb mean;
         int width = 0;
         int height = 0;
@@ -111,7 +107,7 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
                     const Texel &t = palette.colors[k];
                     px[i] = {t.r, t.g, t.b};
                     if (k == r4bridge::PALETTE_CLEAR) {
-                        px[i] = {255, 0, 255}; // clair : en magenta
+                        px[i] = {255, 0, 255};
                         continue;
                     }
                     r += t.r;
@@ -136,8 +132,6 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
             if (!v) {
                 continue;
             }
-            // la cellule de RSArea : le triangle bas (le sommet, en bas à droite,
-            // en bas) et le triangle haut (le sommet, à droite, en bas à droite)
             for (int half = 0; half < 2; half++) {
                 int id = half == 0 ? v->lowerImageID : v->upperImageID;
                 if (id == r4bridge::TEXTURE_NONE) {
@@ -160,8 +154,6 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
         }
     }
 
-    // all the textures of the game (TXMPACK then ACCPACK, the same on every
-    // map): all_<id>.ppm, clear texels in magenta
     for (int id = 0; id < 1024; id++) {
         RSImage *img = area->GetImageByID(id);
         if (!img || !img->data || !img->width || !img->height) {
@@ -198,7 +190,6 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
             for (auto &[t, n] : u.onType) {
                 std::fprintf(f, " %d:%zu", t, n);
             }
-            // où : la cellule (x, y) de LVL0, et le point de libRealSpace (x, z)
             std::fprintf(f, "   à");
             for (auto &[x, y] : u.cells) {
                 MapVertex *v = vertex(x, y);

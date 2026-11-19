@@ -1,24 +1,9 @@
 //
-//  r4objviewer - les objets 3D de Strike Commander (OBJECTS\*.IFF) vus par
-//  R4nkine.
-//
-//  libRealSpace lit tout : AssetManager ouvre les TRE, RSPalette la palette,
-//  RSEntity un objet. r4bridge::toModel() en fait un modèle R4nkine, que le
-//  Renderer charge sur le GPU (upload) et dessine.
-//
-//  Deux modes :
-//  - Objects : un objet du jeu à la fois ;
-//  - Missions : une mission (ou un monde seul) avec son terrain, les objets
-//    de la carte et ceux de la mission, chargés par libRealSpace (RSMission,
-//    RSWorld, RSArea) ; seulement celles dont le terrain (<tera>.PAK) est
-//    dans le dossier des données.
-//
-//    r4objviewer [-data DIR] [-tre FICHIER.TRE ...] [-object NOM] [-mission NOM] [-frames N] [-shot F.bmp]
+//  r4objviewer - les objets, les missions et les mondes de Strike Commander et Tactical Operations, lus par libRealSpace et dessinés par R4nkine.
+//  r4objviewer [-data DIR] [-tre FICHIER.TRE ...] [-object NOM] [-mission NOM] [-frames N] [-shot F.bmp]
 //
 //  -data     le dossier des TRE et des terrains .PAK (par défaut le dossier courant)
-//  -tre      les TRE à ouvrir (par défaut, chaque jeu présent seul : BIGTRE.TRE
-//            Strike Commander, TOBIGTRE.TRE Tactical Operations ; sinon
-//            OBJECTS.TRE + MISC.TRE)
+//  -tre      les TRE à ouvrir (par défaut, chaque jeu présent seul : BIGTRE.TRE Strike Commander, TOBIGTRE.TRE Tactical Operations ; sinon OBJECTS.TRE + MISC.TRE)
 //  -game G   le jeu au départ : sc ou to (par défaut, celui de -mission)
 //  -object   l'objet montré au départ (F-16DES, A-10...)
 //  -mission  la mission ou le monde montré au départ (MISN-A1, TURKEY...)
@@ -34,17 +19,11 @@
 //  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
 //  -mipmaps  les textures avec leurs mipmaps
 //  -aniso N  le filtrage anisotrope (1, 2, 4, 8, 16)
-//  -woods N  les arbres : 0 sur le vert et un bruit, 1 sur les bois peints dans
-//            les textures du jeu
-//  -forests N les forêts sur le vert du terrain : 0 aucune, 1 clairsemées,
-//            2 normales (par défaut), 3 denses
-//  -diag DIR avec -mission : les types de terrain et les textures de la carte,
-//            en images dans DIR (voir TerrainDiag.h)
+//  -woods N  les arbres : 0 sur le vert et un bruit, 1 sur les bois peints dans les textures
+//  -forests N la densité des forêts : 0 aucune, 1 clairsemées, 2 normales (par défaut), 3 denses
+//  -diag DIR avec -mission : les types de terrain et les textures de la carte, en images dans DIR
 //
-//  À gauche, la liste des objets ou des missions ; à droite, le rendu et les
-//  statistiques.
-//  Souris : bouton gauche tourner, molette zoom, bouton droit déplacer.
-//  Clavier : flèches haut et bas, objet précédent ou suivant ; Échap, quitter.
+//  Souris : bouton gauche tourner, molette zoom, bouton droit déplacer. Clavier : flèches haut et bas, objet précédent ou suivant ; Échap, quitter.
 //
 #include "../../r4bridge/R4Data.h"
 #include "engine/Config.hpp"
@@ -87,7 +66,6 @@ std::string upperOf(std::string s) {
     return s;
 }
 
-// --- la fenêtre : SDL2 + un contexte OpenGL core (3.3, 4.1 sur macOS) -----------------
 struct Window {
     SDL_Window *window = nullptr;
     SDL_GLContext context = nullptr;
@@ -133,14 +111,12 @@ struct Window {
     }
 };
 
-// --- un objet du jeu : son entrée dans le TRE ---------------------------------------
 struct ObjectEntry {
     std::string label; // F-16DES
     TreEntry *entry;
 };
 
-// les objets 3D des TRE ouverts : les entrées ...\OBJECTS\*.IFF
-// (of the first `own` TRE, those of a game; the next ones only complete it)
+// les entrées ...\OBJECTS\*.IFF des own premiers TRE ouverts : ceux du jeu, les suivants ne font que compléter
 std::vector<ObjectEntry> listObjects(AssetManager &assets, size_t own) {
     std::vector<ObjectEntry> list;
     for (size_t t = 0; t < assets.tres.size() && t < own; t++) {
@@ -194,14 +170,13 @@ void screenshot(const char *path, int w, int h) {
     std::vector<uint8_t> rgba((size_t)w * h * 4);
     glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
     SDL_Surface *s = SDL_CreateRGBSurfaceWithFormat(0, w, h, 32, SDL_PIXELFORMAT_ABGR8888);
-    for (int y = 0; y < h; y++) { // OpenGL commence en bas
+    for (int y = 0; y < h; y++) {
         std::memcpy((uint8_t *)s->pixels + (size_t)y * s->pitch, &rgba[(size_t)(h - 1 - y) * w * 4], (size_t)w * 4);
     }
     SDL_SaveBMP(s, path);
     SDL_FreeSurface(s);
 }
 
-// --- the scene graph, as the Scene Graph of r4fly ------------------------------------
 struct GraphView {
     std::map<const r4::scene::Node *, bool> open;      // the open nodes
     std::map<r4::scene::Node *, uint32_t> hiddenMasks; // the hidden nodes, their old mask
@@ -243,12 +218,11 @@ r4::ui::Color typeColor(r4::scene::NodeType t) {
     }
 }
 
-// a node and, open, its children: the light shows or hides it (its mask), a
-// click on its name selects it; returns the node clicked, with its center
+// la lampe montre ou cache le nœud, un clic sur son nom le choisit ; rend le nœud cliqué
 r4::scene::Node *graphRows(r4::ui::Context &gui, GraphView &view, r4::scene::Node &n, const r4::Mat4 &parent, int depth, r4::Vec3 &center, float &radius) {
     r4::scene::Node *clicked = nullptr;
     if (gui.remainingHeight() < 22) {
-        return nullptr; // the panel is full
+        return nullptr;
     }
     auto it = view.open.find(&n);
     if (it == view.open.end()) {
@@ -272,7 +246,6 @@ r4::scene::Node *graphRows(r4::ui::Context &gui, GraphView &view, r4::scene::Nod
     if (gui.treeRow(row, open, visible)) {
         view.selected = &n;
         clicked = &n;
-        // its bounds are in the space of its parent
         center = r4::transformPoint(parent, n.bounds().center);
         radius = n.bounds().radius;
     }
@@ -324,7 +297,7 @@ int main(int argc, char **argv) {
     bool mipmapsAtStart = false;
     float anisoAtStart = 1;
     int reliefAtStart = 2;
-    float sunAtStart[2] = {1000, 1000}; // -sun cap élévation
+    float sunAtStart[2] = {1000, 1000};
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
         if (a == "-data" && i + 1 < argc) {
@@ -341,58 +314,53 @@ int main(int argc, char **argv) {
             frames = std::atoi(argv[++i]);
         } else if (a == "-shot" && i + 1 < argc) {
             shot = argv[++i];
-        } else if (a == "-textures") { // la section des textures ouverte au départ
+        } else if (a == "-textures") {
             openTextures = true;
-        } else if (a == "-graph") { // le graphe de la scène ouvert au départ
+        } else if (a == "-graph") {
             graphAtStart = true;
-        } else if (a == "-lit") { // le terrain éclairé par le soleil
+        } else if (a == "-lit") {
             litTerrainAtStart = true;
-        } else if (a == "-relief" && i + 1 < argc) { // 0..4 : x1..x16
+        } else if (a == "-relief" && i + 1 < argc) {
             reliefAtStart = std::atoi(argv[++i]);
         } else if (a == "-sun" && i + 2 < argc) {
             sunAtStart[0] = (float)std::atof(argv[++i]);
             sunAtStart[1] = (float)std::atof(argv[++i]);
-        } else if (a == "-flat") { // le rendu plat (objets et terrain)
+        } else if (a == "-flat") {
             flatAtStart = true;
-        } else if (a == "-gouraud") { // l'éclairage des objets par sommet, comme le jeu
+        } else if (a == "-gouraud") {
             gouraudAtStart = true;
-        } else if (a == "-shadows") { // les ombres portées du soleil
+        } else if (a == "-shadows") {
             shadowsAtStart = true;
-        } else if (a == "-at" && i + 1 < argc) { // la cible au départ, en X,Y de R4nkine
+        } else if (a == "-at" && i + 1 < argc) {
             hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
-        } else if (a == "-upscale" && i + 1 < argc) { // 0..3 : non, 2xSaI, xBR 2x, xBR 4x
+        } else if (a == "-upscale" && i + 1 < argc) {
             upscaleAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
         } else if (a == "-mipmaps") {
             mipmapsAtStart = true;
         } else if (a == "-aniso" && i + 1 < argc) {
             anisoAtStart = std::max(1.0f, (float)std::atof(argv[++i]));
-        } else if (a == "-woods" && i + 1 < argc) { // 0 : le vert et un bruit ; 1 : les bois des textures
+        } else if (a == "-woods" && i + 1 < argc) {
             woodsAtStart = std::clamp(std::atoi(argv[++i]), 0, 1);
-        } else if (a == "-game" && i + 1 < argc) { // sc, to : le jeu au départ
+        } else if (a == "-game" && i + 1 < argc) {
             gameAtStart = argv[++i];
-        } else if (a == "-forests" && i + 1 < argc) { // 0..3 : aucune .. denses
+        } else if (a == "-forests" && i + 1 < argc) {
             forestsAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
-        } else if (a == "-diag" && i + 1 < argc) { // les types et les textures du terrain
+        } else if (a == "-diag" && i + 1 < argc) {
             diagDir = argv[++i];
         } else if (a == "-distance" && i + 1 < argc) {
             startDistance = (float)std::atof(argv[++i]);
         }
     }
 
-    // la qualité des textures du jeu, pour tous les modèles faits par le pont
     r4bridge::textureQuality().upscale = (r4::assets::Upscale)upscaleAtStart;
     r4bridge::textureQuality().mipmaps = mipmapsAtStart;
 
-    // --- 1. libRealSpace : la configuration (RSArea la lit ; sans fichier,
-    // ses valeurs par défaut), les TRE, la palette -----------------------------------
     Config &config = Config::getInstance();
     AssetManager &assets = AssetManager::getInstance();
     if (dataDir.back() != '/' && dataDir.back() != '\\') {
         dataDir += '/';
     }
     assets.SetBase(dataDir.c_str());
-    // la configuration du jeu, quand elle est là (les ombres du terrain de
-    // RSArea : terrain_shadow_lift, terrain_shadow_range...)
     for (const std::string &ini : {dataDir + "config.ini", dataDir + "assets/config.ini", std::string("./assets/config.ini")}) {
         if (SDL_RWops *f = SDL_RWFromFile(ini.c_str(), "rb")) {
             SDL_RWclose(f);
@@ -405,13 +373,10 @@ int main(int argc, char **argv) {
         config.setBool("Game", "object_gouraud", false);
         config.setBool("Game", "terrain_flat", true);
     }
-    // les jeux, chacun ses TRE ouverts seuls : Strike Commander et Tactical
-    // Operations ont les mêmes noms pour des fichiers différents (301 objets,
-    // la palette, les polices) ; -tre : un jeu fait de ces TRE
     struct Game {
         std::string name;
         std::vector<std::string> tres;
-        size_t own = 1000; // the TRE listed (its objects, its missions); the next ones only complete it
+        size_t own = 1000;
     };
     std::vector<Game> games;
     auto exists = [&](const std::string &file) {
@@ -424,10 +389,6 @@ int main(int argc, char **argv) {
     if (!tres.empty()) {
         games.push_back({"Custom", tres});
     } else {
-        // Strike Commander : ses textures du terrain (TXMPACK, ACCPACK) sont
-        // dans TEXTURES.TRE ; sans lui, celles de Tactical Operations (le
-        // premier TRE ouvert l'emporte : seuls les fichiers absents de
-        // BIGTRE.TRE viennent du second)
         if (exists("BIGTRE.TRE")) {
             Game sc{"Strike Commander", {"BIGTRE.TRE"}};
             if (exists("TEXTURES.TRE")) {
@@ -451,9 +412,8 @@ int main(int argc, char **argv) {
             game = (int)i;
         }
     }
-    bool lookForMission = !startMission.empty() && gameAtStart.empty(); // le jeu qui a cette mission
+    bool lookForMission = !startMission.empty() && gameAtStart.empty();
 
-    // --- R4nkine : la fenêtre et le device, une fois pour tous les jeux --------------------
     Window win;
     if (!win.open("r4objviewer - libRealSpace + R4nkine", 1400, 860)) {
         std::fprintf(stderr, "r4objviewer: %s\n", SDL_GetError());
@@ -471,8 +431,6 @@ int main(int argc, char **argv) {
     }
     std::printf("r4objviewer: %s\n", device->name());
 
-    // --- un jeu : ses TRE, sa palette, ses objets, ses missions ; le menu Game
-    // en change (tout est refait, la fenêtre reste)
     for (int tried = 0;;) {
         assets.init(games[game].tres);
         std::printf("r4objviewer: %s (%s)\n", games[game].name.c_str(), games[game].tres[0].c_str());
@@ -490,7 +448,6 @@ int main(int argc, char **argv) {
             return 1;
         }
         std::printf("r4objviewer: %zu objets\n", objects.size());
-        // les chemins des missions, des objets et des textures du terrain, comme le jeu
         assets.mission_root_path = "..\\..\\DATA\\MISSIONS\\";
         assets.object_root_path = "..\\..\\DATA\\OBJECTS\\";
         assets.texture_root_path = "..\\..\\DATA\\TXM\\";
@@ -509,7 +466,7 @@ int main(int argc, char **argv) {
             }
             lookForMission = false;
         }
-        int switchTo = -1; // le jeu choisi dans le menu Game
+        int switchTo = -1;
 
         {
             r4::render::Renderer renderer(*device);
@@ -517,12 +474,10 @@ int main(int argc, char **argv) {
             r4::render::PostProcess post(*device);
             r4::ui::Context gui(*device);
             r4::render::Environment &env = renderer.environment();
-            env.clearColor = {0.30f, 0.42f, 0.60f, 1}; // le ciel
-            // la lumière du jeu vient d'en haut, un peu de face
+            env.clearColor = {0.30f, 0.42f, 0.60f, 1};
             env.lightDirection = r4::normalize(r4::Vec3{0.3f, 0.5f, -0.8f});
             r4::Vec3 sky{env.clearColor.x, env.clearColor.y, env.clearColor.z};
 
-            // --- 3. un objet : RSEntity -> r4::assets::Model -> scène ----------------------
             int current = -1;
             for (size_t i = 0; i < objects.size(); i++) {
                 if (objects[i].label == startObject) {
@@ -538,7 +493,6 @@ int main(int argc, char **argv) {
             r4::scene::NodePtr root;
             r4::Sphere bounds;
             r4bridge::Lighting lighting;
-            // les textures de l'objet, pour les voir dans le panneau (première ligne en haut)
             struct Thumb {
                 std::string name;
                 int width;
@@ -551,7 +505,7 @@ int main(int argc, char **argv) {
             size_t modelTriangles = 0;
             double loadMs = 0;
             float listScroll = 0;
-            int listRows = 20; // recalculé à chaque image, selon la hauteur du panneau
+            int listRows = 20;
 
             auto load = [&](int index) {
                 const ObjectEntry &o = objects[index];
@@ -601,17 +555,15 @@ int main(int argc, char **argv) {
                     }
                     thumbs.push_back({img->name, im.width, im.height, img->nbframes, renderer.uploadImage(im, false)});
                 }
-                // la liste montre l'objet courant
                 if (index < (int)listScroll || index >= (int)listScroll + listRows) {
                     listScroll = (float)std::max(0, index - listRows / 2);
                 }
             };
             load(current);
 
-            // --- 3 bis. une mission : son terrain, ses objets (WorldScene) ----------------
             WorldScene world(assets, palette, renderer);
-            int mode = 0;          // 0 objets, 1 missions
-            int currentWorld = -1; // dans worlds
+            int mode = 0;
+            int currentWorld = -1;
             int terrainLod = 0;
             bool showTerrain = true;
             bool showMapObjects = true;
@@ -619,19 +571,16 @@ int main(int argc, char **argv) {
             bool showOverlays = true;
             bool showForests = true;
             bool showBuildings = true;
-            // les forêts : leur densité (r4bridge::forestOf), avant le chargement d'un monde
             int forests = forestsAtStart;
             const float kForestDensity[] = {0, 0.4f, 1, 2.5f};
             world.setForestDensity(kForestDensity[forests]);
-            int woods = woodsAtStart; // la source des arbres
+            int woods = woodsAtStart;
             world.setForestMode((r4bridge::ForestMode)woods);
-            std::vector<bool> showScenes; // by scene, then "no scene"
+            std::vector<bool> showScenes;
             GraphView graph;
             bool showGraph = graphAtStart;
             std::string worldError;
             const r4::Vec3 objectLight = env.lightDirection;
-            // le soleil : son cap et son élévation (degrés, les axes de R4nkine) ;
-            // env.lightDirection en est l'opposé (là où va la lumière)
             float sunHeading = r4::axes::headingOf(-objectLight);
             float sunElevation = r4::axes::pitchOf(-objectLight);
             auto sunTowards = [&]() {
@@ -644,11 +593,11 @@ int main(int argc, char **argv) {
                 sunElevation = r4::axes::pitchOf(towards);
             };
             bool dynamicTerrainLight = litTerrainAtStart;
-            int reliefChoice = std::clamp(reliefAtStart, 0, 4); // x1, x2, x4, x8, x16
+            int reliefChoice = std::clamp(reliefAtStart, 0, 4);
             auto reliefOf = [&]() {
                 return (float)(1 << reliefChoice);
             };
-            bool followGround = true; // la navigation : la cible posée sur le sol
+            bool followGround = true;
             float worldScroll = 0;
             auto loadWorld = [&](int index) {
                 currentWorld = index;
@@ -663,13 +612,13 @@ int main(int argc, char **argv) {
                 world.showForests(showForests);
                 world.showBuildings(showBuildings);
                 if (world.hasLight) {
-                    sunFrom(world.lightTowards); // la lumière du monde
+                    sunFrom(world.lightTowards);
                 }
                 if (world.terrainLightDynamic() != dynamicTerrainLight || world.terrainRelief() != reliefOf()) {
                     world.setTerrainLight(dynamicTerrainLight, reliefOf());
                 }
                 showScenes.assign(world.scenes().size() + 1, true);
-                showScenes.back() = false; // the parts of no scene: hidden at first
+                showScenes.back() = false;
                 graph.reset();
                 std::printf("r4objviewer: %s : %zu triangles de terrain, %zu objets de carte, %zu parts, %zu bâtiments, "
                             "%zu arbres, %.0f ms\n",
@@ -679,7 +628,6 @@ int main(int argc, char **argv) {
                 }
             };
 
-            // --- 4. la caméra : r4::render::Orbit tourne autour d'un point ------------------
             r4::render::Orbit orbit;
             orbit.setAngles(-140, 20, 0);
             r4::Vec3 target = bounds.center;
@@ -690,11 +638,9 @@ int main(int argc, char **argv) {
                 target = bounds.center;
                 distance = bounds.radius * 3;
             };
-            // une mission : la caméra sur le joueur (ou le milieu de la carte), d'un peu haut
             auto selectWorld = [&](int index) {
                 loadWorld(index);
                 if (world.parts().empty()) {
-                    // un monde seul : toute la carte
                     r4::Sphere b = world.root()->bounds();
                     target = b.center;
                     distance = b.radius * 1.6f;
@@ -759,9 +705,7 @@ int main(int argc, char **argv) {
             bool openPost = false;
             bool openPerf = true;
             bool openObject = true;
-            bool vsync = true; // SDL_GL_SetSwapInterval(1) à l'ouverture de la fenêtre
-            // le rendu plat et l'éclairage par sommet, d'après la configuration du
-            // jeu : object_gouraud (faux : les objets à plat), terrain_flat
+            bool vsync = true;
             bool flat = !config.getBool("Game", "object_gouraud", true) || config.getBool("Game", "terrain_flat", false);
             bool gouraudByVertex = gouraudAtStart;
             renderer.options().rampGouraud = gouraudByVertex;
@@ -772,8 +716,6 @@ int main(int argc, char **argv) {
             bool openScenes = true;
             bool openSun = false;
             bool openNav = true;
-            // les ombres portées : une shadow map du soleil sur la vue jusqu'à
-            // leur distance (Auto : celle de la caméra x 3)
             bool shadows = shadowsAtStart;
             int shadowRange = 0;
             const float kShadowRanges[] = {0, 500, 2000, 10000, 50000};
@@ -783,11 +725,10 @@ int main(int argc, char **argv) {
             Uint64 lastFrame = SDL_GetPerformanceCounter();
             const float leftWidth = 230;
             const float rightWidth = 310;
-            r4::Vec2 doubleClick{-1, -1}; // un double clic sur la vue, en points
-            int lastVx = 0;               // la vue de l'image précédente, en pixels
+            r4::Vec2 doubleClick{-1, -1};
+            int lastVx = 0;
             int lastVw = 1;
             while (!quit) {
-                // les événements : sur un panneau la souris va à la GUI, sinon à la caméra
                 input.pressed = input.released = false;
                 input.wheel = 0;
                 SDL_Event e;
@@ -796,13 +737,11 @@ int main(int argc, char **argv) {
                     if (e.type == SDL_QUIT || (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_ESCAPE)) {
                         quit = true;
                     }
-                    // les flèches : l'objet suivant ou précédent ; dans une mission, elles déplacent
                     if (e.type == SDL_KEYDOWN && mode == 0 && (e.key.keysym.sym == SDLK_DOWN || e.key.keysym.sym == SDLK_UP)) {
                         int step = e.key.keysym.sym == SDLK_DOWN ? 1 : -1;
                         int n = (int)objects.size();
                         select((current + step + n) % n);
                     }
-                    // dans une mission, un double clic sur le terrain y amène la caméra
                     if (e.type == SDL_MOUSEBUTTONDOWN && e.button.button == SDL_BUTTON_LEFT && e.button.clicks == 2 && !guiMouse && mode == 1 && currentWorld >= 0) {
                         doubleClick = {(float)e.button.x, (float)e.button.y};
                     }
@@ -842,9 +781,7 @@ int main(int argc, char **argv) {
                 }
                 float frameSeconds = frameMs.empty() ? 1.0f / 60 : std::min(0.1f, frameMs.back() / 1000.0f);
 
-                // --- la navigation dans une mission ---------------------------------------
                 if (mode == 1 && currentWorld >= 0) {
-                    // le clavier (les touches à leur place : WASD en QWERTY, ZQSD en AZERTY)
                     const Uint8 *keys = SDL_GetKeyboardState(nullptr);
                     float fwd = (keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN] ? 1.0f : 0.0f);
                     float side = (keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT] ? 1.0f : 0.0f);
@@ -852,7 +789,6 @@ int main(int argc, char **argv) {
                     float zoom = (keys[SDL_SCANCODE_F] ? 1.0f : 0.0f) - (keys[SDL_SCANCODE_R] ? 1.0f : 0.0f);
                     bool fast = keys[SDL_SCANCODE_LSHIFT] || keys[SDL_SCANCODE_RSHIFT];
                     if (fwd != 0 || side != 0) {
-                        // dans le plan du sol, à une vitesse qui suit le recul de la caméra
                         r4::Vec3 f = orbit.forward();
                         r4::Vec3 r = orbit.right();
                         f -= r4::axes::kUp * r4::axes::heightOf(f);
@@ -876,7 +812,6 @@ int main(int argc, char **argv) {
                     if (zoom != 0) {
                         distance *= std::exp(zoom * frameSeconds * (fast ? 2.5f : 1.2f));
                     }
-                    // le double clic : le point du terrain sous la souris
                     if (doubleClick.x >= 0) {
                         float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
                         float nx = (doubleClick.x * pixel - lastVx) / lastVw * 2 - 1;
@@ -886,7 +821,6 @@ int main(int argc, char **argv) {
                         r4::Vec4 b = inv * r4::Vec4(nx, ny, 1, 1);
                         r4::Vec3 from = r4::Vec3(a) / a.w;
                         r4::Vec3 dir = r4::normalize(r4::Vec3(b) / b.w - r4::Vec3(a) / a.w);
-                        // la marche le long du rayon, puis une dichotomie
                         float step = std::max(5.0f, distance / 200);
                         float t0 = 0;
                         float ground = 0;
@@ -906,18 +840,16 @@ int main(int argc, char **argv) {
                                 hit = true;
                             }
                             t0 = t;
-                            step *= 1.01f; // plus loin, plus vite
+                            step *= 1.01f;
                         }
                         doubleClick = {-1, -1};
                     }
-                    // la cible sur le sol
                     float ground = 0;
                     if (followGround && world.groundHeight(target, ground)) {
                         target = target - r4::axes::kUp * r4::axes::heightOf(target) + r4::axes::kUp * ground;
                     }
                 }
 
-                // les temps de l'image précédente
                 Uint64 now = SDL_GetPerformanceCounter();
                 auto push = [](std::deque<float> &d, double v) {
                     d.push_back((float)v);
@@ -931,7 +863,6 @@ int main(int argc, char **argv) {
                 push(cullMs, st.cullMs);
                 push(drawMs, st.drawMs);
 
-                // le niveau de détail vu : la distance de l'œil, comme le renderer la mesure
                 float eyeDistance = r4::length(orbit.eye() - bounds.center);
                 int shownLod = 0;
                 if (model && model->nodes.size() > 1 && model->nodes[1].kind == r4::assets::NodeKind::LOD) {
@@ -944,7 +875,6 @@ int main(int argc, char **argv) {
                     }
                 }
 
-                // --- la GUI : à gauche les objets, à droite le rendu et les statistiques -------
                 gui.beginFrame(win.pointWidth, win.pointHeight, input, win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1);
 
                 gui.beginPanel("objects", {0, 0, leftWidth, (float)win.pointHeight}, "r4objviewer");
@@ -963,7 +893,6 @@ int main(int argc, char **argv) {
                     selectWorld(0);
                 }
                 if (mode == 1) {
-                    // les missions et les mondes dont le terrain est là
                     if (worlds.empty()) {
                         gui.message("No terrain (.PAK) in the data\nfolder for these missions.");
                     } else {
@@ -996,7 +925,6 @@ int main(int argc, char **argv) {
                     }
                     gui.columns(1);
                     {
-                        // la liste : autant de lignes que le panneau en tient, la molette la fait défiler
                         listRows = std::max(4, (int)(gui.remainingHeight() / 21.0f) - 1);
                         int maxFirst = std::max(0, (int)objects.size() - listRows);
                         listScroll = std::clamp(listScroll - input.wheel * 3, 0.0f, (float)maxFirst);
@@ -1018,14 +946,12 @@ int main(int argc, char **argv) {
                 }
 
                 gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight}, "r4objviewer");
-                // le graphe de la scène, sous son bouton
                 gui.toggle("Scene Graph", showGraph);
                 if (showGraph) {
                     r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
                     r4::Vec3 center;
                     float radius = 0;
                     if (graphRows(gui, graph, shown, r4::Mat4(1.0f), 0, center, radius)) {
-                        // la caméra sur le nœud cliqué
                         target = center;
                         distance = std::max(radius * 3, 60.0f);
                     }
@@ -1036,8 +962,6 @@ int main(int argc, char **argv) {
                     gui.toggle("Textures", renderer.options().textures);
                     gui.columns(1);
                     if (gui.toggle("Flat Shading", flat)) {
-                        // les objets : la normale de la face (le object_gouraud du jeu) ;
-                        // le terrain : ses couleurs refaites par RSArea (terrain_flat)
                         renderer.options().flatShading = flat;
                         config.setBool("Game", "terrain_flat", flat);
                         if (mode == 1 && currentWorld >= 0) {
@@ -1047,8 +971,6 @@ int main(int argc, char **argv) {
                     if (gui.toggle("Gouraud by Vertex (as the game)", gouraudByVertex)) {
                         renderer.options().rampGouraud = gouraudByVertex;
                     }
-                    // les textures : agrandies une fois, au chargement, puis filtrées ;
-                    // l'objet ou le monde est refait
                     r4bridge::TextureQuality &tq = r4bridge::textureQuality();
                     int up = (int)tq.upscale;
                     bool remake = gui.menu("Texture Upscale", up, {"None (as the game)", "2xSaI", "xBR 2x", "xBR 4x"});
@@ -1076,7 +998,7 @@ int main(int argc, char **argv) {
                     gui.slider("LOD Scale", renderer.options().lodScale, 0.05f, 4, "%.2f", true);
                     bool relit = gui.slider("Ambient", lighting.ambient, 0, 1);
                     relit |= gui.slider("Light", lighting.light, 0, 1);
-                    if (relit) { // la lumière est dans les matériaux : l'objet est refait
+                    if (relit) {
                         load(current);
                     }
                     if (gui.color("Sky", sky)) {
@@ -1137,8 +1059,6 @@ int main(int argc, char **argv) {
                     gui.toggle("Cast Shadows", shadows);
                     if (shadows) {
                         gui.menu("Shadow Distance", shadowRange, {"Auto (the view)", "500", "2 000", "10 000", "50 000"});
-                        // ce qui n'est pas éclairé par le soleil : le terrain de
-                        // la lumière des données, les pistes
                         gui.slider("Shadow on Unlit", renderer.options().shadowStrength, 0, 1, "%.2f");
                     }
                 }
@@ -1208,7 +1128,6 @@ int main(int argc, char **argv) {
                             gui.message(worldError.c_str());
                         }
                     }
-                    // un clic : la caméra sur l'objet
                     auto itemList = [&](const std::vector<WorldScene::Item> &items) {
                         for (const WorldScene::Item &it : items) {
                             r4::ui::Context::TreeRow row;
@@ -1225,7 +1144,6 @@ int main(int argc, char **argv) {
                         }
                     };
                     if (!world.scenes().empty() && gui.section(fmt("Scenes (%zu)", world.scenes().size()).c_str(), openScenes)) {
-                        // the parts by the scene that makes them appear
                         for (size_t sc = 0; sc <= world.scenes().size(); sc++) {
                             bool last = sc == world.scenes().size();
                             std::string label = last ? fmt("No scene (%zu)", world.partsWithoutScene) : fmt("%s (%zu)", world.scenes()[sc].label.c_str(), world.scenes()[sc].parts);
@@ -1267,7 +1185,6 @@ int main(int argc, char **argv) {
 
                 gui.endFrame();
 
-                // --- la scène entre les panneaux, puis la GUI par-dessus -------------------------
                 float pixel = win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1;
                 int vx = (int)(leftWidth * pixel);
                 int vw = std::max(1, win.width - (int)((leftWidth + rightWidth) * pixel));
@@ -1277,15 +1194,12 @@ int main(int argc, char **argv) {
                 orbit.distance = distance;
                 bool showWorld = mode == 1 && currentWorld >= 0;
                 if (showWorld) {
-                    // un monde : la carte fait 360 km de côté
                     orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, std::max(1.0f, distance * 0.01f), distance + 600000.0f);
-                    env.lightDirection = -sunTowards(); // le soleil
+                    env.lightDirection = -sunTowards();
                 } else {
                     orbit.apply(camera, 45, win.height > 0 ? (float)vw / win.height : 1, distance * 0.01f, distance + bounds.radius * 400);
-                    env.lightDirection = -sunTowards(); // le soleil
+                    env.lightDirection = -sunTowards();
                 }
-                // les ombres : sur la vue jusqu'à leur distance, les objets
-                // jusqu'à 8 km vers le soleil (un avion haut au-dessus du sol)
                 renderer.options().shadows = shadows;
                 renderer.options().shadowDistance = shadowRange > 0 ? kShadowRanges[shadowRange] : std::max(distance * 3, 100.0f);
                 renderer.options().shadowCasterReach = showWorld ? 8000.0f : std::max(distance * 2, bounds.radius * 4);
@@ -1296,7 +1210,7 @@ int main(int argc, char **argv) {
                 renderer.setTarget({});
                 post.end(0, 0, win.width, win.height, win.width, win.height);
                 gui.render();
-                device->takeStats(); // les draws de la GUI ne sont pas ceux de la scène
+                device->takeStats();
                 if (!shot.empty() && frames == 0) {
                     screenshot(shot.c_str(), win.width, win.height);
                 }
@@ -1309,7 +1223,6 @@ int main(int argc, char **argv) {
         if (switchTo < 0) {
             break;
         }
-        // l'autre jeu, de zéro : ni mission ni objet de départ
         game = switchTo;
         startMission.clear();
         focus.clear();

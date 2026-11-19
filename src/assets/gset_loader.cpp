@@ -1,10 +1,4 @@
-// gset_loader.cpp - the line drawings of the Mekton demo (.gset): the
-// texts and the instruments of its head-up display. Text lines:
-//   G <type>        a new geoset (LINESTRIPS)
-//   C n, c r g b a  its color
-//   V n, v x y z    its vertices
-//   L n, l len      the lengths of its line strips
-// Each geoset becomes a mesh of unlit lines.
+// gset_loader.cpp - the line drawings of the head-up display of the Mekton demo (.gset): G a geoset, C/c its color, V/v its vertices, L/l its strip lengths.
 #include "r4/assets/model.h"
 
 #include <cmath>

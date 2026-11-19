@@ -1,5 +1,4 @@
-// overlay.cpp - a raster surface shown by the GPU: the palette applied in the
-// shader for the indexed surfaces.
+// overlay.cpp - a raster surface on the GPU, the palette of the indexed ones applied in the shader.
 #include "r4/render/overlay.h"
 
 #include <algorithm>
@@ -14,17 +13,16 @@ namespace {
 
 const char *kVertex = R"(#version 330
 layout(std140) uniform Overlay {
-    vec4 rect;   // x0 y0 x1 y1 in clip space: x0 y0 where the first row starts
-    vec4 params; // indexed, transparent index, opacity, smooth
-    vec4 size;   // the surface: width, height
+    vec4 rect;
+    vec4 params;
+    vec4 size;
 };
 out vec2 vUV;
 void main() {
-    // two triangles from the vertex index
     int i = gl_VertexID;
     int c = i < 3 ? i : (i == 3 ? 2 : (i == 4 ? 1 : 3));
     vec2 t = vec2(c & 1, c >> 1);
-    vUV = t; // v = 0 on the first row of the surface (its top)
+    vUV = t;
     gl_Position = vec4(mix(rect.x, rect.z, t.x), mix(rect.y, rect.w, t.y), 0.0, 1.0);
 }
 )";
@@ -35,8 +33,8 @@ layout(std140) uniform Overlay {
     vec4 params;
     vec4 size;
 };
-uniform sampler2D image;   // the indices (R8) or the colors (RGBA8), first row at v = 0
-uniform sampler2D palette; // 256 x 1
+uniform sampler2D image;
+uniform sampler2D palette;
 in vec2 vUV;
 out vec4 fragColor;
 vec4 lookup(ivec2 p) {
@@ -53,8 +51,6 @@ void main() {
     if (params.x > 0.5) {
         vec2 p = vUV * size.xy;
         if (params.w > 0.5) {
-            // the 4 nearest pixels looked up, then mixed: the colors are
-            // filtered, not the indices
             vec2 q = p - 0.5;
             ivec2 b = ivec2(floor(q));
             vec2 f = q - vec2(b);
@@ -92,7 +88,6 @@ struct Overlay::Impl {
     int transparent = -1;
     uint64_t version = ~0ull;
     const raster::Surface *last = nullptr;
-    // the texture for the materials
     gpu::RenderTargetHandle target;
     bool targetDirty = true;
 
@@ -107,7 +102,6 @@ struct Overlay::Impl {
         td.width = w;
         td.height = h;
         td.format = f == raster::Format::INDEXED8 ? gpu::TextureFormat::R8 : gpu::TextureFormat::RGBA8;
-        // indices are never filtered by the sampler; true colors when smooth
         td.minFilter = td.magFilter = f == raster::Format::RGBA8 && smoothFilter ? gpu::Filter::LINEAR : gpu::Filter::NEAREST;
         td.mipmaps = false;
         td.wrapS = td.wrapT = gpu::Wrap::CLAMP;
@@ -196,7 +190,6 @@ void Overlay::update(const raster::Surface &s, const raster::Palette *palette) {
     if (&s == d->last && s.version() == d->version) {
         return;
     }
-    // the rows as they are, the first one at v = 0: the shader reads them so
     d->device.updateTexture(d->image, 0, 0, s.width(), s.height(), s.pixels());
     d->version = s.version();
     d->last = &s;
@@ -250,8 +243,6 @@ gpu::TextureHandle Overlay::texture() {
         clear.depth = false;
         clear.r = clear.g = clear.b = clear.a = 0;
         d->device.beginPass(d->target, 0, 0, d->width, d->height, clear);
-        // the first row of the surface at the top of the texture (v = 1), as
-        // the images of the materials
         d->drawQuad(-1, 1, 1, -1, 1);
         d->device.endPass();
         d->device.resolveRenderTarget(d->target);

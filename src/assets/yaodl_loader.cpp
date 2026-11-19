@@ -1,26 +1,5 @@
-// yaodl_loader.cpp - the YAODL objects of powerflip and flip (.ydl, .defs).
-//
-// A port of the reconstruction of the YAODL library in legacy_opengl_demo
-// (src/powerflip/yaodl.c): the same parser and the same execution of the
-// objects, whose drawing calls are recorded into meshes instead of being
-// sent to IRIS GL. Syntax:
-//
-//     #YAODL                          optional header, '#' starts a comment
-//     name = object,                  a definition, used later by its name
-//     (class arg arg ..., : attr ...) an object; ": attr" associates attr
-//     1 2 3   1.0 2 3   "file" word   ints, floats, strings
-//     @type<NUL><size><data>          a binary block, big-endian floats,
-//                                     ints or indices
-//
-// The execution model is that of the original C++ classes: an object has N
-// elements; the attributes associated with ':' apply their element i to the
-// element i of the object, and are popped and pushed again between two
-// elements. The matrices of translates/scales/rotates are applied to the
-// vertices; colors drive the ambient and diffuse (lmcolor); lines without
-// normals and the objects under nofliplighting are not lit; textures are
-// loaded from the folder of the model; NURBS surfaces are tessellated
-// (their trimming curves are ignored); the texture generation (contours,
-// sphere maps) is not reproduced. The objects are Y-up.
+// yaodl_loader.cpp - the YAODL objects of powerflip and flip (.ydl, .defs), Y-up.
+// A port of src/powerflip/yaodl.c whose IRIS GL calls are recorded into meshes; NURBS are tessellated without their trimming curves, the texture generation is not reproduced.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 
@@ -37,8 +16,6 @@ namespace {
 
 struct Yobj;
 using YobjP = std::shared_ptr<Yobj>;
-
-// --- the recording of the IRIS GL immediate mode -----------------------------
 
 enum ContourMode {
     CONTOUR_UNKNOWN = -1,
@@ -57,8 +34,7 @@ struct Recorder {
     Vec2 uv;
     int texture = -1; // an index in model.images
     int unlit = 0;    // nesting of lmbind(LMODEL, 0)
-    // the texture coordinate generation of s and t: 0 off, 1 a plane of the
-    // object (contour, linear), 2 the sphere map
+    // s and t generation: 0 off, 1 an object plane, 2 the sphere map
     struct Contour {
         int mode = CONTOUR_OFF;
         float plane[4] = {0, 0, 0, 0};
@@ -80,7 +56,6 @@ struct Recorder {
     std::vector<Vertex> prim;
     std::vector<bool> primNormal;
 
-    // the meshes by (texture, lit, primitive, sphere map)
     std::map<std::tuple<int, bool, int, bool>, Mesh> meshes;
 
     explicit Recorder(Model &m) : model(m) {
@@ -141,7 +116,6 @@ struct Recorder {
             if (n < 3) {
                 return;
             }
-            // the faces without normals get theirs
             bool any = false;
             for (bool b : primNormal) {
                 any = any || b;
@@ -184,8 +158,7 @@ struct Recorder {
         }
     }
 
-    // a texture file, searched as the original did: as given, in the folder
-    // of the model, then by its name in the folder (the IRIX absolute paths)
+    // searched as given, in the folder of the model, then by its name in that folder
     int loadTexture(const std::string &name) {
         auto it = textureByName.find(name);
         if (it != textureByName.end()) {
@@ -214,8 +187,6 @@ struct Recorder {
         return index;
     }
 };
-
-// --- the objects ---------------------------------------------------------------
 
 enum class Cls {
     FLOAT,
@@ -509,7 +480,6 @@ struct Exec {
     void execute(Yobj &o) {
         switch (o.cls) {
         case Cls::LINES: {
-            // lines without normals are not lit
             bool lit = false;
             for (auto &a : o.assoc) {
                 lit = lit || a->cls == Cls::NORMALS;
@@ -556,7 +526,6 @@ struct Exec {
             break;
         }
         case Cls::Nurbs: {
-            // the attributes (trimming curves) go inside the surfaces
             listPush(o.assoc, true);
             for (int i = 0; i < o.count; i++) {
                 executeN(o, i);
@@ -569,9 +538,7 @@ struct Exec {
         }
     }
 
-    // a NURBS surface: points sampled on a grid, in triangle strips
     static double basis(const std::vector<double> &knots, int order, int i, double u) {
-        // Cox - de Boor, iterative on a small table
         std::vector<double> N(order);
         for (int j = 0; j < order; j++) {
             double a = knots[i + j];
@@ -658,7 +625,6 @@ struct Exec {
                     Vec3 dv = at(a, std::min(bb + 1, TN)) - at(a, std::max(bb - 1, 0));
                     r.normal = normalize(cross(du, dv));
                     r.haveNormal = true;
-                    // the bilinear texture patch of the original
                     r.uv = {(float)a / SN, (float)bb / TN};
                     r.vertex(at(a, bb));
                 }
@@ -668,8 +634,6 @@ struct Exec {
         r.haveNormal = saved;
     }
 };
-
-// --- the parser ------------------------------------------------------------------
 
 struct Parser {
     const unsigned char *s;
@@ -837,7 +801,6 @@ struct Parser {
             return o;
         }
         if (type == "indices") {
-            // npolys, the size of each, the indices
             o->cls = Cls::INDICES;
             o->className = "indices";
             if (n < 1 || iv[0] < 0 || 1 + iv[0] > n) {
@@ -1111,8 +1074,6 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     }
     if (name == "sContours" || name == "tContours") {
-        // "mode, space, plane, ...": contour, linear, spheremap or off; eye or
-        // object; a plane of 4 numbers except for spheremap and off
         o->cls = Cls::Contours;
         size_t k = 0;
         while (k < args.size()) {
@@ -1125,7 +1086,7 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
             if (c.mode == CONTOUR_UNKNOWN || k >= args.size() || args[k]->cls != Cls::STRING) {
                 return nullptr;
             }
-            k++; // eye or object: the planes are taken in the object
+            k++;
             if (c.mode == CONTOUR_LINEAR) {
                 if (k >= args.size()) {
                     return nullptr;
@@ -1198,7 +1159,6 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         o->cls = Cls::TrimCurves;
         return o;
     }
-    // the classes of lights, animation... are parsed and ignored
     o->cls = Cls::Unknown;
     o->kids = args;
     return o;
@@ -1247,8 +1207,6 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
         ex.execute(*o);
     }
 
-    // the materials: lit or not, textured or not; the colors drive the
-    // ambient and diffuse as lmcolor(LMC_AD), the faces are two-sided
     Node root;
     root.name = path;
     root.local = axes::fromYUpMatrix();
@@ -1275,7 +1233,6 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
             model->materials.push_back(m);
         }
         mesh.material = it->second;
-        // transparent vertex colors
         for (const Vertex &v : mesh.vertices) {
             if ((v.color >> 24) < 255) {
                 model->materials[mesh.material].alpha = AlphaMode::BLEND;

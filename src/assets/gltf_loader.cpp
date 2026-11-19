@@ -1,13 +1,4 @@
-// gltf_loader.cpp - glTF 2.0 (.gltf with its buffers, .glb), with cgltf (MIT, the
-// cgltf port of vcpkg).
-//
-// Read: the node hierarchy (matrices or translation, rotation, scale), the
-// meshes and all their primitive modes, positions, normals, the first
-// texture coordinates and colors, indices; the materials: base color and
-// its texture, emission, alpha modes, double-sided, KHR_materials_unlit. The
-// metallic-roughness model is approximated by Blinn-Phong until the PBR
-// shading comes. The images may be files, data URIs or buffer views. glTF
-// is Y-up: the root turns +Y into +Z.
+// gltf_loader.cpp - glTF 2.0 (.gltf, .glb) with cgltf; metallic-roughness approximated by Blinn-Phong; Y-up, the root turns +Y into +Z.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 
@@ -129,7 +120,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
     auto model = std::make_shared<Model>();
     model->source = path;
 
-    // the images, loaded once each
     std::map<const cgltf_image *, int> images;
     auto imageOf = [&](const cgltf_texture *t) -> int {
         if (!t || !t->image) {
@@ -145,7 +135,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         if (readImage(*t->image, dir, opts, img, &err)) {
             img.name = t->image->uri ? t->image->uri : (t->image->name ? t->image->name : "embedded");
             if (t->sampler) {
-                img.clampS = t->sampler->wrap_s == 33071; // GL_CLAMP_TO_EDGE
+                img.clampS = t->sampler->wrap_s == 33071;
                 img.clampT = t->sampler->wrap_t == 33071;
             }
             index = (int)model->images.size();
@@ -157,7 +147,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         return index;
     };
 
-    // the materials
     std::map<const cgltf_material *, int> materials;
     for (size_t i = 0; i < data->materials_count; i++) {
         const cgltf_material &gm = data->materials[i];
@@ -168,7 +157,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             const auto &pbr = gm.pbr_metallic_roughness;
             m.diffuse = {pbr.base_color_factor[0], pbr.base_color_factor[1], pbr.base_color_factor[2], pbr.base_color_factor[3]};
             m.diffuseImage = imageOf(pbr.base_color_texture.texture);
-            // Blinn-Phong from the roughness and metalness, for now
             float rough = std::fmin(std::fmax(pbr.roughness_factor, 0.05f), 1.0f);
             float spec = 0.04f + 0.5f * pbr.metallic_factor * (1 - rough);
             m.specular = {spec, spec, spec};
@@ -188,7 +176,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         materials[&gm] = (int)model->materials.size();
         model->materials.push_back(m);
     }
-    // the colored materials (COLOR_0): a copy with vertex colors
     std::map<std::pair<int, bool>, int> colored;
     auto materialFor = [&](const cgltf_material *gm, bool vcolors) {
         int base = gm && materials.count(gm) ? materials[gm] : -1;
@@ -210,7 +197,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         return colored[key] = index;
     };
 
-    // the meshes: one per primitive
     std::map<const cgltf_mesh *, std::vector<int>> meshes;
     for (size_t mi = 0; mi < data->meshes_count; mi++) {
         const cgltf_mesh &gm = data->meshes[mi];
@@ -246,7 +232,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                     m.vertices[v].normal = {f[0], f[1], f[2]};
                 }
                 if (uv && v < uv->count && cgltf_accessor_read_float(uv, v, f, 2)) {
-                    m.vertices[v].uv = {f[0], 1 - f[1]}; // the rows of the images go up
+                    m.vertices[v].uv = {f[0], 1 - f[1]};
                 }
                 if (col && v < col->count) {
                     int n = cgltf_num_components(col->type);
@@ -268,7 +254,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                     idx[k] = (uint32_t)k;
                 }
             }
-            // the strips, fans and loops as lists
             switch (prim.type) {
             case cgltf_primitive_type_triangles:
                 m.indices = idx;
@@ -321,7 +306,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         }
     }
 
-    // the nodes: node 0 the root (Y-up turned to Z-up), glTF node i at 1 + i
     model->nodes.resize(1 + data->nodes_count);
     model->nodes[0].name = path;
     model->nodes[0].local = axes::fromYUpMatrix();
@@ -343,7 +327,6 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             model->nodes[0].children.push_back(1 + (int)(scene->nodes[k] - data->nodes));
         }
     } else {
-        // no scene: the nodes without parent
         for (size_t i = 0; i < data->nodes_count; i++) {
             if (!data->nodes[i].parent) {
                 model->nodes[0].children.push_back(1 + (int)i);

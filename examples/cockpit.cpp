@@ -1,13 +1,4 @@
-// cockpit - r4::raster and the post process: a cockpit drawn on the CPU over
-// the scene, as the old games did, a HUD in true colors at the size of the
-// window, a screen of the cockpit on a mesh of the scene, and the effects on
-// the whole frame.
-//
-// The cockpit is a surface of 320x200 indexed pixels (or more, or in true
-// colors: the panel changes it), shown by an Overlay that applies its
-// palette: fades, tints and the cycling of colors cost nothing. The HUD is
-// an RGBA surface of the size of the window, blended. The radar is a small
-// indexed surface, drawn into a texture for a panel standing in the scene.
+// cockpit - r4::raster and the post process: an indexed 320x200 cockpit over the scene, a true color HUD, a radar screen on a mesh, the effects on the frame.
 #include "common/example.h"
 #include "common/shapes.h"
 
@@ -47,10 +38,9 @@ enum : uint8_t {
     CLEAR = 255,
 };
 
-// the cockpit at any size: its drawings are made for 320 x 200 and scaled
+// drawn for 320 x 200 and scaled
 void drawCockpit(Surface &s, const raster::Palette &palette, float heading, float pitch, float roll, float time, float speed) {
     bool indexed = s.format() == raster::Format::INDEXED8;
-    // a color: an index, or its true color
     auto C = [&](uint8_t i) {
         return indexed ? (uint32_t)i : palette.colors[i];
     };
@@ -61,7 +51,6 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     s.clear(indexed ? (uint32_t)CLEAR : raster::rgba(0, 0, 0, 0));
     const raster::Font &font = raster::Font::builtin((int)std::lround(11 * k));
 
-    // the frame of the canopy, and the dashboard
     s.fillRect(0, X(140), s.width(), s.height() - X(140), C(GREY_1));
     s.hline(0, s.width(), X(140), C(GREY_3));
     s.fillTriangle(0, X(140), X(40), X(140), 0, X(40), C(GREY_1));
@@ -69,7 +58,6 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     s.lineThick(X(40), X(140), 0, X(40), C(GREY_3), std::max(1, X(1)));
     s.lineThick(X(280), X(140), s.width(), X(40), C(GREY_3), std::max(1, X(1)));
 
-    // the radar: a sweep turning, dashed rings, blips
     int rx = X(48);
     int ry = X(172);
     int rr = X(24);
@@ -85,7 +73,6 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
         s.fillRect(rx + (int)(std::cos(a) * rr * d) - X(1), ry + (int)(std::sin(a) * rr * d) - X(1), X(2) + 1, X(2) + 1, C(YELLOW));
     }
 
-    // the horizon: a ball turned by the roll, moved by the pitch
     int hx = X(160);
     int hy = X(170);
     int hw = X(36);
@@ -107,7 +94,6 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     s.hline(hx + X(3), hx + X(10), hy, C(YELLOW));
     s.rect(hx - hw, hy - hh, 2 * hw, 2 * hh, C(GREY_3));
 
-    // the compass tape: the ticks of the heading
     int tx = X(232);
     int ty = X(150);
     int tw = X(76);
@@ -127,7 +113,6 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     s.resetClip();
     s.vline(tx + tw / 2, ty, ty + th, C(YELLOW));
 
-    // the readouts
     char buf[64];
     std::snprintf(buf, sizeof buf, "SPD %3.0f", speed);
     s.text(font, X(232), X(170), buf, C(LIGHT_GREEN));
@@ -136,7 +121,7 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     s.text(font, X(110), X(144), "R4NKINE", C(RED));
 }
 
-// the HUD: true colors at the size of the window, blended over the scene
+// true colors at the size of the window, blended over the scene
 void drawHud(Surface &s, float pitch, float roll) {
     s.clear(raster::rgba(0, 0, 0, 0));
     s.blend = true;
@@ -149,7 +134,6 @@ void drawHud(Surface &s, float pitch, float roll) {
     s.lineThick(cx - (int)(30 * scale), cy, cx - (int)(10 * scale), cy, green, t);
     s.lineThick(cx + (int)(10 * scale), cy, cx + (int)(30 * scale), cy, green, t);
     s.circle(cx, cy, (int)(4 * scale), green);
-    // the pitch ladder, turned by the roll
     float r = radians(-roll);
     float c = std::cos(r);
     float sn = std::sin(r);
@@ -181,7 +165,6 @@ void drawHud(Surface &s, float pitch, float roll) {
     s.blend = false;
 }
 
-// the radar alone, for the screen standing in the scene
 void drawRadar(Surface &s, float time) {
     int n = s.width();
     int c = n / 2;
@@ -213,7 +196,6 @@ int main(int argc, char **argv) {
     render::Overlay hudOverlay(*win.device);
     render::Overlay radarOverlay(*win.device);
 
-    // a ground and a few trees
     auto root = scene::make<scene::Group>();
     auto ground = scene::make<scene::Geode>();
     ground->addDrawable(example::drawable(renderer, example::ground(600), {0.35f, 0.45f, 0.28f, 1}));
@@ -227,7 +209,6 @@ int main(int argc, char **argv) {
     }
     root->addChild(trees);
 
-    // the screen of the radar, standing in the scene
     assets::Mesh screenMesh;
     screenMesh.name = "radar screen";
     for (int i = 0; i < 4; i++) {
@@ -247,7 +228,6 @@ int main(int argc, char **argv) {
     root->addChild(screen);
     gpu::TextureHandle screenTexture;
 
-    // the surfaces
     raster::Palette vga = raster::Palette::vga();
     int resolution = 0;
     int format = 0;
@@ -273,7 +253,6 @@ int main(int argc, char **argv) {
         float roll;
         win.orbit.angles(heading, pitch, roll);
 
-        // the panel
         ui::Context &gui = win.beginGui();
         gui.beginPanel("cockpit", {0, 0, 270, (float)win.pointHeight}, "cockpit");
         if (gui.section("Cockpit", openCockpit)) {
@@ -296,7 +275,6 @@ int main(int argc, char **argv) {
         gui.endPanel();
         win.endGui();
 
-        // the palette of the frame: the effects change only the 256 colors
         raster::Palette palette = vga;
         if (effect == 1) {
             palette = vga.fadedTo(raster::rgba(0, 0, 0), fadeAmount);
@@ -305,10 +283,9 @@ int main(int argc, char **argv) {
         } else if (effect == 3) {
             palette = vga.tinted(raster::rgba(60, 90, 255), fadeAmount);
         } else if (effect == 4) {
-            palette = vga.rotated(32, 55, (int)(time * 8)); // the hues turning
+            palette = vga.rotated(32, 55, (int)(time * 8));
         }
 
-        // the cockpit at the size and in the format asked
         int cw = 320 << resolution;
         int ch = 200 << resolution;
         raster::Format cf = format == 0 ? raster::Format::INDEXED8 : raster::Format::RGBA8;
@@ -317,7 +294,6 @@ int main(int argc, char **argv) {
         }
         drawCockpit(cockpit, palette, heading, pitch, roll, time, 320 + 40 * std::sin(time * 0.5f));
         cockpitOverlay.update(cockpit, &palette);
-        // the HUD at the size of the window
         if (hud.width() != win.width || hud.height() != win.height) {
             hud = Surface(win.width, win.height, raster::Format::RGBA8);
         }
@@ -325,7 +301,6 @@ int main(int argc, char **argv) {
             drawHud(hud, pitch, roll);
             hudOverlay.update(hud);
         }
-        // the radar into a texture, on the screen in the scene
         drawRadar(radar, time);
         radarOverlay.update(radar, &palette);
         gpu::TextureHandle t = radarOverlay.texture();
@@ -339,7 +314,6 @@ int main(int argc, char **argv) {
             screenTexture = t;
         }
 
-        // the scene, the cockpit and the HUD into the post process, then the panel
         gpu::RenderTargetHandle target = post.begin(win.width, win.height);
         renderer.setTarget(target);
         win.apply(camera, 0.5f, 1000);
@@ -350,8 +324,6 @@ int main(int argc, char **argv) {
             keep.color = keep.depth = false;
             win.device->beginPass(target, 0, 0, win.width, win.height, keep);
         }
-        // the cockpit in the part of the window beside the panel, at 4:3 (the
-        // pixels of the VGA were not square)
         int left = (int)std::lround(270 * (win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1));
         int ox;
         int oy;

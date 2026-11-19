@@ -1,7 +1,4 @@
-// flipbin_loader.cpp - the .bin objects of flip (the "fast" format of the
-// SGI demos): a header of big-endian ints (magic 0x5423, the number of
-// points, a colors field), then for each point its normal and its position
-// (3 big-endian floats each). Every 4 points make a quadrilateral. Y-up.
+// flipbin_loader.cpp - the .bin objects of flip, Y-up: big-endian header (magic 0x5423, points, colors), then a normal and a position by point, 4 points a quad.
 #include "r4/axes.h"
 #include "r4/assets/model.h"
 

@@ -60,7 +60,6 @@ NodePtr Node::findChild(const std::string &name) const {
 }
 
 void Node::markDirty() {
-    // stops at the nodes already marked: their ancestors are too
     if (dirty_) {
         return;
     }
@@ -93,8 +92,6 @@ Sphere Geode::contentBounds() const {
 }
 
 Mat4 Billboard::rotationFor(Vec3 eye) const {
-    // -forward turned towards the eye: about the up by its heading, then for
-    // a point billboard about the right by its elevation
     float x = dot(eye, axes::kRight);
     float y = dot(eye, axes::kForward);
     float z = axes::heightOf(eye);
@@ -145,7 +142,6 @@ int Instancer::select(float distance) const {
 }
 
 Mat4 Instancer::matrixOf(const Placement &p) const {
-    // translate . rotate about up . scale (scale across, scaleUp along up)
     Mat4 s(1.0f);
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -163,7 +159,6 @@ Sphere Instancer::contentBounds() const {
     if (one.empty() || count() == 0) {
         return {};
     }
-    // the box of the centers, grown by the largest radius
     Box b;
     float r = 0;
     for (const Mat4 &m : instances_) {

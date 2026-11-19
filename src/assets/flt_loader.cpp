@@ -1,17 +1,5 @@
-// flt_loader.cpp - OpenFlight (.flt): the 14.2 format and the older ones of
-// versions 11 and 12 (integer coordinates, vertices inside the faces). A
-// port of the loader of legacy_opengl_demo
-// (src/porting/performer/pfd_flt.c).
-//
-// Read: the header (units), the color, material and texture palettes, the
-// vertex palette and the vertex lists (14.2), the old vertices (7, 8, 9),
-// the groups, objects, levels of detail, matrices, external references
-// (loaded once and shared), the faces with their subfaces (decals) and the
-// billboard faces. The faces are gathered into meshes by texture, material
-// and mode under each node. A face is lit when it has a material; its color
-// is then the face color times the colors of the material. The texture
-// attribute files (name.attr) give the wrap of the textures. OpenFlight is
-// Z-up, as R4nkine.
+// flt_loader.cpp - OpenFlight (.flt) 14.2 and the older versions 11 and 12, Z-up; port of src/porting/performer/pfd_flt.c.
+// The faces are gathered into meshes by texture, material and mode under each node; the .attr files give the wrap of the textures.
 #include "r4/assets/model.h"
 
 #include <cmath>
@@ -148,9 +136,7 @@ struct Shared {
     }
 };
 
-// a file named in a database: as given, then by its base name (the
-// absolute paths of the machines where the databases were made are not
-// there), next to the file and on the search paths
+// as given, then by its base name, next to the file and on the search paths
 std::string findFile(const std::string &dir, const std::string &name) {
     return findAsset(dir, name);
 }
@@ -173,7 +159,6 @@ struct File {
     long vpalStart = -1;
     long vpalLen = 0;
     std::vector<FVertex> verts;
-    // the batches of each node
     std::map<int, std::vector<Batch>> batches;
     std::map<int, std::vector<std::tuple<Vec3, Batch, bool>>> billboards;
 
@@ -217,7 +202,6 @@ struct File {
             v.uv = {bef(r + 32), bef(r + 36)};
             v.hasUV = true;
         }
-        // bit 2: no color, bit 3: packed color (the bits from the high one)
         if (!(flags & 0x2000)) {
             int pc = op == OP_VERTEX_C ? 32 : op == OP_VERTEX_CN ? 44 : op == OP_VERTEX_CNT ? 52 : 40;
             v.color = (flags & 0x1000) ? packed(r + pc) : indexColor(be16(r + 4));
@@ -269,7 +253,6 @@ struct File {
         bool billboard = fc.templ == 2 || fc.templ == 4;
         bool decal = fc.subface > 0;
         int drawtype = points ? DRAW_LIGHT_POINTS : lines ? DRAW_WIRE_CLOSED : fc.drawtype;
-        // the normal of the face (Newell) and its center
         Vec3 fn;
         double center[3] = {0, 0, 0};
         for (int i = 0; i < n; i++) {
@@ -283,7 +266,6 @@ struct File {
             }
         }
         fn = normalize(fn);
-        // a lit face with vertex colors uses them as its diffuse color
         bool vcolors = m && (fc.lightmode == LIGHT_GOURAUD || fc.lightmode == LIGHT_LIT_GOURAUD) && fc.v[0].hasColor;
         Batch local{fc.texture, m ? fc.material : -1, drawtype, transp, decal, alpha, vcolors, fc.color, Mesh()};
         Batch *b = nullptr;
@@ -351,7 +333,6 @@ struct File {
             mat.name = "material " + std::to_string(b.material);
             mat.shading = Shading::PHONG;
             if (b.vcolors) {
-                // the vertex colors are the ambient and diffuse colors
                 mat.ambient = {1, 1, 1};
                 mat.diffuse = {1, 1, 1, m->alpha * b.color.w};
                 mat.vertexColors = true;
@@ -386,7 +367,6 @@ struct File {
         return index;
     }
 
-    // the meshes of the faces read under each node
     void build() {
         std::map<std::tuple<int, int, int, bool, bool, bool, bool, float, float, float, float>, int> mats;
         auto materialOf = [&](const Batch &b) {
@@ -408,8 +388,6 @@ struct File {
                 model.meshes.push_back(std::move(b.mesh));
             }
         }
-        // the billboards at their centers, turned to the eye (template 2
-        // axial, 4 point)
         for (auto &[owner, list] : billboards) {
             for (auto &[center, b, point] : list) {
                 b.mesh.material = materialOf(b);
@@ -428,8 +406,7 @@ struct File {
         }
     }
 
-    // the texture attribute file: the wrap of u at 40 and of v at 44
-    // (0 repeat, 1 clamp, 3 the method at 36)
+    // the wrap of u at 40 and of v at 44: 0 repeat, 1 clamp, 3 the method at 36
     static void readAttr(Image &img, const std::string &path) {
         FILE *fp = std::fopen((path + ".attr").c_str(), "rb");
         if (!fp) {
@@ -503,13 +480,13 @@ struct File {
         return i;
     }
 
-    // returns the root node, -1 on error
+    // -1 on error
     int read(const std::vector<unsigned char> &data, const std::string &path) {
         size_t sl = path.find_last_of("/\\");
         dir = sl == std::string::npos ? std::string() : path.substr(0, sl + 1);
         int root = newNode(path, -1);
         struct Level {
-            int container; // -1: the level of a face
+            int container;
             Face face;
         };
         std::vector<Level> stack{{root, Face()}};
@@ -543,7 +520,6 @@ struct File {
                         palette.push_back(packed(r + 132 + 4 * k));
                     }
                 } else {
-                    // the old palette: unsigned shorts r, g, b from 0 to 255
                     oldPalette = true;
                     for (int k = 0; k < std::min((len - 4) / 6, 1024); k++) {
                         palette.push_back({be16(r + 4 + 6 * k) / 255.0f, be16(r + 6 + 6 * k) / 255.0f, be16(r + 8 + 6 * k) / 255.0f, 1});
@@ -636,7 +612,6 @@ struct File {
                     ln.hasLodCenter = true;
                     child = newNode("lod child", n);
                 } else if (op == OP_EXTREF) {
-                    // "file.flt<node>" names a node: the whole file is used
                     std::string ref((const char *)r + 4, (size_t)std::min(len - 4, 200));
                     ref = ref.c_str();
                     size_t lt = ref.find('<');
@@ -671,7 +646,6 @@ struct File {
                             m[3][k] *= (float)unit;
                         }
                     }
-                    // the matrix applies to the node: it is put above its own
                     model.nodes[last].local = m * model.nodes[last].local;
                 }
                 break;
@@ -722,7 +696,6 @@ struct File {
             case OP_PUSH:
                 if (stack.size() < 256) {
                     if (lastFace) {
-                        // the face takes its vertices
                         stack.push_back({-1, face});
                         face = Face();
                     } else {
@@ -803,7 +776,6 @@ int loadFile(Shared &sh, const std::string &path, std::string *error) {
 std::shared_ptr<Model> loadFLT(const std::string &path, std::string *error) {
     auto model = std::make_shared<Model>();
     model->source = path;
-    // node 0: the root of the model, above the root of the file
     Node top;
     top.name = path;
     model->nodes.push_back(top);

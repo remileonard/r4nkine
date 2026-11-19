@@ -1,7 +1,4 @@
-// gui.cpp - the panels of r4fly, in the look of the GUI of perfly (r4::ui):
-// on the left the settings (camera, light, environment, rendering, culling,
-// optimisations), on the right the scene graph, the selected node and the
-// performances.
+// gui.cpp - the panels of r4fly in the look of perfly: the settings on the left, the scene graph, the selected node and the performances on the right.
 #include "app.h"
 
 #include "r4/ui/controls.h"
@@ -93,8 +90,6 @@ std::string baseName(const std::string &p) {
     return s == std::string::npos ? p : p.substr(s + 1);
 }
 
-// --- the settings -----------------------------------------------------------------
-
 void settingsPanel(App &app, ui::Context &g, float height) {
     g.beginPanel("settings", {0, 0, kLeftW, height}, "r4fly");
     Trackball &b = app.ball;
@@ -131,7 +126,7 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         }
         if (g.button("Fit the Tree")) {
             app.treePanX = app.treePanY = 0;
-            app.treeScale = -1; // fitted at the next drawing
+            app.treeScale = -1;
         }
     }
 
@@ -209,7 +204,6 @@ void settingsPanel(App &app, ui::Context &g, float height) {
         }
         g.toggle("Textures", o.textures);
         g.toggle("Flat Shading", o.flatShading);
-        // the shadows of the light: their reach about the size of the scene
         g.toggle("Shadows", o.shadows);
         if (o.shadows) {
             float r = app.ball.radius;
@@ -221,8 +215,6 @@ void settingsPanel(App &app, ui::Context &g, float height) {
                 o.shadowMapSize = sizes[sel];
             }
         }
-        // the state bits of the camera (flight: 1 body, 2 gear, 4 far,
-        // 8 shadow, the high byte the weapons)
         g.bits("State Mask", app.camera.mask, 16);
         g.columns(2);
         if (g.button("All States")) {
@@ -263,8 +255,6 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     g.endPanel();
 }
 
-// --- the scene graph ------------------------------------------------------------
-
 void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int depth) {
     Mat4 world = parent * n.matrix();
     if (app.selected == &n) {
@@ -296,7 +286,6 @@ void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int 
     }
     it->second = open;
     if (visible != wasVisible) {
-        // hidden: the mask of the node set to 0, the old one kept
         if (!visible) {
             app.hiddenMasks[&n] = n.mask();
             n.setMask(0);
@@ -414,10 +403,7 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
     g.endPanel();
 }
 
-// --- the tree drawn over the view, as perfly ---------------------------------------
-
-// the nodes of the tree as they are drawn, down to the depth asked: the
-// leaves side by side, each parent over its children
+// the leaves side by side, each parent over its children
 struct TreeBox {
     scene::Node *node;
     int depth;
@@ -453,7 +439,6 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
     for (const TreeBox &b : boxes) {
         depth = std::max(depth, b.depth);
     }
-    // the sizes at scale 1, in points; a scale < 0 asks to fit the area
     const float bw = 112;
     const float bh = 30;
     const float sx = 124;
@@ -465,7 +450,6 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
     float k = app.treeScale;
     float width = leaves * sx * k;
     float height = (depth + 1) * sy * k;
-    // the pans move the tree by its own size
     float ox = area.x + (area.w - width) * 0.5f - app.treePanX * width;
     float oy = area.y + 16 - app.treePanY * height;
     g.beginCanvas("tree", area);
@@ -473,7 +457,6 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
     auto boxRect = [&](const TreeBox &b) {
         return ui::Rect{ox + (b.x * sx + (sx - bw) * 0.5f) * k, oy + b.depth * sy * k, bw * k, bh * k};
     };
-    // the links, then the boxes over them
     for (const TreeBox &b : boxes) {
         if (b.parent >= 0) {
             ui::Rect p = boxRect(boxes[b.parent]);
@@ -502,7 +485,6 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
             ui::Font small = k >= 0.8f ? ui::Font::REGULAR : ui::Font::SMALL;
             std::string name = b.node->name().empty() ? "-" : b.node->name();
             if (r.h >= 26) {
-                // the type over the name
                 g.text(r.x + 4, r.y + 1, typeName(b.node->type()), ink, ui::Font::SMALL, r.w - 8);
                 g.text(r.x + 4, r.y + r.h * 0.45f, name.c_str(), ink, small, r.w - 8);
             } else {
@@ -516,15 +498,12 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
     g.endCanvas();
 }
 
-// --- the performances -------------------------------------------------------------
-
 void perfPanel(App &app, ui::Context &g, ui::Rect r) {
     g.beginPanel("perf", r, "Stats");
     const render::RenderStats &st = app.renderer->stats();
     float fms = average(app.frameMs, 60);
     g.message(fmt("%.1f fps   %.2f ms per frame", fms > 0 ? 1000 / fms : 0, fms).c_str());
     auto plot = [&](const std::deque<float> &v, float minScale, ui::Color c, const char *name) {
-        // the last 240 frames, the newest on the right
         float buf[240] = {};
         int n = (int)std::min<size_t>(v.size(), 240);
         for (int i = 0; i < n; i++) {
@@ -595,7 +574,7 @@ ui::Rect sceneViewport(const App &app, int width, int height) {
     float left = app.showGui ? kLeftW : 0;
     float right = app.showGui && (app.showGraph || app.showPerf) ? kRightW : 0;
     if (left + right > width * 0.7f) {
-        left = right = 0; // a small window: the scene under the panels
+        left = right = 0;
     }
     return {left, 0, std::max(1.0f, width - left - right), (float)height};
 }
@@ -605,7 +584,6 @@ bool guiWantsMouse(const App &app) {
 }
 
 std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
-    // three circles of radius 1, about X, Y and Z
     assets::Mesh m;
     m.name = "bounds";
     m.primitive = assets::Primitive::LINES;
@@ -617,7 +595,7 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
             float s = std::sin(a);
             assets::Vertex v;
             v.position = axis == 0 ? Vec3{0, c, s} : axis == 1 ? Vec3{c, 0, s} : Vec3{c, s, 0};
-            v.color = 0xff20e0ffu; // yellow
+            v.color = 0xff20e0ffu;
             m.vertices.push_back(v);
             m.indices.push_back(axis * n + i);
             m.indices.push_back(axis * n + (i + 1) % n);

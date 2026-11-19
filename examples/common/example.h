@@ -1,9 +1,4 @@
-// example.h - what the examples of R4nkine share: an SDL2 window with an
-// OpenGL context (core on macOS), the device, a camera turning about a point
-// with the mouse (left button: turn, wheel: zoom), and the GUI (r4::ui) with
-// its mouse: over a panel, the mouse goes to the GUI.
-//
-// It holds nothing of R4nkine itself: the examples show that part.
+// example.h - the SDL2 window, the device, the orbit camera and the GUI shared by the examples; over a panel, the mouse goes to the GUI.
 #pragma once
 
 #include "r4/gpu/device.h"
@@ -31,8 +26,6 @@ struct Window {
     int height = 0;
     int pointWidth = 0; // the window, in points (the mouse)
     int pointHeight = 0;
-    // the camera: about the target, at a distance; the mouse turns it in the
-    // axes of the screen (r4::render::Orbit)
     r4::Vec3 target{0, 0, 0};
     float distance = 10;
     r4::render::Orbit orbit;
@@ -62,7 +55,6 @@ struct Window {
             return fail(SDL_GetError());
         }
 #ifdef __APPLE__
-        // macOS: a core context, 4.1 the newest
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
@@ -92,8 +84,7 @@ struct Window {
         return true;
     }
 
-    // the events of a frame; false when the window is to close. The mouse
-    // goes to the GUI over its panels, else it turns the camera.
+    // false when the window is to close
     template <class OnEvent> bool poll(OnEvent &&onEvent) {
         input.pressed = input.released = false;
         input.wheel = 0;
@@ -107,7 +98,7 @@ struct Window {
             } else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP) {
                 bool down = e.type == SDL_MOUSEBUTTONDOWN;
                 if (down && !mouseTaken) {
-                    sceneDrag = true; // a drag that starts in the view stays there
+                    sceneDrag = true;
                 }
                 if (!sceneDrag) {
                     (e.button.button == SDL_BUTTON_LEFT ? input.left : input.right) = down;
@@ -129,7 +120,7 @@ struct Window {
                 continue;
             }
             if (e.type == SDL_MOUSEMOTION && (e.motion.state & SDL_BUTTON_LMASK)) {
-                orbit.turn(e.motion.xrel * 0.4f, e.motion.yrel * 0.4f); // across: yaw, up and down: pitch
+                orbit.turn(e.motion.xrel * 0.4f, e.motion.yrel * 0.4f);
             }
             if (e.type == SDL_MOUSEWHEEL) {
                 distance *= std::exp(-e.wheel.y * 0.12f);
@@ -147,8 +138,7 @@ struct Window {
         });
     }
 
-    // the GUI of the frame: between beginGui() and endGui(), the panels;
-    // drawGui() after the scene, over it
+    // the panels between beginGui() and endGui(); drawGui() after the scene
     r4::ui::Context &beginGui() {
         float scale = pointWidth > 0 ? (float)width / pointWidth : 1;
         gui->beginFrame(pointWidth, pointHeight, input, scale);
@@ -159,7 +149,7 @@ struct Window {
     }
     void drawGui() {
         gui->render();
-        device->takeStats(); // the draws of the GUI are not those of the scene
+        device->takeStats();
     }
     // the sliders of the camera, in the panel being built
     void cameraControls(float maxDistance) {

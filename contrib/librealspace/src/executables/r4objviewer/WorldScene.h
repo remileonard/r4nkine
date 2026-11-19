@@ -1,10 +1,5 @@
 //
-//  WorldScene.h - a mission (or a world alone) of the game as a scene of
-//  R4nkine: the terrain, the objects of the map and the parts of the mission.
-//
-//  libRealSpace loads everything: RSMission, RSWorld (the terrain's name and
-//  its light), RSArea (the terrain, its textures and its objects), RSEntity
-//  (each object). r4bridge makes the models, R4nkine draws them.
+//  WorldScene.h - a mission, or a world alone, loaded by libRealSpace and drawn by R4nkine.
 //
 #pragma once
 
@@ -35,8 +30,7 @@ struct WorldEntry {
     bool mission = false;
 };
 
-// the missions and worlds whose terrain (<tera>.PAK) is in the data folder
-// (in the first `own` TRE: those of a game, the next ones only complete it)
+// in the first own TRE files: those of the game, the next ones only complete it
 std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &dataDir, size_t own = 1000);
 
 class WorldScene {
@@ -44,13 +38,10 @@ public:
     WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Renderer &renderer);
     ~WorldScene();
 
-    // loads an entry; false (and why) when it cannot be
     bool load(const WorldEntry &entry, std::string &error);
-    // the levels of the blocks of the terrain: 0 by the distance (the LOD
-    // nodes), 1..3 the level 0..2 everywhere (the world_detail of the game)
+    // 0 by distance (the LOD nodes), 1..3 a fixed level everywhere (the world_detail of the game)
     void setTerrainLod(int mode);
-    // the light of the terrain: baked (RSArea's colors) or dynamic (the sun,
-    // through normals from the relief); the terrain is made again
+    // baked (the colors of RSArea) or dynamic (the sun on normals from the relief)
     void setTerrainLight(bool dynamic, float relief = 4);
     float terrainRelief() const {
         return terrainRelief_;
@@ -58,7 +49,7 @@ public:
     bool terrainLightDynamic() const {
         return terrainDynamic_;
     }
-    // the height of the ground under a point (R4nkine's axes); false out of the map
+    // R4nkine's axes; false out of the map
     bool groundHeight(r4::Vec3 p, float &height) const;
 
     r4::scene::NodePtr root() const {
@@ -67,7 +58,6 @@ public:
     RSArea *area() const {
         return area_.get();
     }
-    // the layers, shown or hidden
     void showTerrain(bool on);
     void showMapObjects(bool on);
     void showParts(bool on);
@@ -75,11 +65,8 @@ public:
     void showForests(bool on);
     void showBuildings(bool on);
     size_t buildings = 0; // in the cities
-    // the forests on the green of the terrain (r4bridge::forestOf), made again
-    // at this density (0: none)
+    // 0: none
     void setForestDensity(float density);
-    // where the trees come from (r4bridge::ForestMode): the green and a noise,
-    // or the woods painted in the textures; the forests made again
     void setForestMode(r4bridge::ForestMode mode);
     r4bridge::ForestMode forestMode() const {
         return forestMode_;
@@ -89,13 +76,12 @@ public:
     }
     size_t forestTrees = 0;
     size_t forestChunks = 0;
-    // the trees: the detailed ones up to the first, the simple ones up to the second
+    // the detailed trees up to the first distance, the simple ones up to the second
     const float kTreeNear = 1500;
     const float kTreeFar = 6000;
-    // the parts of a scene of the mission (or, scene -1, those of no scene)
+    // scene -1: the parts of no scene
     void showScene(int scene, bool on);
 
-    // what the scene holds, for the GUI
     struct Item {
         std::string name;
         r4::Vec3 position; // R4nkine's axes
@@ -103,7 +89,6 @@ public:
         bool found;     // its object is in the TRE
         int scene = -2; // the scene that makes it appear; -1: none, -2: not a part
     };
-    // the scenes of the mission: their area and how many parts they bring
     struct Scene {
         std::string label;
         size_t parts = 0;
@@ -118,7 +103,7 @@ public:
     const std::vector<Item> &mapObjects() const {
         return mapObjects_;
     }
-    // the areas of the mission (entering one starts its scenes)
+    // entering one starts its scenes
     const std::vector<Item> &areas() const {
         return areas_;
     }
@@ -128,8 +113,6 @@ public:
     size_t terrainTextures = 0;
     size_t overlayTriangles = 0;
     size_t terrainBlocks = 0;
-    // the distances of the levels of the blocks: the finest up to 2 blocks,
-    // the coarsest beyond 5
     const std::vector<float> kTerrainRanges{0, 40000, 100000, 1e30f};
     double loadMs = 0;
     bool hasLight = false;
@@ -138,11 +121,10 @@ public:
     r4::Vec3 start{0, 0, 0}; // where to look first: the player, or the middle
 
 private:
-    // an object of the game by its name (F-16DES): loaded once, then shared
-    // by its instances; null when it is not in the TRE
+    // loaded once and shared; null when it is not in the TRE
     r4::scene::NodePtr object(const std::string &name, float *radius);
     void clear();
-    // the places of the parts, as the game makes them appear: see placeParts()
+    // as the game makes them appear
     void placeParts();
     void buildTerrain();
     void buildForests();

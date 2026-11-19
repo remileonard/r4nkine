@@ -6,26 +6,17 @@
 //     -shadows         the shadows of the light on
 //     -nogui           start without the GUI (F1 shows it)
 //     -core            an OpenGL core context (always on macOS)
-//     -post LIST       effects on the frame, as msaa4,fxaa,crt,pixel3,ega
-//                      (msaaN, fxaa, crt, scanlines, vignette, pixelN, grey,
-//                      vga, ega, cga, handheld, amber)
-//     -scale S         the size of the GUI (2: twice as large; Retina screens
-//                      are already taken into account)
+//     -post LIST       effects on the frame separated by commas: msaaN, fxaa, crt, scanlines, vignette, pixelN, grey, vga, ega, cga, handheld, amber
+//     -scale S         the size of the GUI (Retina screens are already taken into account)
 //     -frames N        quit after N frames
 //     -snap file.ppm   save the last frame before quitting
 //     -stats           print the statistics once a second
 //     -view H,P,Z      the trackball: heading, pitch (degrees), zoom (2: twice closer)
 //     -state MASK      the state of the models (their default otherwise)
 //     -F dir:dir...    the folders where the textures and references are searched
-//     -forest N[,F]    N copies of the files planted on a square (an Instancer):
-//                      the first file near, the next ones beyond F, 2F... units
+//     -forest N[,F]    N copies of the files planted on a square: the first file near, the next ones beyond F, 2F... units
 //
-// The files are loaded side by side under one root. The mouse: the left
-// button turns, the wheel zooms, the right button moves. Keys: F1 the GUI,
-// w wireframe, r reset, s statistics, Esc quit. The GUI (r4::ui, in the look
-// of perfly) holds the settings of the camera, the light, the environment,
-// the rendering, the culling and the optimisations, the scene graph and the
-// performances.
+// The files are loaded side by side under one root. Mouse: left turns, wheel zooms, right moves. Keys: F1 the GUI, w wireframe, r reset, s statistics, Esc quit.
 #include "app.h"
 
 #include "r4/ui/controls.h"
@@ -73,8 +64,6 @@ void usage() {
     std::exit(1);
 }
 
-// -post: msaa2/4/8, fxaa, crt, scanlines, vignette, pixel2..16, grey, and
-// the palettes vga, ega, cga, handheld, amber (separated by commas)
 void applyPostList(render::PostSettings &s, const std::string &list) {
     size_t p = 0;
     while (p < list.size()) {
@@ -215,9 +204,6 @@ int main(int argc, char **argv) {
         std::fprintf(stderr, "r4fly: %s\n", SDL_GetError());
         return 1;
     }
-    // a compatibility context, what a host game in fixed-pipeline GL has; a
-    // core one on macOS (it has no other above 2.1) or with -core, and when
-    // the compatibility one is refused
     SDL_GLContext context = nullptr;
     for (int attempt = core ? 1 : 0; attempt < 2 && !context; attempt++) {
         bool coreProfile = attempt == 1;
@@ -266,7 +252,6 @@ int main(int argc, char **argv) {
     renderer.setWireframe(wire);
     renderer.options().shadows = shadows;
 
-    // the files side by side along X, each centered on the ground
     app.top = scene::make<scene::Group>();
     app.top->setName("top");
     app.models = scene::make<scene::Group>();
@@ -305,7 +290,6 @@ int main(int argc, char **argv) {
         }
         std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n", f.c_str(), model->meshes.size(), lf.triangles, lf.lines, lf.points, model->materials.size(), model->images.size());
         if (forest > 0) {
-            // the model as a level of the instancer, its base on the ground
             Box box = model->bounds();
             float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
             Mat4 m = scale({unit, unit, unit}) * translate({-s.center.x, -s.center.y, -box.min.z});
@@ -331,7 +315,6 @@ int main(int argc, char **argv) {
     }
 
     if (forest > 0) {
-        // a square of instances, turned and scaled at random
         int side = (int)std::ceil(std::sqrt((double)forest));
         unsigned seed = 1;
         auto rnd = [&]() {
@@ -352,7 +335,6 @@ int main(int argc, char **argv) {
         std::printf("r4fly: %d instances, %d levels\n", forest, level);
     }
 
-    // the bounds of the selection, beside the models (so not in their bounds)
     app.boundsMarker = makeBoundsMarker(renderer);
     app.boundsMarker->setMask(0);
     app.top->addChild(app.boundsMarker);
@@ -373,8 +355,6 @@ int main(int argc, char **argv) {
         int wh;
         SDL_GL_GetDrawableSize(app.window, &w, &h);
         SDL_GetWindowSize(app.window, &ww, &wh);
-        // the GUI and the mouse in points, the framebuffer in pixels (twice
-        // as many on a Retina screen); -scale enlarges the GUI further
         float pixelScale = (ww > 0 ? (float)w / ww : 1) * uiScale;
         ww = std::max(1, (int)(ww / uiScale));
         wh = std::max(1, (int)(wh / uiScale));
@@ -411,7 +391,6 @@ int main(int argc, char **argv) {
                 bool down = e.type == SDL_MOUSEBUTTONDOWN;
                 app.input.mouseX = e.button.x / uiScale;
                 app.input.mouseY = e.button.y / uiScale;
-                // a press in the view belongs to the view until released
                 if (down && !gui && (e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT)) {
                     app.sceneDrag = true;
                 }
@@ -431,17 +410,14 @@ int main(int argc, char **argv) {
                     break;
                 }
                 if (e.motion.state & SDL_BUTTON_LMASK) {
-                    // the left button turns the view in the axes of the screen: across, the
-                    // yaw; up and down, the pitch
                     app.ball.turn(e.motion.xrel * 0.4f, e.motion.yrel * 0.4f);
                 } else if (e.motion.state & SDL_BUTTON_RMASK) {
-                    // the right button moves the center with the mouse
                     app.ball.move((float)e.motion.xrel, (float)e.motion.yrel, wh);
                 }
                 break;
             case SDL_MOUSEWHEEL:
                 if (gui) {
-                    app.input.wheel += (float)e.wheel.y; // scrolls the panel under the mouse
+                    app.input.wheel += (float)e.wheel.y;
                 } else {
                     app.ball.distance *= std::exp(-e.wheel.y * 0.12f);
                 }
@@ -458,7 +434,6 @@ int main(int argc, char **argv) {
         int vw = std::max(1, (int)std::lround(view.w * pixelScale));
         app.ball.apply(app.camera, h > 0 ? (float)vw / h : 1);
         if (app.headlight) {
-            // a light over the shoulder of the viewer, as the eye light of perfly
             Vec3 toTarget = normalize(app.ball.target() - app.ball.eye());
             renderer.environment().lightDirection = normalize(toTarget + Vec3{0.3f, 0, -0.6f});
         } else {
@@ -467,10 +442,8 @@ int main(int argc, char **argv) {
             renderer.environment().lightDirection = -Vec3{std::cos(el) * std::sin(az), std::cos(el) * std::cos(az), std::sin(el)};
         }
 
-        // the marker on the selection: its world matrix comes from the tree
-        // of the last frame
         if (app.selected && app.showSelectedBounds && app.showGui && app.showGraph) {
-            Sphere s = app.selected->bounds(); // in the space of its parent
+            Sphere s = app.selected->bounds();
             Mat4 parentWorld = app.selectedWorld * inverse(app.selected->matrix());
             float r = std::max(s.radius, 1e-6f);
             app.boundsMarker->setMatrix(parentWorld * translate(s.center) * scale({r, r, r}));
@@ -480,14 +453,12 @@ int main(int argc, char **argv) {
         }
 
         guiFrame(app, ww, wh, pixelScale);
-        // the scene into the target of the post process when an effect is on
         gpu::RenderTargetHandle target = app.post->begin(vw, h);
         renderer.setTarget(target);
         renderer.render(*app.top, app.camera, target ? 0 : vx, 0, vw, h);
         renderer.setTarget({});
         app.post->end(vx, 0, vw, h, w, h);
         if (!app.snapRequest.empty()) {
-            // the scene alone, without the GUI
             pixels.resize((size_t)vw * h * 4);
             if (app.device->readPixels(vx, 0, vw, h, pixels.data()) && savePPM(app.snapRequest.c_str(), vw, h, pixels)) {
                 std::printf("r4fly: %s saved\n", app.snapRequest.c_str());
@@ -495,7 +466,7 @@ int main(int argc, char **argv) {
             app.snapRequest.clear();
         }
         app.ui->render();
-        app.device->takeStats(); // the draws of the GUI are not those of the scene
+        app.device->takeStats();
 
         frame++;
         framesSinceStats++;

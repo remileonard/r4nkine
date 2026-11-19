@@ -2,7 +2,7 @@
 //  R4World.cpp
 //  libRealSpace
 //
-//  The terrain and the places of the objects of a world. See R4World.h.
+//  The terrain, forests, buildings and object places of a world.
 //
 #include "R4Data.h"
 #include "R4World.h"
@@ -43,11 +43,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     auto model = std::make_shared<Model>();
     model->source = "terrain";
 
-    // the colors of the triangles, both faces (the game finds the winding of
-    // its terrain at run time):
-    // - baked: as RSArea made them, with the light of the data (unlit);
-    // - dynamic: the ramp of the terrain type of each triangle (RSArea's
-    //   terrainTone), lit by the sun through the normals (PaletteRamp)
     Material colors;
     colors.name = "terrain colors";
     colors.doubleSided = true;
@@ -63,15 +58,11 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         colors.diffuse = {1, 1, 1, 1};
     }
     model->materials.push_back(colors);
-    // dynamic: the brightest tone of the ramp of a terrain type, as
-    // RSArea::terrainTone(type, 255); the ramp of the PaletteRamp gives the
-    // tones under it by the intensity
     auto topTone = [&](uint8_t type) -> uint32_t {
         const std::vector<PaletteRange> &r = *light.ranges;
         const PaletteRange &range = type < r.size() ? r[type] : r[0];
         return (uint32_t)std::min(255, range.first + range.shades) | 0xff000000u;
     };
-    // the terrain type of a triangle: the one of its highest vertex (RSArea::highestVertex)
     auto typeOf = [](const MapVertex *a, const MapVertex *b, const MapVertex *c) {
         const MapVertex *h = a;
         if ((uint16_t)b->height >= (uint16_t)h->height) {
@@ -83,7 +74,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         return h->type;
     };
 
-    // a material by texture of the map, made at its first triangle
     std::map<int, int> textureMaterial;
     auto textured = [&](int imageID) {
         auto it = textureMaterial.find(imageID);
@@ -101,11 +91,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             img.pixels.resize((size_t)img.width * img.height * 4);
             for (int y = 0; y < img.height; y++) {
                 for (int x = 0; x < img.width; x++) {
-                    // the palette of the game (PALETTE.IFF): the one SCRenderer::init
-                    // gives the images (RSImage takes Renderer.getPalette()); its
-                    // alpha, as Texture::updateContent: index 255 clear
                     const Texel &t = palette.colors[src->data[(size_t)y * img.width + x]];
-                    // R4nkine's images start at the bottom row
                     uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
                     d[0] = t.r;
                     d[1] = t.g;
@@ -113,21 +99,18 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                     d[3] = t.a;
                 }
             }
-            // as SCRenderer::createTextureInGPU (GL_LINEAR, clamped), or better
             finishTexture(img);
             model->images.push_back(std::move(img));
             Material m;
             m.name = std::string("terrain ") + src->name;
             m.shading = Shading::UNLIT;
-            if (dynamic) { // the texture times the intensity of the sun
+            if (dynamic) {
                 m.shading = Shading::PALETTE_RAMP;
                 m.rampTextured = true;
                 m.rampAmbient = light.lighting.ambient;
                 m.rampLight = light.lighting.light;
             }
             m.diffuseImage = (int)model->images.size() - 1;
-            // the GL_DECAL of the game: mix(color, texel, alpha of the texel),
-            // the colored triangle under it giving the color
             m.alpha = AlphaMode::BLEND;
             m.decal = true;
             m.doubleSided = true;
@@ -137,10 +120,8 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         return textureMaterial[imageID] = material;
     };
 
-    const float kSkirt = 600; // the depth of the skirts of the blocks
+    const float kSkirt = 600;
     const int last = BLOCK_PER_MAP_SIDE - 1;
-    // the cells of a block at a level, then its seams with the blocks on its
-    // right and below at the same level, as SCRenderer::renderBlock
     auto forEachCell = [&](int level, int i, const auto &fn) {
         AreaBlock *b = area->GetAreaBlockByID(level, i);
         if (!b || b->sideSize < 2) {
@@ -169,8 +150,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             fn(b->GetVertice(side - 1, side - 1), right->GetVertice(0, side - 1), corner->GetVertice(0, 0), below->GetVertice(side - 1, 0));
         }
     };
-    // dynamic: the normals of the vertices of each level, from all the cells
-    // around them (across the blocks), pointing up
     std::vector<std::unordered_map<const MapVertex *, r4::Vec3>> normals(NUM_LODS);
     if (dynamic) {
         for (int level = 0; level < NUM_LODS; level++) {
@@ -200,7 +179,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         }
     }
     int currentLevel = 0;
-    // the meshes of a level of a block, by material
     std::map<int, Mesh> meshes;
     auto add = [&](int material, const MapVertex *v, uint32_t color, r4::Vec2 uv, const MapVertex *normalOf = nullptr) {
         Mesh &m = meshes[material];
@@ -218,7 +196,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         m.vertices.push_back(out);
         m.indices.push_back((uint32_t)m.vertices.size() - 1);
     };
-    // a triangle: its colors, and its texture over them when it has one
     auto triangle = [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, const float(*cols)[4], uint16_t imageID, const float(*uv)[2]) {
         const MapVertex *corner[3] = {a, b, c};
         if (dynamic) {
@@ -242,12 +219,10 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             add(material, corner[k], 0xffffffffu, {uv[k][0], 1 - uv[k][1]});
         }
     };
-    // a cell, as SCRenderer::renderQuad: the lower triangle, then the upper one
     auto quad = [&](const MapVertex *current, const MapVertex *right, const MapVertex *bottomRight, const MapVertex *bottom) {
         triangle(current, bottomRight, bottom, current->lowerColors, current->lowerImageID, current->lowerUV);
         triangle(current, right, bottomRight, current->upperColors, current->upperImageID, current->upperUV);
     };
-    // a node of the meshes made since the last one
     auto takeMeshes = [&](const std::string &name) {
         Node node;
         node.name = name;
@@ -262,7 +237,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
         return node;
     };
 
-    // the root, a group of the blocks; each block a LOD over its 3 levels
     model->nodes.push_back(Node{});
     model->nodes[0].name = "terrain";
     for (int i = 0; i < BLOCKS_PER_MAP; i++) {
@@ -277,8 +251,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             currentLevel = level;
             AreaBlock *b = area->GetAreaBlockByID(level, i);
             if (b && b->sideSize >= 2) {
-                // the cells of the block, then its seams with the blocks on its
-                // right and below at the same level, as SCRenderer::renderBlock
                 int side = b->sideSize;
                 for (int x = 0; x < side - 1; x++) {
                     for (int y = 0; y < side - 1; y++) {
@@ -301,11 +273,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                 if (corner) {
                     quad(b->GetVertice(side - 1, side - 1), right->GetVertice(0, side - 1), corner->GetVertice(0, 0), below->GetVertice(side - 1, 0));
                 }
-                // the skirts: walls down from the edges of the block, so that a
-                // neighbor at another level leaves no crack (not in the game,
-                // which draws all its blocks at one level)
                 auto at = [&](int x, int y) -> const MapVertex * {
-                    // the vertex x, y of the block and its seams (x, y up to side)
                     AreaBlock *src = b;
                     if (x == side && y == side) {
                         src = corner;
@@ -346,7 +314,6 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             }
             levels.push_back(takeMeshes("LVL" + std::to_string(level) + " (" + std::to_string(b ? b->sideSize * b->sideSize : 0) + " vertices)"));
         }
-        // the nodes: the block, its LOD, the levels
         int blockIndex = (int)model->nodes.size();
         model->nodes.push_back(block);
         model->nodes[0].children.push_back(blockIndex);
@@ -372,13 +339,7 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     auto model = std::make_shared<Model>();
     model->source = "overlays";
 
-    // the images of the overlays in one atlas, so that the triangles of an
-    // overlay make one mesh, drawn in the order of its drawList: cell 0
-    // white (the colored triangles), then a cell by textured color c (the
-    // image c + 255, its clear texels in the palette color c: the GL_DECAL
-    // of the game); a border by cell, its edges repeated (the
-    // GL_CLAMP_TO_EDGE of the game)
-    std::map<int, int> cellOf; // color -> cell
+    std::map<int, int> cellOf;
     std::vector<RSImage *> cellImage{nullptr};
     std::vector<int> cellColor{-1};
     for (const AreaOverlay &ov : area->objectOverlay) {
@@ -399,9 +360,6 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
             cellColor.push_back(c);
         }
     }
-    // each cell as an image (its clear texels in its palette color), upscaled
-    // as the textures (textureQuality); a wider border with mipmaps, so that
-    // their smaller levels do not take the neighbor cells
     const TextureQuality &quality = textureQuality();
     const int scale = r4::assets::upscaleFactor(quality.upscale);
     const int kBorder = quality.mipmaps ? 8 : 2;
@@ -410,7 +368,7 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     for (size_t cell = 0; cell < cellImage.size(); cell++) {
         RSImage *src = cellImage[cell];
         const Texel &under = palette.colors[cellColor[cell] & 0xff];
-        Image c; // rows from the top, as RSImage
+        Image c;
         c.width = src ? (int)src->width : 1;
         c.height = src ? (int)src->height : 1;
         c.channels = 4;
@@ -441,12 +399,11 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     atlas.channels = 4;
     atlas.mipmaps = quality.mipmaps;
     atlas.clampS = atlas.clampT = true;
-    std::vector<uint8_t> top((size_t)atlas.width * atlas.height * 4, 255); // rows from the top
+    std::vector<uint8_t> top((size_t)atlas.width * atlas.height * 4, 255);
     for (size_t cell = 0; cell < cells.size(); cell++) {
         int x0 = (int)(cell % columns) * kCell;
         int y0 = (int)(cell / columns) * kCell;
         const Image &c = cells[cell];
-        // the cell, its edges repeated into its border
         for (int y = -kBorder; y < kCell - kBorder; y++) {
             for (int x = -kBorder; x < kCell - kBorder; x++) {
                 int sx = std::clamp(x, 0, c.width - 1);
@@ -456,21 +413,18 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
         }
     }
     atlas.pixels.resize(top.size());
-    for (int y = 0; y < atlas.height; y++) { // R4nkine's images start at the bottom row
+    for (int y = 0; y < atlas.height; y++) {
         std::memcpy(&atlas.pixels[(size_t)(atlas.height - 1 - y) * atlas.width * 4], &top[(size_t)y * atlas.width * 4], (size_t)atlas.width * 4);
     }
     model->images.push_back(std::move(atlas));
     const float atlasW = (float)(columns * kCell);
     const float atlasH = (float)(rows * kCell);
-    // an uv of a cell (in texels of its image of the game, from its top left) in the atlas
     auto atlasUV = [&](int cell, float u, float v) {
         float px = (cell % columns) * kCell + kBorder + u * scale;
         float py = (cell / columns) * kCell + kBorder + v * scale;
         return r4::Vec2{px / atlasW, 1 - py / atlasH};
     };
 
-    // over the terrain (drawn after it), without depth: each triangle over
-    // the ones before it, as the GL_LEQUAL of SCRenderer::renderMapOverlay
     Material m;
     m.name = "overlays";
     m.shading = Shading::UNLIT;
@@ -479,11 +433,11 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     m.diffuseImage = 0;
     m.doubleSided = true;
     m.decal = true;
-    m.alpha = AlphaMode::BLEND; // opaque texels: with the transparent ones, without depth
+    m.alpha = AlphaMode::BLEND;
     m.drawOrder = 1;
     model->materials.push_back(m);
 
-    const float kTriUvScale = 128.0f; // the uvs of the .TRI: 0..125, 128 a whole tile
+    const float kTriUvScale = 128.0f;
     Node root;
     root.name = "overlays";
     for (const AreaOverlay &ov : area->objectOverlay) {
@@ -508,7 +462,6 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
                 Vertex v;
                 v.position = {(float)p.x, (float)p.y, (float)p.z};
                 v.normal = {0, 1, 0};
-                // the uv of the game (uv / 128 of the image) in texels of its cell
                 v.uv = img ? atlasUV(cell, tri.uv[k].u / kTriUvScale * img->width, tri.uv[k].v / kTriUvScale * img->height) : atlasUV(0, 64, 64);
                 v.color = color;
                 mesh.vertices.push_back(v);
@@ -530,7 +483,6 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
 }
 
 r4::Mat4 mapObjectMatrix(const MapObject &object) {
-    // the columns given to glMultMatrixf by SCRenderer::renderObjects
     const float(*o)[3] = object.orientation;
     r4::Mat4 rotation(1.0f);
     rotation[0] = r4::Vec4(o[1][0], o[1][2], -o[1][1], 0);
@@ -540,11 +492,8 @@ r4::Mat4 mapObjectMatrix(const MapObject &object) {
 }
 
 r4::Mat4 missionPartMatrix(const MISN_PART &part) {
-    // the glRotatef of SCRenderer::renderMissionObjects, in degrees
     return r4::translate({part.position.x, part.position.y, part.position.z}) * r4::rotate(r4::radians(360.0f - (float)part.azymuth + 90.0f), {0, 1, 0}) * r4::rotate(r4::radians((float)part.pitch), {0, 0, 1}) * r4::rotate(r4::radians(-(float)part.roll), {1, 0, 0});
 }
-
-// --- the forests ------------------------------------------------------------------------
 
 namespace {
 
@@ -557,7 +506,7 @@ float hash01(uint32_t a, uint32_t b, uint32_t seed) {
     return (h & 0xffffff) / (float)0x1000000;
 }
 
-// a smooth noise of 0..1 over the map: the woods and the clearings
+// a smooth noise of 0..1 over the map: woods and clearings
 float valueNoise(float x, float z, float scale, uint32_t seed) {
     float fx = x / scale;
     float fz = z / scale;
@@ -590,9 +539,9 @@ struct Random {
 
 namespace {
 
-constexpr int kMapSide = BLOCK_PER_MAP_SIDE * BLOCK_SIDE_LVL0; // the vertices of LVL0 on a side
-constexpr float kCell = BLOCK_WIDTH / (float)BLOCK_SIDE_LVL0;  // between two of them
-// the density at the heart of a wood, and between the woods, x perKm2
+constexpr int kMapSide = BLOCK_PER_MAP_SIDE * BLOCK_SIDE_LVL0;
+constexpr float kCell = BLOCK_WIDTH / (float)BLOCK_SIDE_LVL0;
+// x perKm2 at the heart of a wood and between the woods
 constexpr float kWoodCore = 25;
 constexpr float kScattered = 0.1f;
 
@@ -607,7 +556,7 @@ const MapVertex *mapVertex(RSArea *area, int x, int y) {
     return b->GetVertice(x % BLOCK_SIDE_LVL0, y % BLOCK_SIDE_LVL0);
 }
 
-// the type of a triangle: the one of its highest vertex (RSArea::highestVertex)
+// as RSArea::highestVertex
 const MapVertex *highest(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
     const MapVertex *h = a;
     if ((uint16_t)b->height >= (uint16_t)h->height) {
@@ -624,8 +573,7 @@ bool green(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
     return (type == TERRAIN_GREEN || type == TERRAIN_JUNGLE) && a->type != TERRAIN_WATER && b->type != TERRAIN_WATER && c->type != TERRAIN_WATER;
 }
 
-// each cell of a chunk: its 4 corners, the lower triangle then the upper
-// one, as RSArea
+// the lower then the upper triangle of each cell of a chunk, as RSArea
 template <class F> void forEachTriangle(RSArea *area, int cx, int cz, int cellsPerChunk, F f) {
     for (int y = cz * cellsPerChunk; y < (cz + 1) * cellsPerChunk; y++) {
         for (int x = cx * cellsPerChunk; x < (cx + 1) * cellsPerChunk; x++) {
@@ -647,8 +595,7 @@ int cellsPerChunk(const ForestSettings &st) {
     return std::max(1, (int)std::lround(st.chunk / kCell));
 }
 
-// the texels of trees of a texture (ForestMode::TEXTURES): dark green, and
-// not a flat fill (their neighbors vary); none when they are too few
+// dark green texels whose neighbors vary; none when they are too few
 const std::vector<uint32_t> &treeTexelsOf(RSArea *area, const ForestSettings &st, int id) {
     static const std::vector<uint32_t> none;
     if (id == TEXTURE_NONE || !st.palette || st.notWoods.count(id) || st.bare.count(id)) {
@@ -736,7 +683,7 @@ std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &st) {
             chunk.cx = cx;
             chunk.cz = cz;
             float side = cells * kCell;
-            float trees = 40 * st.treeScale; // the tallest tree
+            float trees = 40 * st.treeScale;
             chunk.center = {-half + (cx + 0.5f) * side, (low + high + trees) / 2, -half + (cz + 0.5f) * side};
             float dy = (high + trees - low) / 2;
             chunk.radius = std::sqrt(side * side / 2 + dy * dy);
@@ -753,7 +700,6 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
     if (!area) {
         return;
     }
-    // the boxes of the runways, and their surroundings
     struct Box {
         float x0;
         float z0;
@@ -788,8 +734,6 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
         }
         return true;
     };
-    // a tree: its species by its ground (conifers on the higher ground, few
-    // in the jungle), its turn and size; the 4 numbers drawn for each
     auto plant = [&](r4::Vec3 p, bool jungle, float species, float turn, float size) {
         float conifers = jungle ? 0.1f : 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f);
         int sp = species < conifers ? (jungle ? TREE_JUNGLE_CONIFER : TREE_CONIFER) : (jungle ? TREE_JUNGLE_BROADLEAF : TREE_BROADLEAF);
@@ -802,8 +746,6 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
     };
     forEachTriangle(area, chunk.cx, chunk.cz, cellsPerChunk(st), [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key, const float(*uv)[2]) {
         if (st.mode == ForestMode::TEXTURES) {
-            // the trees painted in the texture: a tree on its texels of trees
-            // (each by chance: one by areaPerTree), through the triangle's uvs
             const std::vector<uint32_t> &texels = treeTexelsOf(area, st, image);
             if (texels.empty()) {
                 return;
@@ -833,7 +775,6 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
                 if (keep >= chance) {
                     continue;
                 }
-                // in this triangle (the texels of the other half are the other's)
                 float s = ((tex.x - t0.x) * (t2.y - t0.y) - (t2.x - t0.x) * (tex.y - t0.y)) / det;
                 float t = ((t1.x - t0.x) * (tex.y - t0.y) - (tex.x - t0.x) * (t1.y - t0.y)) / det;
                 if (s < 0 || t < 0 || s + t > 1) {
@@ -857,12 +798,10 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
         r4::Vec3 pc{c->v.x, c->v.y, c->v.z};
         float areaKm2 = 0.5f * std::abs((pb.x - pa.x) * (pc.z - pa.z) - (pc.x - pa.x) * (pb.z - pa.z)) / 1e6f;
         Random rnd{key * 2654435761u + st.seed * 97u + 1};
-        // the candidates at the highest density, kept by the density of their place
         float top = (woodImage ? it->second : st.perKm2 * kWoodCore) * st.density * (jungle ? st.jungleDensity : 1.0f);
         float expected = top * areaKm2;
         int n = (int)expected + (rnd.next() < expected - (int)expected ? 1 : 0);
         for (int i = 0; i < n; i++) {
-            // a point of the triangle, uniform
             float u = rnd.next();
             float v = rnd.next();
             if (u + v > 1) {
@@ -874,12 +813,8 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
             float species = rnd.next();
             float turn = rnd.next();
             float size = rnd.next();
-            // the woods, where the noise is high (perKm2 x kWoodCore at their
-            // heart), and a few trees alone between them; the textures of
-            // woods: their density everywhere
             if (!woodImage) {
                 float wood = valueNoise(p.x, p.z, 2500, st.seed) * 0.7f + valueNoise(p.x, p.z, 600, st.seed + 7) * 0.3f;
-                // the jungle: woods over most of it
                 float share = std::clamp((wood - (jungle ? 0.45f : 0.6f)) * 5.0f, 0.0f, 1.0f) + kScattered / kWoodCore;
                 if (keep > share) {
                     continue;
@@ -907,13 +842,10 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
     Mesh mesh;
     mesh.name = name;
     mesh.material = 0;
-    // the colors at full light: their ramps darken them (the green ramp from
-    // 64, the brown one from 96)
-    const uint32_t green = isJungleTree(species) ? PALETTE_JUNGLE_RAMP : PALETTE_GREEN_RAMP; // the ramp of their ground
+    const uint32_t green = isJungleTree(species) ? PALETTE_JUNGLE_RAMP : PALETTE_GREEN_RAMP;
     const uint32_t conifer = green + 13;
     const uint32_t leaves = green + 18;
     const uint32_t trunk = PALETTE_BROWN_RAMP + 10;
-    // a triangle with its face normal, turned outward from the center of its solid
     auto tri = [&](r4::Vec3 a, r4::Vec3 b, r4::Vec3 c, r4::Vec3 center, uint32_t color) {
         r4::Vec3 n = r4::cross(b - a, c - a);
         if (r4::dot(n, (a + b + c) / 3.0f - center) < 0) {
@@ -938,7 +870,6 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
         }
         return p;
     };
-    // a solid of rings from the bottom to the top (a ring of radius 0: a point)
     auto solid = [&](const std::vector<std::pair<float, float>> &rings, int sides, uint32_t color, float turn = 0) {
         r4::Vec3 center{0, (rings.front().second + rings.back().second) / 2, 0};
         for (size_t k = 0; k + 1 < rings.size(); k++) {
@@ -954,7 +885,6 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
                 }
             }
         }
-        // the bottom, when it is not a point
         if (rings.front().first > 0) {
             auto lo = ring(sides, rings.front().first, rings.front().second, turn);
             for (int i = 1; i + 1 < sides; i++) {
@@ -986,12 +916,9 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
     return model;
 }
 
-// --- the cities -------------------------------------------------------------------------
-
 namespace {
 
-// a building: its rectangle of texels in its image (from its top left, x1
-// and y1 included) and its height
+// a rectangle of texels from the top left of its image, x1 and y1 included, and a height
 struct Footprint {
     int x0;
     int y0;
@@ -1000,8 +927,7 @@ struct Footprint {
     float height;
 };
 
-// the buildings of the textures of the game (TXMPACK, the same on every
-// map), read on their images by hand; the dark towers of the downtowns higher
+// read by hand on the images of TXMPACK; the dark towers of the downtowns higher
 const std::map<int, std::vector<Footprint>> kBuildings{
     // 223-228 : the harbor (64 x 64, a triangle each half): sheds on the piers, goods
     {TEXTURE_HARBOR_A, {{16, 13, 63, 16, 16}, {50, 17, 55, 39, 16}, {5, 50, 38, 54, 16}}},
@@ -1025,9 +951,7 @@ const std::map<int, std::vector<Footprint>> kBuildings{
     // 251 : a village on sand, with its silos
     {TEXTURE_VILLAGE_SAND_B, {{39, 13, 45, 26, 30}, {49, 13, 56, 27, 30}, {5, 25, 13, 37, 12}, {70, 6, 88, 17, 10}, {8, 47, 26, 57, 12}, {28, 44, 41, 51, 10}, {28, 52, 42, 59, 10}, {43, 53, 50, 59, 9}, {71, 31, 103, 56, 14}, {104, 43, 111, 49, 12}, {51, 42, 57, 47, 10}, {9, 68, 40, 74, 10}, {23, 77, 43, 84, 10}, {44, 75, 51, 80, 9}, {45, 81, 52, 86, 10}, {86, 70, 112, 77, 10}, {79, 75, 86, 81, 10}, {104, 78, 125, 92, 12}, {15, 90, 42, 117, 12}, {44, 90, 54, 103, 10}, {44, 107, 51, 112, 10}, {60, 96, 95, 117, 10}, {99, 98, 120, 117, 12}, {61, 87, 73, 92, 9}, {89, 90, 97, 96, 10}, {68, 115, 75, 121, 9}}},
 };
-// the houses: found on their image, by their light grey roofs
 
-// the facade of a texture's buildings
 enum class Facade {
     OFFICES,
     HOUSES,
@@ -1043,8 +967,7 @@ Facade facadeOf(int image) {
     return Facade::HOUSES;
 }
 
-// the houses: the components of light grey texels (their roofs), 2 x 2 at
-// least; the rings of the outlined houses fall apart and are dropped
+// the connected light grey roofs of 2 x 2 texels at least
 std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
     std::vector<Footprint> houses;
     const int w = (int)img->width;
@@ -1095,9 +1018,7 @@ std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
     return houses;
 }
 
-// a facade, a floor of 8 high and 8 wide by repeat: rows of windows
-// (offices), a window by floor (houses), grey cladding without windows (the
-// sheds of the harbor)
+// floors of 8 x 8: rows of windows, one window by floor, or plain cladding
 r4::assets::Image facadeImage(Facade kind) {
     r4::assets::Image img;
     img.name = kind == Facade::OFFICES ? "facade, offices" : kind == Facade::HOUSES ? "facade, houses" : "facade, industry";
@@ -1106,7 +1027,6 @@ r4::assets::Image facadeImage(Facade kind) {
     img.pixels.resize(16 * 16 * 4);
     for (int y = 0; y < 16; y++) {
         for (int x = 0; x < 16; x++) {
-            // R4nkine's images from the bottom row: y 0 is the bottom of the floor
             uint8_t *d = &img.pixels[((size_t)y * 16 + x) * 4];
             uint8_t c[3];
             switch (kind) {
@@ -1132,7 +1052,7 @@ r4::assets::Image facadeImage(Facade kind) {
                     c[2] = 160;
                 }
                 break;
-            default: // vertical ribs
+            default:
                 c[0] = c[1] = c[2] = (uint8_t)(x % 4 == 0 ? 92 : 118);
                 break;
             }
@@ -1161,7 +1081,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
     Node root;
     root.name = "cities";
     model->nodes.push_back(root);
-    // the materials: lit by the sun as the objects, the texture times the intensity
     auto material = [&](const std::string &name, int image) {
         Material m;
         m.name = name;
@@ -1178,7 +1097,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         model->images.push_back(facadeImage(f));
         walls[(int)f] = material(model->images.back().name, (int)model->images.size() - 1);
     }
-    // by texture with buildings: its roofs (the image itself) and its footprints
     struct Built {
         int roofs = -1;
         std::vector<Footprint> footprints;
@@ -1225,8 +1143,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         b.footprints = id == TEXTURE_HOUSES ? housesOf(src, palette) : kBuildings.at(id);
         return &b;
     };
-    // none on the objects of the map and of the mission: a footprint whose
-    // box comes within the radius of one is left
     auto free = [&](r4::Vec2 lo, r4::Vec2 hi) {
         for (const r4::Vec3 &k : keepOut) {
             float dx = std::max({lo.x - k.x, 0.0f, k.x - hi.x});
@@ -1238,7 +1154,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         return true;
     };
     auto quad = [](Mesh &m, const r4::Vec3(&p)[4], const r4::Vec2(&uv)[4], r4::Vec3 n) {
-        // turned to face n
         bool flip = r4::dot(r4::cross(p[1] - p[0], p[2] - p[0]), n) < 0;
         uint32_t base = (uint32_t)m.vertices.size();
         for (int k = 0; k < 4; k++) {
@@ -1264,10 +1179,8 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
             if (!cur || !right || !bottomRight || !bottom) {
                 continue;
             }
-            std::map<int, Mesh> meshes;              // by material
-            std::set<std::pair<int, size_t>> placed; // image, footprint: once by cell
-            // the two triangles of the cell as RSArea, each its image and uvs
-            // (the whole image over the cell, or a half of it over a triangle)
+            std::map<int, Mesh> meshes;
+            std::set<std::pair<int, size_t>> placed;
             struct Tri {
                 const MapVertex *v[3];
                 int image;
@@ -1278,8 +1191,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
                 if (!b) {
                     continue;
                 }
-                // a texel of the image on the ground: through the triangle's
-                // uvs (texels, from the top), its barycentric coordinates
                 r4::Vec2 t0{t.uv[0][0] * b->w, t.uv[0][1] * b->h};
                 r4::Vec2 t1{t.uv[1][0] * b->w, t.uv[1][1] * b->h};
                 r4::Vec2 t2{t.uv[2][0] * b->w, t.uv[2][1] * b->h};
@@ -1301,7 +1212,6 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
                 };
                 for (size_t fi = 0; fi < b->footprints.size(); fi++) {
                     const Footprint &f = b->footprints[fi];
-                    // in this triangle: its center within the triangle's texels
                     r4::Vec2 center{(f.x0 + f.x1 + 1) * 0.5f, (f.y0 + f.y1 + 1) * 0.5f};
                     r4::Vec2 ab = bary(center);
                     if (ab.x < -1e-4f || ab.y < -1e-4f || ab.x + ab.y > 1 + 1e-4f || placed.count({t.image, fi})) {
@@ -1324,11 +1234,10 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
                     float low = 1e30f;
                     float high = -1e30f;
                     for (int k = 0; k < 4; k++) {
-                        float g = area->getY(c[k].x, c[k].y) - 5; // getY is 5 above
+                        float g = area->getY(c[k].x, c[k].y) - 5;
                         low = std::min(low, g);
                         high = std::max(high, g);
                     }
-                    // standing on the highest corner, its foot under the lowest
                     float bottomY = low - 10;
                     float top = high + f.height;
                     r4::Vec3 roof[4];
@@ -1344,13 +1253,12 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
                     for (int k = 0; k < 4; k++) {
                         int j = (k + 1) % 4;
                         r4::Vec2 e = c[j] - c[k];
-                        r4::Vec2 out{e.y, -e.x}; // a normal of the edge, turned outward
+                        r4::Vec2 out{e.y, -e.x};
                         if (r4::dot(out, (c[k] + c[j]) * 0.5f - mid) < 0) {
                             out = -out;
                         }
                         r4::Vec3 n = r4::normalize(r4::Vec3{out.x, 0, out.y});
                         const r4::Vec3 p[4] = {foot[k], foot[j], roof[j], roof[k]};
-                        // a floor of 8: the facade repeated along and up, from the roof down
                         float len = r4::length(e) / 8;
                         float up = (top - bottomY) / 8;
                         const r4::Vec2 uv[4] = {{0, -up}, {len, -up}, {len, 0}, {0, 0}};

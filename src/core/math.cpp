@@ -29,10 +29,10 @@ void Sphere::extend(const Sphere &s) {
     Vec3 d = s.center - center;
     float dist = length(d);
     if (dist + s.radius <= radius) {
-        return; // s is inside
+        return;
     }
     if (dist + radius <= s.radius) {
-        *this = s; // this is inside s
+        *this = s;
         return;
     }
     float r = (dist + radius + s.radius) * 0.5f;
@@ -48,7 +48,6 @@ Sphere sphereOf(const Box &b) {
 }
 
 Frustum Frustum::fromMatrix(const Mat4 &vp) {
-    // Gribb & Hartmann: the rows of the matrix
     auto row = [&](int i) {
         return Vec4{vp[0][i], vp[1][i], vp[2][i], vp[3][i]};
     };

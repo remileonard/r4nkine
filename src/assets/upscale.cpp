@@ -86,8 +86,6 @@ Pixel mix4(Pixel a, Pixel b, Pixel c, Pixel d) {
     return pack(r[0], r[1], r[2], r[3]);
 }
 
-// --- 2xSaI ------------------------------------------------------------------------------
-
 int result1(Pixel a, Pixel b, Pixel c, Pixel d) {
     int x = 0;
     int y = 0;
@@ -140,10 +138,6 @@ Image sai2x(const Image &img) {
     std::vector<Pixel> out((size_t)W * H);
     for (int y = 0; y < s.h; y++) {
         for (int x = 0; x < s.w; x++) {
-            //  I E F J
-            //  G A B K
-            //  H C D L
-            //  M N O (P unused)
             Pixel I = s.at(x - 1, y - 1);
             Pixel E = s.at(x, y - 1);
             Pixel F = s.at(x + 1, y - 1);
@@ -210,10 +204,7 @@ Image sai2x(const Image &img) {
     return imageOf(img, W, H, out);
 }
 
-// --- xBR (level 2, 2x) -----------------------------------------------------------------
-
-// the distance of 2 colors in YUV, weighted as xBR and hqx (the luma first),
-// the alpha as strong as the luma
+// in YUV weighted as xBR and hqx, the alpha as strong as the luma
 int yuv(Pixel p, int &u, int &v) {
     int r = ch(p, 0);
     int g = ch(p, 1);
@@ -256,8 +247,7 @@ void blend(Pixel &dst, Pixel src, int k) {
     dst = pack(r[0], r[1], r[2], r[3]);
 }
 
-// one corner of the 2 x 2 of E, the one towards PI (Hyllian's FILTRO):
-// n3 the corner, n2 its neighbor on the side of PH, n1 the one on the side of PF
+// the corner of E towards PI (FILTRO of Hyllian): n3 the corner, n2 its neighbor towards PH, n1 towards PF
 void xbrCorner(Pixel *e, Pixel PE, Pixel PI, Pixel PH, Pixel PF, Pixel PG, Pixel PC, Pixel PD, Pixel PB, Pixel F4, Pixel I4, Pixel H5, Pixel I5, int n1, int n2, int n3) {
     if (PE == PH || PE == PF) {
         return;
@@ -295,11 +285,6 @@ Image xbr2x(const Image &img) {
     std::vector<Pixel> out((size_t)W * H);
     for (int y = 0; y < s.h; y++) {
         for (int x = 0; x < s.w; x++) {
-            //       A1 B1 C1
-            //    A0 PA PB PC C4
-            //    D0 PD PE PF F4
-            //    G0 PG PH PI I4
-            //       G5 H5 I5
             Pixel A1 = s.at(x - 1, y - 2);
             Pixel B1 = s.at(x, y - 2);
             Pixel C1 = s.at(x + 1, y - 2);
@@ -321,7 +306,6 @@ Image xbr2x(const Image &img) {
             Pixel G5 = s.at(x - 1, y + 2);
             Pixel H5 = s.at(x, y + 2);
             Pixel I5 = s.at(x + 1, y + 2);
-            // 0 top left, 1 top right, 2 bottom left, 3 bottom right
             Pixel e[4] = {PE, PE, PE, PE};
             xbrCorner(e, PE, PI, PH, PF, PG, PC, PD, PB, F4, I4, H5, I5, 1, 2, 3);
             xbrCorner(e, PE, PC, PF, PB, PI, PA, PH, PD, B1, C1, F4, C4, 0, 3, 1);

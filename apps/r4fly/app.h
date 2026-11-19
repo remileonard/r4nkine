@@ -1,5 +1,4 @@
-// app.h - the state of r4fly, shared by its loop (main.cpp) and its GUI
-// (gui.cpp).
+// app.h - the state of r4fly, shared by its loop (main.cpp) and its GUI (gui.cpp).
 #pragma once
 
 #include "r4/assets/model.h"
@@ -23,14 +22,12 @@ namespace r4fly {
 
 using namespace r4;
 
-// the eye turning about a center: the left button turns, the wheel zooms,
-// the right button moves the center in the plane of the view
+// left button turns, wheel zooms, right button moves the center in the plane of the view
 struct Trackball {
     Vec3 center;
     float radius = 1;
     float distance = 3;
-    // the sliders: heading (yaw about Z), pitch (the eye above), roll (about
-    // the line of sight), read from the orbit and written back when moved
+    // read from the orbit and written back when moved
     float heading = 30;
     float pitch = 25;
     float roll = 0;
@@ -40,8 +37,7 @@ struct Trackball {
     float znear = 0.1f;
     float zfar = 1000;
     render::Orbit orbit; // the orientation
-    // the mouse: in the axes of the screen (trackball, as perfly), or about
-    // the vertical of the world (turntable: never a roll)
+    // trackball in the axes of the screen, or turntable about the vertical of the world
     bool turntable = false;
 
     void reset(const Sphere &s, float h, float p, float zoom) {
@@ -61,7 +57,6 @@ struct Trackball {
     void writeAngles() {
         orbit.setAngles(heading, pitch, roll);
     }
-    // the left button: dx turns about the up of the screen, dy about its right
     void turn(float dx, float dy) {
         if (turntable) {
             heading -= dx;
@@ -88,7 +83,6 @@ struct Trackball {
         }
         orbit.apply(cam, fov, aspect, znear, zfar);
     }
-    // the right button: the center moves with the mouse, in the plane of the view
     void move(float dx, float dy, int viewHeight) {
         float k = 2 * distance * std::tan(radians(fov) * 0.5f) / std::max(viewHeight, 1);
         pan = pan - orbit.right() * (dx * k) + orbit.up() * (dy * k);
@@ -125,7 +119,6 @@ struct App {
     float lightAzimuth = 45;
     float lightElevation = 50;
 
-    // the GUI
     std::unique_ptr<ui::Context> ui;
     ui::Input input;        // the mouse of the frame
     bool sceneDrag = false; // a drag that started in the view
@@ -157,7 +150,6 @@ struct App {
     std::map<scene::Node *, uint32_t> hiddenMasks; // the nodes hidden from the graph window
     std::shared_ptr<scene::Geode> boundsMarker;    // the bounding sphere of the selection
 
-    // the measures: the last frames
     std::deque<float> frameMs;
     std::deque<float> cullMs;
     std::deque<float> drawMs;
@@ -174,7 +166,6 @@ struct App {
     }
 };
 
-// gui.cpp: the panels, in the look of perfly (r4::ui)
 void guiFrame(App &app, int width, int height, float pixelScale); // builds the panels (points)
 bool guiWantsMouse(const App &app);
 // the part of the window left to the scene, beside the panels (points)

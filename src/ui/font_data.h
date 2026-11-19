@@ -1,5 +1,4 @@
-// font_data.h - the glyphs baked from Liberation Sans (font_data.inc), for
-// the GUI (r4::ui) and the bitmap fonts of r4::raster. Internal.
+// font_data.h - the glyphs baked from Liberation Sans (font_data.inc), for r4::ui and r4::raster.
 #pragma once
 
 #include <cstddef>

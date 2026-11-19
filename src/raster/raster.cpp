@@ -1,5 +1,4 @@
-// raster.cpp - the surfaces of r4::raster: drawing on the CPU, indexed or in
-// true colors.
+// raster.cpp - the surfaces of r4::raster drawn on the CPU, indexed or in true colors.
 #include "r4/raster/raster.h"
 
 #include "../ui/font_data.h"
@@ -12,8 +11,6 @@
 #include <memory>
 
 namespace r4::raster {
-
-// --- palettes ----------------------------------------------------------------
 
 namespace {
 
@@ -31,7 +28,6 @@ uint32_t mix(uint32_t a, uint32_t b, float t) {
 } // namespace
 
 Palette Palette::vga() {
-    // the default palette of the VGA, mode 13h
     Palette p;
     static const uint8_t ega[16][3] = {{0, 0, 0}, {0, 0, 170}, {0, 170, 0}, {0, 170, 170}, {170, 0, 0}, {170, 0, 170}, {170, 85, 0}, {170, 170, 170}, {85, 85, 85}, {85, 85, 255}, {85, 255, 85}, {85, 255, 255}, {255, 85, 85}, {255, 85, 255}, {255, 255, 85}, {255, 255, 255}};
     for (int i = 0; i < 16; i++) {
@@ -41,7 +37,6 @@ Palette Palette::vga() {
     for (int i = 0; i < 16; i++) {
         p.colors[16 + i] = rgba(greys[i], greys[i], greys[i]);
     }
-    // 9 groups of 24 hues: 3 intensities x 3 saturations
     static const float levels[3] = {1.0f, 0.44f, 0.25f};
     static const float sats[3] = {0.0f, 0.5f, 0.72f};
     int i = 32;
@@ -55,7 +50,6 @@ Palette Palette::vga() {
                 float lo = sat;
                 float up = lo + (hi - lo) * f;
                 float down = hi - (hi - lo) * f;
-                // blue, magenta, red, yellow, green, cyan, as the VGA orders them
                 float r;
                 float g;
                 float b;
@@ -126,7 +120,6 @@ int Palette::nearest(uint8_t r, uint8_t g, uint8_t b, int count) const {
         long dr = red(colors[i]) - r;
         long dg = green(colors[i]) - g;
         long db = blue(colors[i]) - b;
-        // weighted as the eye: green counts most
         long d = 3 * dr * dr + 4 * dg * dg + 2 * db * db;
         if (d < bestD) {
             bestD = d;
@@ -168,7 +161,6 @@ Palette Palette::tinted(uint32_t color, float t) const {
     Palette p;
     for (int i = 0; i < 256; i++) {
         uint32_t c = colors[i];
-        // the light of the color, multiplied by the tint
         float l = (0.299f * red(c) + 0.587f * green(c) + 0.114f * blue(c)) / 255;
         uint32_t tinted = rgba(clampByte(l * red(color)), clampByte(l * green(color)), clampByte(l * blue(color)), alpha(c));
         p.colors[i] = mix(c, tinted, t);
@@ -190,14 +182,7 @@ Palette Palette::rotated(int first, int last, int steps) const {
     return p;
 }
 
-// --- fonts ---------------------------------------------------------------------
-
 const Font &Font::builtin(int pixels, bool bold) {
-    // the baked fonts: their index, size and weight; the largest one not
-    // above the size asked, then enlarged by a whole factor (sharp pixels)
-    // the baked fonts (index, size): the largest one not above the size
-    // asked; above 32 pixels, the one of 13 (16 bold) enlarged by a whole
-    // factor, which keeps the look of the pixels
     struct Baked {
         int index;
         int size;
@@ -246,7 +231,6 @@ const Font &Font::builtin(int pixels, bool bold) {
         gl.yoff = (int)std::lround(ascent + m[1]) * factor;
         gl.advance = (int)std::lround(m[2]) * factor;
         gl.mask.resize((size_t)std::max(0, gl.width * gl.height));
-        // thresholded: the pixels of the old screens have no shades
         for (int y = 0; y < gl.height; y++) {
             for (int x = 0; x < gl.width; x++) {
                 gl.mask[(size_t)y * gl.width + x] = b.pixels[(size_t)(box[1] + y / factor) * b.width + box[0] + x / factor] >= 110;
@@ -284,8 +268,6 @@ int Font::width(const std::string &text) const {
     }
     return w;
 }
-
-// --- surfaces ------------------------------------------------------------------
 
 Surface::Surface(int width, int height, Format format) : width_(std::max(0, width)), height_(std::max(0, height)), format_(format) {
     data_.assign(pitch() * height_, 0);
@@ -403,7 +385,6 @@ void Surface::line(int x0, int y0, int x1, int y1, uint32_t color) {
 
 void Surface::lineDashed(int x0, int y0, int x1, int y1, uint32_t color, int on, int off) {
     touch();
-    // Bresenham
     int dx = std::abs(x1 - x0);
     int dy = -std::abs(y1 - y0);
     int sx = x0 < x1 ? 1 : -1;
@@ -436,7 +417,6 @@ void Surface::lineThick(int x0, int y0, int x1, int y1, uint32_t color, int thic
         line(x0, y0, x1, y1, color);
         return;
     }
-    // a quad around the line, and round ends
     float dx = (float)(x1 - x0);
     float dy = (float)(y1 - y0);
     float l = std::sqrt(dx * dx + dy * dy);
@@ -485,7 +465,6 @@ void Surface::ellipse(int cx, int cy, int rx, int ry, uint32_t color) {
         line(cx - rx, cy - ry, cx + rx, cy + ry, color);
         return;
     }
-    // the midpoint algorithm, in two regions
     long a2 = (long)rx * rx;
     long b2 = (long)ry * ry;
     long x = 0;
@@ -554,7 +533,6 @@ void Surface::fillPolygon(const int *xy, int count, uint32_t color) {
     ymax = std::min(ymax, cy1_ - 1);
     std::vector<float> xs;
     for (int y = ymin; y <= ymax; y++) {
-        // the crossings of the edges with the center of the row
         float fy = y + 0.5f;
         xs.clear();
         for (int i = 0; i < count; i++) {
@@ -616,7 +594,6 @@ void Surface::blit(const Surface &src, int dx, int dy, int sx, int sy, int sw, i
             } else if (format_ == Format::RGBA8) {
                 put(tx, ty, c);
             } else if (palette) {
-                // true colors into an indexed surface: the nearest of the palette
                 if (alpha(c) >= 128) {
                     put(tx, ty, palette->nearest(red(c), green(c), blue(c)));
                 }
@@ -708,7 +685,7 @@ void Surface::scroll(int dx, int dy, uint32_t fill) {
             continue;
         }
         int x0 = std::max(0, dx);
-        int x1 = std::min(w, w + dx); // the target columns
+        int x1 = std::min(w, w + dx);
         if (x0 >= x1) {
             continue;
         }

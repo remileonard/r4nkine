@@ -1,9 +1,4 @@
-// gl_device.cpp - the OpenGL 3.3 backend of r4::gpu.
-//
-// The pipelines own a vertex array object each: OpenGL 3.3 has no separate
-// vertex format (4.3), so the attributes are pointed again at draw time when
-// the buffers bound to the pipeline's VAO changed. Every state is cached to
-// skip the redundant calls.
+// gl_device.cpp - the OpenGL 3.3 backend of r4::gpu; every state is cached to skip the redundant calls.
 #include "gl_api.h"
 
 #include "r4/gpu/device.h"
@@ -178,14 +173,11 @@ public:
         v = 1;
         gl.GetIntegerv(MAX_SAMPLES, &v);
         lim.maxSamples = v > 0 ? v : 1;
-        // anisotropic filtering: core in 4.6, an extension before (the same
-        // enums); an error when there is none
         while (gl.GetError() != NO_ERROR_) {
         }
         GLfloat aniso = 1;
         gl.GetFloatv(MAX_TEXTURE_MAX_ANISOTROPY, &aniso);
         lim.maxAnisotropy = gl.GetError() == NO_ERROR_ && aniso > 1 ? aniso : 1;
-        // the framebuffer of the window: not always 0 (a host, some platforms)
         gl.GetIntegerv(FRAMEBUFFER_BINDING, &v);
         windowFbo = (GLuint)v;
         const char *renderer = (const char *)gl.GetString(RENDERER);
@@ -232,7 +224,6 @@ public:
         b.target = usage == BufferUsage::INDEX ? ELEMENT_ARRAY_BUFFER : usage == BufferUsage::UNIFORM ? UNIFORM_BUFFER : ARRAY_BUFFER;
         b.size = size;
         gl.GenBuffers(1, &b.name);
-        // the element buffer is VAO state: create it with no VAO bound
         bindVAO(0);
         gl.BindBuffer(b.target, b.name);
         gl.BufferData(b.target, (GLsizeiptr)size, data, dynamic ? DYNAMIC_DRAW : STATIC_DRAW);
@@ -260,7 +251,6 @@ public:
                 }
             }
             buffers.remove(h.id);
-            // the VAOs pointing at it point again at draw time
             for (size_t i = 0; i < pipelines.items.size(); i++) {
                 GLPipeline &p = pipelines.items[i];
                 for (int s = 0; s < kMaxStreams; s++) {
@@ -280,7 +270,7 @@ public:
         gl.GenTextures(1, &t.name);
         gl.ActiveTexture(TEXTURE0);
         gl.BindTexture(TEXTURE_2D, t.name);
-        textureBound[0] = 0; // the cache of unit 0 is no longer right
+        textureBound[0] = 0;
         GLint ifmt = RGBA8;
         GLenum fmt = RGBA;
         int bpp = 4;
@@ -347,7 +337,6 @@ public:
             return createShadowTarget(r);
         }
         r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
-        // the texture of its color
         TextureDesc td;
         td.width = d.width;
         td.height = d.height;
@@ -362,7 +351,6 @@ public:
         gl.FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, textures.get(r.texture)->name, 0);
         bool ok = true;
         if (r.desc.samples > 1) {
-            // the passes draw into multisampled buffers, resolved into the texture
             gl.GenFramebuffers(1, &r.msaaFbo);
             gl.BindFramebuffer(FRAMEBUFFER, r.msaaFbo);
             gl.GenRenderbuffers(1, &r.colorRb);
@@ -393,7 +381,6 @@ public:
         return {id};
     }
 
-    // a depth texture, compared at sampling, and nothing else
     RenderTargetHandle createShadowTarget(GLRenderTarget &r) {
         r.desc.samples = 1;
         GLTexture t;
@@ -619,7 +606,6 @@ public:
             mask |= COLOR_BUFFER_BIT;
         }
         if (c.depth) {
-            // the depth mask must be on for the clear
             if (!depthWrite) {
                 gl.DepthMask(TRUE_);
                 depthWrite = true;
@@ -753,7 +739,7 @@ public:
         stats.textureChanges++;
     }
 
-    // points the VAO of the pipeline at the bound buffers when they changed
+    // OpenGL 3.3 has no separate vertex format: the attributes are pointed again when the buffers bound to the VAO changed
     bool prepareDraw(bool indexed) {
         GLPipeline *p = pipelines.get(current);
         if (!p) {
@@ -830,8 +816,7 @@ public:
         return s;
     }
 
-    // the host draws with the same context: its state is saved, the caches
-    // of the device are forgotten (the host may change anything between)
+    // the host draws with the same context: its state is saved and the caches of the device forgotten
     void beginHostInterop() override {
         GLint v;
         gl.GetIntegerv(CURRENT_PROGRAM, &v);
@@ -871,7 +856,7 @@ public:
         gl.GetIntegerv(FRAMEBUFFER_BINDING, &v);
         host.fbo = v;
         boundFbo = (GLuint)v;
-        windowFbo = (GLuint)v; // the passes "on the window" go where the host draws
+        windowFbo = (GLuint)v;
         forgetCaches();
     }
 
@@ -922,7 +907,6 @@ private:
         for (auto &u : uniformBound) {
             u = {};
         }
-        // the VAOs may have been changed by the host: point them again
         for (size_t i = 0; i < pipelines.items.size(); i++) {
             GLPipeline &p = pipelines.items[i];
             for (int s = 0; s < kMaxStreams; s++) {
@@ -930,7 +914,6 @@ private:
             }
             p.indexBuffer = 0;
         }
-        // the first state calls must not be skipped
         gl.DepthMask(TRUE_);
     }
 
@@ -947,7 +930,6 @@ private:
     GLuint windowFbo = 0;
     GLuint boundFbo = 0;
 
-    // the cached state
     uint32_t current = 0;
     GLuint currentProgram = 0;
     GLuint currentVAO = 0;
@@ -970,7 +952,6 @@ private:
         size_t size = 0;
     } uniformBound[kMaxUniformSlots];
 
-    // what the next draw uses
     uint32_t streams[kMaxStreams] = {};
     size_t streamOffsets[kMaxStreams] = {};
     uint32_t indexBuffer = 0;

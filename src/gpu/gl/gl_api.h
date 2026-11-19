@@ -1,5 +1,4 @@
-// gl_api.h - the OpenGL 3.3 functions and constants the GL backend uses,
-// loaded at run time: no GL header nor loader library is needed.
+// gl_api.h - the OpenGL 3.3 functions and constants of the GL backend, loaded at run time.
 #pragma once
 
 #include <cstddef>

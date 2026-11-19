@@ -1,10 +1,6 @@
-// bake_font.cpp - bakes the fonts of r4::ui into src/ui/font_data.inc.
+// bake_font.cpp - bakes the Latin-1 glyphs of r4::ui into one 8-bit atlas, src/ui/font_data.inc (committed; needs stb_truetype).
+// Usage: bake_font LiberationSans-Regular.ttf LiberationSans-Bold.ttf > src/ui/font_data.inc
 //
-//   bake_font LiberationSans-Regular.ttf LiberationSans-Bold.ttf > src/ui/font_data.inc
-//
-// The glyphs of Latin-1 (32-126, 160-255) at the sizes of the GUI go into
-// one 8-bit atlas, with their metrics. Built by hand (needs stb_truetype),
-// not by the project: the output is committed.
 #define STB_TRUETYPE_IMPLEMENTATION
 #define STB_RECT_PACK_IMPLEMENTATION
 #include <stb_rect_pack.h>
@@ -39,14 +35,12 @@ int main(int argc, char **argv) {
         }
         std::fclose(f);
     }
-    // at 1x, then at 2x for the screens of high density (Retina)
     const Face faces[] = {{0, 13, "regular"}, {1, 13, "bold"}, {0, 11, "small"}, {1, 16, "title"}, {0, 26, "regular 2x"}, {1, 26, "bold 2x"}, {0, 22, "small 2x"}, {1, 32, "title 2x"}};
     const int nf = 8;
     const int W = 1024;
     const int H = 256;
     std::vector<unsigned char> atlas(W * H);
     stbtt_pack_context pc;
-    // the glyphs above the last rows, which keep the white texels
     stbtt_PackBegin(&pc, atlas.data(), W, H - 4, W, 1, nullptr);
     stbtt_PackSetOversampling(&pc, 1, 1);
     std::vector<stbtt_packedchar> chars[nf][2];
@@ -68,7 +62,6 @@ int main(int argc, char **argv) {
         }
     }
     stbtt_PackEnd(&pc);
-    // a white texel for the shapes, in the corner
     atlas[(H - 1) * W + W - 1] = 255;
     atlas[(H - 1) * W + W - 2] = 255;
     atlas[(H - 2) * W + W - 1] = 255;
@@ -113,7 +106,6 @@ int main(int argc, char **argv) {
         std::printf("},\n");
     }
     std::printf("};\n");
-    // the atlas, rows from the top, run-length coded: (count, value) pairs
     std::vector<int> rle;
     for (size_t i = 0; i < atlas.size();) {
         size_t j = i;
