@@ -22,7 +22,7 @@ void Mesh::computeBounds() {
 }
 
 void Mesh::computeNormals(float creaseDegrees) {
-    if (primitive != Primitive::Triangles || indices.size() < 3) {
+    if (primitive != Primitive::TRIANGLES || indices.size() < 3) {
         return;
     }
     size_t triangles = indices.size() / 3;

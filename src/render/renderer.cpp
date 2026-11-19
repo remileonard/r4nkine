@@ -10,8 +10,8 @@ namespace {
 
 // the uniform blocks (std140): the slots and layouts the shaders share
 enum Slot : uint32_t {
-    kFrameSlot = 0,
-    kMaterialSlot = 2
+    FRAME_SLOT = 0,
+    MATERIAL_SLOT = 2
 };
 // the matrices of the instances: a vertex stream read once per instance
 constexpr uint32_t kInstanceStride = 64;
@@ -308,16 +308,16 @@ gpu::VertexLayout vertexLayout() {
     gpu::VertexStream s;
     s.stride = sizeof(assets::Vertex);
     s.attribs = {
-        {0, 3, gpu::AttribType::Float, false, (uint32_t)offsetof(assets::Vertex, position)},
-        {1, 3, gpu::AttribType::Float, false, (uint32_t)offsetof(assets::Vertex, normal)},
-        {2, 2, gpu::AttribType::Float, false, (uint32_t)offsetof(assets::Vertex, uv)},
-        {3, 4, gpu::AttribType::UByte, true, (uint32_t)offsetof(assets::Vertex, color)},
+        {0, 3, gpu::AttribType::FLOAT, false, (uint32_t)offsetof(assets::Vertex, position)},
+        {1, 3, gpu::AttribType::FLOAT, false, (uint32_t)offsetof(assets::Vertex, normal)},
+        {2, 2, gpu::AttribType::FLOAT, false, (uint32_t)offsetof(assets::Vertex, uv)},
+        {3, 4, gpu::AttribType::UBYTE, true, (uint32_t)offsetof(assets::Vertex, color)},
     };
     gpu::VertexStream inst;
     inst.stride = kInstanceStride;
     inst.perInstance = true;
     for (uint32_t c = 0; c < 4; c++) {
-        inst.attribs.push_back({4 + c, 4, gpu::AttribType::Float, false, 16 * c});
+        inst.attribs.push_back({4 + c, 4, gpu::AttribType::FLOAT, false, 16 * c});
     }
     gpu::VertexLayout l;
     l.streams.push_back(s);
@@ -329,7 +329,7 @@ gpu::VertexLayout vertexLayout() {
 
 Renderer::Renderer(gpu::Device &device) : device_(device) {
     createShaders();
-    frameUniforms_ = device_.createBuffer(gpu::BufferUsage::Uniform, nullptr, sizeof(FrameBlock), true);
+    frameUniforms_ = device_.createBuffer(gpu::BufferUsage::UNIFORM, nullptr, sizeof(FrameBlock), true);
     uint8_t white[4] = {255, 255, 255, 255};
     gpu::TextureDesc td;
     td.width = td.height = 1;
@@ -359,7 +359,7 @@ bool Renderer::createShaders() {
     gpu::ShaderDesc d;
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
-    d.uniformBlocks = {{"Frame", kFrameSlot}, {"Material", kMaterialSlot}};
+    d.uniformBlocks = {{"Frame", FRAME_SLOT}, {"Material", MATERIAL_SLOT}};
     d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
@@ -370,14 +370,14 @@ bool Renderer::createShaders() {
     gpu::ShaderDesc sd;
     sd.vertex = kShadowVertex;
     sd.fragment = kShadowFragment;
-    sd.uniformBlocks = {{"Frame", kFrameSlot}};
+    sd.uniformBlocks = {{"Frame", FRAME_SLOT}};
     sd.debugName = "shadow";
     shadowShader_ = device_.createShader(sd);
     if (shadowShader_) {
         gpu::PipelineDesc pd;
         pd.shader = shadowShader_;
         pd.layout = vertexLayout();
-        pd.cull = gpu::CullMode::None; // the thin and the open models cast too
+        pd.cull = gpu::CullMode::NONE; // the thin and the open models cast too
         pd.polygonOffsetFactor = 2;
         pd.polygonOffsetUnits = 4;
         shadowPipeline_ = device_.createPipeline(pd);
@@ -389,8 +389,8 @@ bool Renderer::createShaders() {
 }
 
 gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
-    bool blend = m.alpha == assets::AlphaMode::Blend;
-    bool additive = m.alpha == assets::AlphaMode::Additive;
+    bool blend = m.alpha == assets::AlphaMode::BLEND;
+    bool additive = m.alpha == assets::AlphaMode::ADDITIVE;
     uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8;
     auto it = pipelines_.find(key);
     if (it != pipelines_.end()) {
@@ -399,13 +399,13 @@ gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Pri
     gpu::PipelineDesc d;
     d.shader = shader_;
     d.layout = vertexLayout();
-    d.primitive = primitive == assets::Primitive::Lines ? gpu::Primitive::Lines : primitive == assets::Primitive::Points ? gpu::Primitive::Points : gpu::Primitive::Triangles;
-    bool tris = primitive == assets::Primitive::Triangles;
-    d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::None : gpu::CullMode::Back;
-    d.blend = blend ? gpu::BlendMode::Alpha : additive ? gpu::BlendMode::Additive : gpu::BlendMode::Opaque;
+    d.primitive = primitive == assets::Primitive::LINES ? gpu::Primitive::LINES : primitive == assets::Primitive::POINTS ? gpu::Primitive::POINTS : gpu::Primitive::TRIANGLES;
+    bool tris = primitive == assets::Primitive::TRIANGLES;
+    d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::NONE : gpu::CullMode::BACK;
+    d.blend = blend ? gpu::BlendMode::ALPHA : additive ? gpu::BlendMode::ADDITIVE : gpu::BlendMode::NONE;
     d.depthWrite = (!blend || m.blendDepthWrite) && m.depthWrite;
     if (m.depthEqual) {
-        d.depthCompare = gpu::CompareOp::Equal;
+        d.depthCompare = gpu::CompareOp::EQUAL;
     }
     d.wireframe = wireframe_ && tris;
     if (m.decal && !m.depthEqual) { // an equal depth needs the very same depth
@@ -425,8 +425,8 @@ gpu::TextureHandle Renderer::uploadImage(const assets::Image &image, bool mipmap
     d.width = image.width;
     d.height = image.height;
     d.mipmaps = mipmaps;
-    d.wrapS = image.clampS ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
-    d.wrapT = image.clampT ? gpu::Wrap::Clamp : gpu::Wrap::Repeat;
+    d.wrapS = image.clampS ? gpu::Wrap::CLAMP : gpu::Wrap::REPEAT;
+    d.wrapT = image.clampT ? gpu::Wrap::CLAMP : gpu::Wrap::REPEAT;
     d.anisotropy = options_.anisotropy;
     // grey images are expanded: the shader reads RGBA
     std::vector<uint8_t> rgba;
@@ -465,8 +465,8 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
         delete p;
     });
     m->name = mesh.name;
-    m->vertices = device_.createBuffer(gpu::BufferUsage::Vertex, mesh.vertices.data(), mesh.vertices.size() * sizeof(assets::Vertex), false);
-    m->indices = device_.createBuffer(gpu::BufferUsage::Index, mesh.indices.data(), mesh.indices.size() * sizeof(uint32_t), false);
+    m->vertices = device_.createBuffer(gpu::BufferUsage::VERTEX, mesh.vertices.data(), mesh.vertices.size() * sizeof(assets::Vertex), false);
+    m->indices = device_.createBuffer(gpu::BufferUsage::INDEX, mesh.indices.data(), mesh.indices.size() * sizeof(uint32_t), false);
     m->indexCount = (uint32_t)mesh.indices.size();
     m->primitive = mesh.primitive;
     Box b = mesh.bounds;
@@ -497,17 +497,17 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     copyVec(b.specular, p.specular, p.specular.x + p.specular.y + p.specular.z > 0 ? p.shininess : 0);
     copyVec(b.emissive, p.emissive, 1);
     b.flags[0] = texture ? 1.0f : 0.0f;
-    b.flags[1] = p.alpha == assets::AlphaMode::Mask ? p.alphaCutoff : p.alphaTest;
+    b.flags[1] = p.alpha == assets::AlphaMode::MASK ? p.alphaCutoff : p.alphaTest;
     b.flags[2] = p.vertexColors ? 1.0f : 0.0f;
-    b.flags[3] = p.shading == assets::Shading::Unlit ? 1.0f : 0.0f;
+    b.flags[3] = p.shading == assets::Shading::UNLIT ? 1.0f : 0.0f;
     b.flags2[0] = p.sphereMap ? 1.0f : 0.0f;
-    if (p.shading == assets::Shading::PaletteRamp && texture) {
+    if (p.shading == assets::Shading::PALETTE_RAMP && texture) {
         b.flags2[1] = p.rampTextured ? 2.0f : 1.0f;
         b.flags2[2] = p.rampAmbient;
         b.flags2[3] = p.rampLight;
     }
     b.flags3[0] = p.receiveShadows ? 1.0f : 0.0f;
-    m->uniforms = device_.createBuffer(gpu::BufferUsage::Uniform, &b, sizeof b, false);
+    m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
 
@@ -529,7 +529,7 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     for (size_t i = 0; i < model.nodes.size(); i++) {
         const assets::Node &n = model.nodes[i];
         scene::NodePtr node;
-        if (n.kind == assets::NodeKind::Switch) {
+        if (n.kind == assets::NodeKind::SWITCH) {
             auto sw = scene::make<scene::Switch>();
             sw->setValue(n.switchValue == -1 ? scene::Switch::kAll : n.switchValue < -1 ? scene::Switch::kNone : n.switchValue);
             node = sw;
@@ -540,9 +540,9 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
                 lod->setCenter(n.lodCenter);
             }
             node = lod;
-        } else if (n.kind == assets::NodeKind::Billboard || !n.meshes.empty()) {
+        } else if (n.kind == assets::NodeKind::BILLBOARD || !n.meshes.empty()) {
             std::shared_ptr<scene::Geode> g;
-            if (n.kind == assets::NodeKind::Billboard) {
+            if (n.kind == assets::NodeKind::BILLBOARD) {
                 auto b = scene::make<scene::Billboard>();
                 b->setMode(n.billboardPoint ? scene::Billboard::Mode::Point : scene::Billboard::Mode::Axis);
                 g = b;
@@ -590,7 +590,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     item.order = mat->params.drawOrder;
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
-    bool behind = mat->params.alpha == assets::AlphaMode::Blend || mat->params.alpha == assets::AlphaMode::Additive;
+    bool behind = mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE;
     (behind ? transparent_ : opaque_).push_back(item);
     stats_.drawables++;
 }
@@ -652,21 +652,21 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
         inside = r == Frustum::Inside;
     }
     Mat4 world = parent * node.matrix();
-    if (node.type() == scene::NodeType::Billboard) {
+    if (node.type() == scene::NodeType::BILLBOARD) {
         // turned to the eye, about the origin of the node
         auto &bb = static_cast<scene::Billboard &>(node);
         world = world * bb.rotationFor(transformPoint(inverse(world), eye));
     }
-    if (node.type() == scene::NodeType::Geode || node.type() == scene::NodeType::Billboard) {
+    if (node.type() == scene::NodeType::GEODE || node.type() == scene::NodeType::BILLBOARD) {
         for (const scene::Drawable &d : static_cast<scene::Geode &>(node).drawables()) {
             addItem(d, world, eye);
         }
-    } else if (node.type() == scene::NodeType::Instancer) {
+    } else if (node.type() == scene::NodeType::INSTANCER) {
         cullInstancer(static_cast<scene::Instancer &>(node), world, frustum, inside, eye);
     }
     const auto &children = node.children();
     switch (node.type()) {
-    case scene::NodeType::Switch: {
+    case scene::NodeType::SWITCH: {
         auto &sw = static_cast<scene::Switch &>(node);
         for (size_t i = 0; i < children.size(); i++) {
             if (sw.isActive((int)i)) {
@@ -748,8 +748,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         stats_ = keep;
         auto casts = [](const DrawItem &it) {
             const assets::Material &m = it.material->params;
-            bool solid = m.alpha == assets::AlphaMode::Opaque || m.alpha == assets::AlphaMode::Mask || (m.alpha == assets::AlphaMode::Blend && m.blendDepthWrite);
-            return m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::Triangles;
+            bool solid = m.alpha == assets::AlphaMode::NONE || m.alpha == assets::AlphaMode::MASK || (m.alpha == assets::AlphaMode::BLEND && m.blendDepthWrite);
+            return m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::TRIANGLES;
         };
         for (size_t i = o; i < opaque_.size(); i++) {
             if (casts(opaque_[i])) {
@@ -818,7 +818,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     if (bytes > instanceCapacity_) {
         device_.destroyBuffer(instanceBuffer_);
         instanceCapacity_ = std::max(bytes, instanceCapacity_ * 2);
-        instanceBuffer_ = device_.createBuffer(gpu::BufferUsage::Vertex, nullptr, instanceCapacity_, true);
+        instanceBuffer_ = device_.createBuffer(gpu::BufferUsage::VERTEX, nullptr, instanceCapacity_, true);
     }
     device_.updateBuffer(instanceBuffer_, 0, instanceData_.data(), bytes);
     auto t3 = clock::now();
@@ -832,7 +832,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     clear.b = env_.clearColor.z;
     clear.a = env_.clearColor.w;
     device_.beginPass(target_, x, y, width, height, clear);
-    device_.bindUniformBuffer(kFrameSlot, frameUniforms_, 0, sizeof(FrameBlock));
+    device_.bindUniformBuffer(FRAME_SLOT, frameUniforms_, 0, sizeof(FrameBlock));
     if (shadowMap_) {
         device_.bindTexture(1, device_.renderTargetTexture(shadowMap_));
     }
@@ -850,7 +850,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
             }
             device_.bindPipeline(it.pipeline);
             if (it.material != lastMaterial) {
-                device_.bindUniformBuffer(kMaterialSlot, it.material->uniforms, 0, sizeof(MaterialBlock));
+                device_.bindUniformBuffer(MATERIAL_SLOT, it.material->uniforms, 0, sizeof(MaterialBlock));
                 device_.bindTexture(0, it.material->texture ? it.material->texture : white_);
                 lastMaterial = it.material;
             }
@@ -925,7 +925,7 @@ void Renderer::drawShadows(size_t base) {
     gpu::ClearValues clear;
     clear.color = false;
     device_.beginPass(shadowMap_, 0, 0, shadowMapSize_, shadowMapSize_, clear);
-    device_.bindUniformBuffer(kFrameSlot, frameUniforms_, 0, sizeof(FrameBlock));
+    device_.bindUniformBuffer(FRAME_SLOT, frameUniforms_, 0, sizeof(FrameBlock));
     device_.bindPipeline(shadowPipeline_);
     const GpuMesh *lastMesh = nullptr;
     for (size_t i = 0; i < casters_.size();) {

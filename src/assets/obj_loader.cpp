@@ -110,11 +110,11 @@ void loadMTL(const std::string &path, Model &model, std::map<std::string, int> &
             float d = (float)std::atof(rest);
             m->diffuse.w = !std::strcmp(tag, "Tr") ? 1 - d : d;
             if (m->diffuse.w < 1) {
-                m->alpha = AlphaMode::Blend;
+                m->alpha = AlphaMode::BLEND;
             }
         } else if (!std::strcmp(tag, "illum")) {
             if (std::atoi(rest) == 0) {
-                m->shading = Shading::Unlit;
+                m->shading = Shading::UNLIT;
             }
         } else if (!std::strcmp(tag, "map_Kd")) {
             // the last word is the file; the options before it are skipped
@@ -136,8 +136,8 @@ void loadMTL(const std::string &path, Model &model, std::map<std::string, int> &
                 }
             }
             m->diffuseImage = it->second;
-            if (m->diffuseImage >= 0 && model.images[m->diffuseImage].channels == 4 && m->alpha == AlphaMode::Opaque) {
-                m->alpha = AlphaMode::Mask;
+            if (m->diffuseImage >= 0 && model.images[m->diffuseImage].channels == 4 && m->alpha == AlphaMode::NONE) {
+                m->alpha = AlphaMode::MASK;
             }
         }
     }

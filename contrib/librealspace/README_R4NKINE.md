@@ -161,13 +161,13 @@ Le pont suit `SCRenderer::drawModel` passe par passe (couleur, texture, transpar
 | Faces dans le sens horaire (`glFrontFace(GL_CW)`) | Ordre inversé (a, c, b) : R4nkine attend le sens anti-horaire |
 | Normales `(a − b) × (c − b)`, lissées comme `objectNormals` (un quad compte pour deux triangles) | Même calcul, après le changement d'axes |
 | `lods` (LVL0, LVL1…) et `attrs` (T/Q/L) | Un nœud `NodeKind::LOD`, avec un enfant par niveau ; `lodRanges` = [0, dist1, dist2, …, ∞] |
-| Passe couleur : triangle `color`, quad `color − 1` | Matériau `Shading::PaletteRamp` ; l'index est dans le rouge de la couleur de sommet |
+| Passe couleur : triangle `color`, quad `color − 1` | Matériau `Shading::PALETTE_RAMP` ; l'index est dans le rouge de la couleur de sommet |
 | Éclairage (ambiant 3/8, lumière 5/8, `shadeAlongRamp`) | Image 256 × 32 (`rampImage`) : ligne k = intensité k/31 |
 | Face double : `flags[2] == 1` (triangle), `attrs->props2 == 1` (quad) | `doubleSided`, sinon face arrière éliminée comme dans le jeu |
 | Passe texture (LOD0, toutes les `uvs` et `qmapuvs`) | Images RGBA à travers la palette ; index 255 transparent (`Mask`, seuil 0,1 comme `glAlphaFunc`) |
 | Propriété 6 ou 9 : la texture est la face (`GL_LESS`) | Matériau `rampTextured` |
 | Autres faces texturées : sur la face colorée (`GL_EQUAL`) | Même matériau avec `decal = true` (polygon offset) |
-| Passe transparente : propriété 2, couleur `color − 1`, `glBlendFunc(GL_ONE, GL_ONE)` | `AlphaMode::Additive`, palette sans rampe (couleur × intensité) |
+| Passe transparente : propriété 2, couleur `color − 1`, `glBlendFunc(GL_ONE, GL_ONE)` | `AlphaMode::ADDITIVE`, palette sans rampe (couleur × intensité) |
 
 La lumière se règle avec `r4bridge::Lighting` ou avec les curseurs Ambient et Light du viewer.
 
@@ -184,7 +184,7 @@ someGroup->addChild(node);                    // et le renderer s'en occupe
 
 Une mission reste entièrement dans le repère de libRealSpace (Y en haut) :
 - le terrain : `terrainModel` reprend les sommets de `RSArea` tels quels ;
-- les objets : `toModel(..., Axes::RealSpace)` ;
+- les objets : `toModel(..., Axes::REAL_SPACE)` ;
 - leurs matrices : `mapObjectMatrix` et `missionPartMatrix` reprennent les `glTranslate`, `glRotate` et `glMultMatrix` de `SCRenderer`.
 
 Une seule matrice, `r4bridge::realSpaceToR4()`, posée à la racine de la scène, passe dans le repère de R4nkine (Z en haut). C'est la frontière unique entre les deux conventions : physique, IA et mission n'ont rien à convertir.
@@ -202,8 +202,8 @@ Le terrain (`WorldScene` et `R4World`) :
   - Les images sont réunies dans un atlas, avec des bords répétés (le `GL_CLAMP_TO_EDGE` du jeu).
 - **Les forêts** (`forestChunks`, `plantForest` et `treeModel` dans R4World). RSArea n'a pas d'arbres : le jeu en peint seulement dans quelques textures (217 sur TURKEY). Le pont en génère sur le vert.
   Deux sources, au choix (menu **Forest Source**, `-woods 0|1`) :
-  - **Green Terrain + Noise** (`ForestMode::Noise`, par défaut) : le vert du terrain et un bruit, décrits ci-dessous.
-  - **Woods of the Textures** (`ForestMode::Textures`) : un arbre sur les bois peints dans les textures du jeu, comme pour les bâtiments.
+  - **Green Terrain + Noise** (`ForestMode::NOISE`, par défaut) : le vert du terrain et un bruit, décrits ci-dessous.
+  - **Woods of the Textures** (`ForestMode::TEXTURES`) : un arbre sur les bois peints dans les textures du jeu, comme pour les bâtiments.
     - **Texels d'arbre** : vert foncé, et pas un aplat (leurs voisins varient), car les arbres dessinés sont ombrés alors qu'un aplat de jungle est uni.
     - **Textures retenues** : celles qui ont au moins 8 % de texels d'arbre, soit les bois, les vergers, les bosquets des villages et des parcs, et les buissons des cratères. Les rangs de culture des champs (232, 233) sont écartés.
     - **Densité** : un arbre par 400 de surface, les couronnes se touchent. Les arbres sont posés par les UV de chaque triangle.
@@ -278,9 +278,9 @@ Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spaw
   - la base d'attaque (scène 0) et la base d'entraînement (scène 6), posées au sol à côté de leurs pistes.
 - Testé sur Linux (GCC 13) avec une copie de libRealSpace (CMake complet du projet, plus les trois lignes ci-dessus) et R4nkine `6af0d4b`. Les données venaient de `TOBIGTRE.TRE`.
 - 342 objets listés. Rendu vérifié sur F-16DES, A-10 (verrière), 747, CARRIERW et T-72.
-- R4nkine doit être au moins à `6af0d4b` (le mode `AlphaMode::Additive`, ajouté pour les verrières).
+- R4nkine doit être au moins à `6af0d4b` (le mode `AlphaMode::ADDITIVE`, ajouté pour les verrières).
 - Les objets sans géométrie (les obus `20MM`…) s'affichent vides, c'est normal.
 - T-72 : les bandes derrière les chenilles sont les faces `TRAX` (propriété 9, `flags[1] = 255`), des traces au sol que `SCRenderer` dessine aussi. Si on veut les cacher, c'est probablement `flags[1] == 255` qui les distingue.| Textures (`uvs`, `qmapuvs`, `images`) | Images RGBA à travers la palette, index 255 transparent ; `GL_LINEAR` sans mipmaps et bords bornés (`Image::mipmaps = false`, `clampS/T`), comme `createTextureInGPU` |
-| Passe texture : mélange `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` et test alpha `> 0,1` | `AlphaMode::Blend` avec `alphaTest = 0,1` |
+| Passe texture : mélange `SRC_ALPHA, ONE_MINUS_SRC_ALPHA` et test alpha `> 0,1` | `AlphaMode::BLEND` avec `alphaTest = 0,1` |
 | Propriété 6 ou 9 : la texture est la face (`GL_LESS`, profondeur écrite) | Matériau `rampTextured`, `blendDepthWrite` |
 | Autres faces texturées : sur la face colorée (`GL_EQUAL`, profondeur non écrite) | `depthEqual`, `depthWrite = false` : la texture n'apparaît que là où la face colorée est dessinée |

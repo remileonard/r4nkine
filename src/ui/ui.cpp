@@ -278,7 +278,7 @@ struct Context::Impl {
         return std::ceil(kFontMetrics[i][1] - kFontMetrics[i][2]); // the 1x metrics: the layout in points
     }
     // the text centered vertically in a rectangle
-    void textIn(Rect r, float dx, const char *s, Color c, Font f = Font::Regular, bool center = false) {
+    void textIn(Rect r, float dx, const char *s, Color c, Font f = Font::REGULAR, bool center = false) {
         float th = lineHeight(f);
         float y = r.y + (r.h - th) * 0.5f;
         float maxw = r.w - dx - 3;
@@ -360,9 +360,9 @@ Context::Context(gpu::Device &device) : d(std::make_unique<Impl>(device)) {
     td.width = kAtlasWidth;
     td.height = kAtlasHeight;
     td.format = gpu::TextureFormat::R8;
-    td.minFilter = td.magFilter = gpu::Filter::Nearest;
+    td.minFilter = td.magFilter = gpu::Filter::NEAREST;
     td.mipmaps = false;
-    td.wrapS = td.wrapT = gpu::Wrap::Clamp;
+    td.wrapS = td.wrapT = gpu::Wrap::CLAMP;
     d->atlas = dev.createTexture(td, bottom.data());
     // the white texels: the bottom right corner of the atlas (rows from the top)
     d->whiteU = (kAtlasWidth - 1.0f) / kAtlasWidth;
@@ -397,10 +397,10 @@ void main() { fragColor = vec4(vColor.rgb, vColor.a * texture(atlas, vUV).r); }
     pd.shader = d->shader;
     gpu::VertexStream vs;
     vs.stride = sizeof(Vertex);
-    vs.attribs = {{0, 2, gpu::AttribType::Float, false, 0}, {1, 2, gpu::AttribType::Float, false, 8}, {2, 4, gpu::AttribType::UByte, true, 16}};
+    vs.attribs = {{0, 2, gpu::AttribType::FLOAT, false, 0}, {1, 2, gpu::AttribType::FLOAT, false, 8}, {2, 4, gpu::AttribType::UBYTE, true, 16}};
     pd.layout.streams = {vs};
-    pd.cull = gpu::CullMode::None;
-    pd.blend = gpu::BlendMode::Alpha;
+    pd.cull = gpu::CullMode::NONE;
+    pd.blend = gpu::BlendMode::ALPHA;
     pd.depthTest = false;
     pd.depthWrite = false;
     d->pipeline = dev.createPipeline(pd);
@@ -417,7 +417,7 @@ void main() { fragColor = vColor * texture(atlas, vUV); }
     pd.shader = d->imageShader;
     d->imagePipeline = dev.createPipeline(pd);
     float screen[4] = {1, 1, 0, 0};
-    d->ubo = dev.createBuffer(gpu::BufferUsage::Uniform, screen, sizeof screen, true);
+    d->ubo = dev.createBuffer(gpu::BufferUsage::UNIFORM, screen, sizeof screen, true);
 }
 
 Context::~Context() {
@@ -502,7 +502,7 @@ void Context::render() {
             dev.destroyBuffer(s.vbo);
         }
         s.vboSize = std::max(bytes * 2, (size_t)65536);
-        s.vbo = dev.createBuffer(gpu::BufferUsage::Vertex, nullptr, s.vboSize, true);
+        s.vbo = dev.createBuffer(gpu::BufferUsage::VERTEX, nullptr, s.vboSize, true);
     }
     dev.updateBuffer(s.vbo, 0, s.verts.data(), bytes);
     float screen[4] = {(float)s.width, (float)s.height, 0, 0};
@@ -571,7 +571,7 @@ void Context::beginPanel(const char *id, Rect r, const char *title) {
     if (title) {
         Rect t{r.x + 2, r.y + 2, r.w - 4, kTitleH};
         s.box(t, kDark, true);
-        s.textIn(t, 6, title, kYellow, Font::Bold);
+        s.textIn(t, 6, title, kYellow, Font::BOLD);
         top = t.y + t.h + 1;
     }
     s.clip = {r.x + 1, top, r.w - 2, r.y + r.h - 1 - top};
@@ -714,7 +714,7 @@ bool Context::button(const char *label, bool enabled) {
     bool click = s.behave(id, r, enabled, &held);
     if (s.visible(r)) {
         s.box(r, held ? kFacePressed : s.hot == id && enabled ? kFaceHot : kFace, held);
-        s.textIn(r, 0, shown(label).c_str(), enabled ? kText : kTextOff, Font::Regular, true);
+        s.textIn(r, 0, shown(label).c_str(), enabled ? kText : kTextOff, Font::REGULAR, true);
     }
     return click;
 }
@@ -843,7 +843,7 @@ bool Context::radio(const char *label, int &selected, const std::vector<std::str
     Rect r = s.next(kRowH);
     uint32_t id = s.idOf(label);
     std::string name = shown(label);
-    float lw = name.empty() ? 0 : std::min(r.w * 0.3f, s.textWidth(name.c_str(), Font::Regular) + 10);
+    float lw = name.empty() ? 0 : std::min(r.w * 0.3f, s.textWidth(name.c_str(), Font::REGULAR) + 10);
     int n = (int)items.size();
     float cw = n ? (r.w - lw) / n : 0;
     bool changed = false;
@@ -1071,7 +1071,7 @@ bool Context::section(const char *label, bool &open) {
         } else {
             s.triangle(cx - a * 0.6f, cy - a, cx + a * 0.7f, cy, cx - a * 0.6f, cy + a, kWhite);
         }
-        s.textIn(r, 20, shown(label).c_str(), kWhite, Font::Bold);
+        s.textIn(r, 20, shown(label).c_str(), kWhite, Font::BOLD);
     }
     columns(saveCols);
     return open;
@@ -1091,7 +1091,7 @@ void Context::message(const char *text) {
     for (const char *p = text; *p; p++) {
         lines += *p == '\n';
     }
-    float lh = s.lineHeight(Font::Regular) + 1;
+    float lh = s.lineHeight(Font::REGULAR) + 1;
     Rect r = s.next(lines * lh + 6);
     if (!s.visible(r)) {
         return;
@@ -1099,7 +1099,7 @@ void Context::message(const char *text) {
     s.box(r, kDark, true);
     const char *p = text;
     for (int i = 0; i < lines; i++) {
-        s.text(r.x + 5, r.y + 3 + i * lh, p, kYellow, Font::Regular, r.w - 10);
+        s.text(r.x + 5, r.y + 3 + i * lh, p, kYellow, Font::REGULAR, r.w - 10);
         const char *nl = std::strchr(p, '\n');
         if (!nl) {
             break;
@@ -1110,7 +1110,7 @@ void Context::message(const char *text) {
 
 void Context::table(const std::vector<std::pair<std::string, std::string>> &rows) {
     Impl &s = *d;
-    float lh = s.lineHeight(Font::Regular) + 2;
+    float lh = s.lineHeight(Font::REGULAR) + 2;
     Rect r = s.next(rows.size() * lh + 6);
     if (!s.visible(r)) {
         return;
@@ -1122,8 +1122,8 @@ void Context::table(const std::vector<std::pair<std::string, std::string>> &rows
         if (i % 2) {
             s.fill({r.x + 2, y - 1, r.w - 4, lh}, Color::rgb(0.17f, 0.17f, 0.22f));
         }
-        s.text(r.x + 6, y, rows[i].first.c_str(), Color::rgb(0.75f, 0.78f, 0.9f), Font::Regular, vx - r.x - 10);
-        s.text(vx, y, rows[i].second.c_str(), kYellow, Font::Regular, r.x + r.w - vx - 4);
+        s.text(r.x + 6, y, rows[i].first.c_str(), Color::rgb(0.75f, 0.78f, 0.9f), Font::REGULAR, vx - r.x - 10);
+        s.text(vx, y, rows[i].second.c_str(), kYellow, Font::REGULAR, r.x + r.w - vx - 4);
     }
 }
 
@@ -1150,12 +1150,12 @@ void Context::plot(const float *values, int count, float max, Color curve, const
         }
     }
     if (overlay) {
-        s.text(r.x + 5, r.y + 1, overlay, kYellow, Font::Small, r.w - 10);
+        s.text(r.x + 5, r.y + 1, overlay, kYellow, Font::SMALL, r.w - 10);
     }
     char buf[32];
     std::snprintf(buf, sizeof buf, "%.3g", max);
-    float w = s.textWidth(buf, Font::Small);
-    s.text(r.x + r.w - w - 5, r.y + 1, buf, Color::rgb(0.6f, 0.6f, 0.7f), Font::Small, 1e9f);
+    float w = s.textWidth(buf, Font::SMALL);
+    s.text(r.x + r.w - w - 5, r.y + 1, buf, Color::rgb(0.6f, 0.6f, 0.7f), Font::SMALL, 1e9f);
 }
 
 bool Context::treeRow(const TreeRow &row, bool &open, bool &visible) {
@@ -1201,10 +1201,10 @@ bool Context::treeRow(const TreeRow &row, bool &open, bool &visible) {
     }
     s.light(eye.x + 7, r.y + r.h * 0.5f, 4, visible, true);
     // the type, in a little colored box
-    float tw = s.textWidth(row.tagText, Font::Small) + 8;
+    float tw = s.textWidth(row.tagText, Font::SMALL) + 8;
     Rect tag{text.x, r.y + 2, tw, r.h - 4};
     s.box(tag, row.tag, false);
-    s.textIn(tag, 0, row.tagText, kText, Font::Small, true);
+    s.textIn(tag, 0, row.tagText, kText, Font::SMALL, true);
     s.textIn({tag.x + tw + 4, r.y, text.w - tw - 4, r.h}, 0, row.label, visible ? ink : row.selected ? Color::rgb(0.75f, 0.78f, 0.9f) : kTextOff);
     return clicked;
 }

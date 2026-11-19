@@ -19,17 +19,17 @@ constexpr float kPerfH = 400;
 
 const char *typeName(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Group:
+    case scene::NodeType::GROUP:
         return "Group";
-    case scene::NodeType::Geode:
+    case scene::NodeType::GEODE:
         return "Geode";
-    case scene::NodeType::Switch:
+    case scene::NodeType::SWITCH:
         return "Switch";
     case scene::NodeType::LOD:
         return "LOD";
-    case scene::NodeType::Billboard:
+    case scene::NodeType::BILLBOARD:
         return "Billboard";
-    case scene::NodeType::Instancer:
+    case scene::NodeType::INSTANCER:
         return "Instancer";
     }
     return "?";
@@ -37,17 +37,17 @@ const char *typeName(scene::NodeType t) {
 
 const char *typeTag(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Group:
+    case scene::NodeType::GROUP:
         return "GRP";
-    case scene::NodeType::Geode:
+    case scene::NodeType::GEODE:
         return "GEO";
-    case scene::NodeType::Switch:
+    case scene::NodeType::SWITCH:
         return "SW";
     case scene::NodeType::LOD:
         return "LOD";
-    case scene::NodeType::Billboard:
+    case scene::NodeType::BILLBOARD:
         return "BB";
-    case scene::NodeType::Instancer:
+    case scene::NodeType::INSTANCER:
         return "INST";
     }
     return "?";
@@ -55,15 +55,15 @@ const char *typeTag(scene::NodeType t) {
 
 ui::Color typeColor(scene::NodeType t) {
     switch (t) {
-    case scene::NodeType::Geode:
+    case scene::NodeType::GEODE:
         return ui::Color::rgb(0.55f, 0.85f, 0.55f);
-    case scene::NodeType::Switch:
+    case scene::NodeType::SWITCH:
         return ui::Color::rgb(0.95f, 0.75f, 0.35f);
     case scene::NodeType::LOD:
         return ui::Color::rgb(0.5f, 0.75f, 1.0f);
-    case scene::NodeType::Billboard:
+    case scene::NodeType::BILLBOARD:
         return ui::Color::rgb(0.9f, 0.6f, 0.9f);
-    case scene::NodeType::Instancer:
+    case scene::NodeType::INSTANCER:
         return ui::Color::rgb(1.0f, 0.55f, 0.5f);
     default:
         return ui::Color::rgb(0.85f, 0.85f, 0.88f);
@@ -277,9 +277,9 @@ void nodeTree(App &app, ui::Context &g, scene::Node &n, const Mat4 &parent, int 
     bool open = it->second;
     bool visible = app.hiddenMasks.count(&n) == 0;
     std::string label = n.name().empty() ? std::string("(") + typeName(n.type()) + ")" : n.name();
-    if (n.type() == scene::NodeType::Instancer) {
+    if (n.type() == scene::NodeType::INSTANCER) {
         label += fmt("  [%.0f]", (double)static_cast<scene::Instancer &>(n).instances().size());
-    } else if (n.type() == scene::NodeType::Geode || n.type() == scene::NodeType::Billboard) {
+    } else if (n.type() == scene::NodeType::GEODE || n.type() == scene::NodeType::BILLBOARD) {
         label += fmt("  [%.0f]", (double)static_cast<scene::Geode &>(n).drawables().size());
     }
     ui::Context::TreeRow row;
@@ -345,7 +345,7 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
         rows.push_back({"Ranges", s});
         break;
     }
-    case scene::NodeType::Instancer: {
+    case scene::NodeType::INSTANCER: {
         auto &in = static_cast<scene::Instancer &>(*n);
         rows.push_back({"Instances", fmt("%.0f", (double)in.instances().size())});
         for (size_t i = 0; i < in.levels().size(); i++) {
@@ -357,26 +357,26 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
         break;
     }
     g.table(rows);
-    if (n->type() == scene::NodeType::Switch) {
+    if (n->type() == scene::NodeType::SWITCH) {
         auto &sw = static_cast<scene::Switch &>(*n);
         float v = (float)sw.value();
         if (g.slider("Switch Value (-1 all, -2 none)", v, -2, (float)n->children().size() - 1, "%.0f")) {
             sw.setValue((int)std::lround(v));
         }
     }
-    if (n->type() == scene::NodeType::Billboard) {
+    if (n->type() == scene::NodeType::BILLBOARD) {
         auto &bb = static_cast<scene::Billboard &>(*n);
         int mode = bb.mode() == scene::Billboard::Mode::Point;
         if (g.radio("Mode", mode, {"Axis", "Point"})) {
             bb.setMode(mode ? scene::Billboard::Mode::Point : scene::Billboard::Mode::Axis);
         }
     }
-    if (n->type() == scene::NodeType::Geode || n->type() == scene::NodeType::Billboard) {
+    if (n->type() == scene::NodeType::GEODE || n->type() == scene::NodeType::BILLBOARD) {
         std::vector<std::pair<std::string, std::string>> d;
         for (const scene::Drawable &dr : static_cast<scene::Geode &>(*n).drawables()) {
             std::string what;
             if (dr.mesh) {
-                uint32_t per = dr.mesh->primitive == assets::Primitive::Triangles ? 3 : dr.mesh->primitive == assets::Primitive::Lines ? 2 : 1;
+                uint32_t per = dr.mesh->primitive == assets::Primitive::TRIANGLES ? 3 : dr.mesh->primitive == assets::Primitive::LINES ? 2 : 1;
                 const char *kind = per == 3 ? " tris" : per == 2 ? " lines" : " points";
                 what = fmt("%.0f", (double)(dr.mesh->indexCount / per)) + kind;
             }
@@ -385,16 +385,16 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
                 if (dr.material->texture) {
                     what += " tex";
                 }
-                if (p.alpha == assets::AlphaMode::Blend) {
+                if (p.alpha == assets::AlphaMode::BLEND) {
                     what += " blend";
                 }
-                if (p.alpha == assets::AlphaMode::Additive) {
+                if (p.alpha == assets::AlphaMode::ADDITIVE) {
                     what += " additive";
                 }
                 if (p.decal) {
                     what += " decal";
                 }
-                if (p.shading == assets::Shading::Unlit) {
+                if (p.shading == assets::Shading::UNLIT) {
                     what += " unlit";
                 }
             }
@@ -408,7 +408,7 @@ void nodePanel(App &app, ui::Context &g, ui::Rect r) {
                 break;
             }
         }
-        g.label("Drawables", ui::Font::Bold);
+        g.label("Drawables", ui::Font::BOLD);
         g.table(d);
     }
     g.endPanel();
@@ -499,20 +499,20 @@ void treeDiagram(App &app, ui::Context &g, ui::Rect area) {
         g.bevel(r, selected);
         if (k >= 0.45f) {
             ui::Color ink = selected ? ui::Color::rgb(1, 1, 1) : ui::Color::rgb(0, 0, 0.1f);
-            ui::Font small = k >= 0.8f ? ui::Font::Regular : ui::Font::Small;
+            ui::Font small = k >= 0.8f ? ui::Font::REGULAR : ui::Font::SMALL;
             std::string name = b.node->name().empty() ? "-" : b.node->name();
             if (r.h >= 26) {
                 // the type over the name
-                g.text(r.x + 4, r.y + 1, typeName(b.node->type()), ink, ui::Font::Small, r.w - 8);
+                g.text(r.x + 4, r.y + 1, typeName(b.node->type()), ink, ui::Font::SMALL, r.w - 8);
                 g.text(r.x + 4, r.y + r.h * 0.45f, name.c_str(), ink, small, r.w - 8);
             } else {
-                g.text(r.x + 3, r.y + (r.h - 12) * 0.5f, name.c_str(), ink, ui::Font::Small, r.w - 6);
+                g.text(r.x + 3, r.y + (r.h - 12) * 0.5f, name.c_str(), ink, ui::Font::SMALL, r.w - 6);
             }
         }
     }
     char info[96];
     std::snprintf(info, sizeof info, "%zu nodes on %d levels: click one to select it", boxes.size(), depth + 1);
-    g.text(area.x + 6, area.y + 2, info, ui::Color::rgb(1, 1, 0.5f), ui::Font::Small);
+    g.text(area.x + 6, area.y + 2, info, ui::Color::rgb(1, 1, 0.5f), ui::Font::SMALL);
     g.endCanvas();
 }
 
@@ -608,7 +608,7 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     // three circles of radius 1, about X, Y and Z
     assets::Mesh m;
     m.name = "bounds";
-    m.primitive = assets::Primitive::Lines;
+    m.primitive = assets::Primitive::LINES;
     const int n = 64;
     for (int axis = 0; axis < 3; axis++) {
         for (int i = 0; i < n; i++) {
@@ -626,7 +626,7 @@ std::shared_ptr<scene::Geode> makeBoundsMarker(render::Renderer &renderer) {
     m.computeBounds();
     assets::Material mat;
     mat.name = "bounds";
-    mat.shading = assets::Shading::Unlit;
+    mat.shading = assets::Shading::UNLIT;
     mat.vertexColors = true;
     auto g = scene::make<scene::Geode>();
     g->setName("bounds marker");

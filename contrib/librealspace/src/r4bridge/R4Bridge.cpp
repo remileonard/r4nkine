@@ -4,6 +4,7 @@
 //
 //  RSEntity -> r4::assets::Model. See R4Bridge.h.
 //
+#include "R4Data.h"
 #include "R4Bridge.h"
 
 #include "r4/axes.h"
@@ -152,7 +153,7 @@ void finishTexture(r4::assets::Image &img) {
     img.clampS = img.clampT = true;
     bleedClearTexels(img);
     const TextureQuality &q = textureQuality();
-    if (q.upscale != r4::assets::Upscale::None) {
+    if (q.upscale != r4::assets::Upscale::NONE) {
         img = r4::assets::upscale(img, q.upscale);
         bleedClearTexels(img); // the clear texels it made
     }
@@ -229,7 +230,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         if (it != materials.end()) {
             return it->second;
         }
-        m.shading = Shading::PaletteRamp;
+        m.shading = Shading::PALETTE_RAMP;
         m.rampAmbient = lighting.ambient;
         m.rampLight = lighting.light;
         model->materials.push_back(m);
@@ -248,7 +249,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         m.name = twoSided ? "clear, two-sided" : "clear";
         m.diffuseImage = 1;
         m.doubleSided = twoSided;
-        m.alpha = AlphaMode::Additive;
+        m.alpha = AlphaMode::ADDITIVE;
         return material(twoSided ? "clear2" : "clear1", m);
     };
     // the textures: indices through the palette, 255 clear (the alpha test of
@@ -268,7 +269,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         for (int y = 0; y < img.height; y++) {
             for (int x = 0; x < img.width; x++) {
                 uint8_t index = src->data[(size_t)y * img.width + x];
-                uint32_t c = rgba(palette.colors[index], index == 255 ? 0 : 255);
+                uint32_t c = rgba(palette.colors[index], index == PALETTE_CLEAR ? 0 : 255);
                 // R4nkine's images start at the bottom row
                 std::memcpy(&img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4], &c, 4);
             }
@@ -288,7 +289,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         m.name = std::string(e->images[texture]->name) + (replaces ? "" : " (decal)") + (twoSided ? ", two-sided" : "");
         m.diffuseImage = textureImage[texture];
         m.rampTextured = true;
-        m.alpha = AlphaMode::Blend;
+        m.alpha = AlphaMode::BLEND;
         m.alphaTest = 0.1f;
         m.doubleSided = twoSided;
         if (replaces) {
@@ -360,26 +361,22 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 isTriangle = a->type == 'T';
                 isQuad = a->type == 'Q';
                 triangleID = quadID = a->id;
-                quadTwoSided = a->props2 == 1;
+                quadTwoSided = a->props2 == FACE_TWO_SIDED;
             }
             if (isTriangle && triangleID < e->triangles.size()) {
                 const Triangle &t = e->triangles[triangleID];
-                bool twoSided = t.flags[2] == 1;
-                if (!inRange(t.ids, 3))
-                    ;
-                else if (t.property == RSEntity::SC_TRANSPARENT) {
+                bool twoSided = t.flags[2] == FACE_TWO_SIDED;
+                if (inRange(t.ids, 3) && t.property == RSEntity::SC_TRANSPARENT) {
                     out.add(e, normals, clearMaterial(twoSided), t.ids, 3, paletteColor(t.color - 1));
-                } else if (t.property != 6 && t.property != 9) {
+                } else if (inRange(t.ids, 3) && t.property != FACE_TEXTURE_SOLID && t.property != FACE_TEXTURE_SOLID_ALT) {
                     out.add(e, normals, colorMaterial(twoSided), t.ids, 3, paletteColor(t.color));
                 }
             }
             if (isQuad && quadID < e->quads.size() && e->quads[quadID]) {
                 const Quads &q = *e->quads[quadID];
-                if (!inRange(q.ids, 4))
-                    ;
-                else if (q.property == RSEntity::SC_TRANSPARENT) {
+                if (inRange(q.ids, 4) && q.property == RSEntity::SC_TRANSPARENT) {
                     out.add(e, normals, clearMaterial(quadTwoSided), q.ids, 4, paletteColor(q.color - 1));
-                } else if (q.property != 6 && q.property != 9) {
+                } else if (inRange(q.ids, 4) && q.property != FACE_TEXTURE_SOLID && q.property != FACE_TEXTURE_SOLID_ALT) {
                     out.add(e, normals, colorMaterial(quadTwoSided), q.ids, 4, paletteColor(q.color - 1));
                 }
             }
@@ -395,8 +392,8 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                     continue;
                 }
                 RSImage *img = e->images[u.textureID];
-                bool replaces = t.property == 6 || t.property == 9;
-                out.add(e, normals, textureMaterial(u.textureID, replaces, t.flags[2] == 1), t.ids, 3, 0xffffffffu, u.uvs, (float)img->width, (float)img->height);
+                bool replaces = t.property == FACE_TEXTURE_SOLID || t.property == FACE_TEXTURE_SOLID_ALT;
+                out.add(e, normals, textureMaterial(u.textureID, replaces, t.flags[2] == FACE_TWO_SIDED), t.ids, 3, 0xffffffffu, u.uvs, (float)img->width, (float)img->height);
             }
             for (const qmapuvxyEntry *u : e->qmapuvs) {
                 if (!u || u->textureID >= e->images.size() || textureImage[u->textureID] < 0 || u->triangleID >= e->quads.size() || !e->quads[u->triangleID]) {
@@ -409,12 +406,12 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
                 bool twoSided = false;
                 for (const auto &[key, a] : e->attrs) {
                     if (a && a->id == u->triangleID && a->type == 'Q') {
-                        twoSided = a->props2 == 1;
+                        twoSided = a->props2 == FACE_TWO_SIDED;
                         break;
                     }
                 }
                 RSImage *img = e->images[u->textureID];
-                bool replaces = q.property == 6 || q.property == 9;
+                bool replaces = q.property == FACE_TEXTURE_SOLID || q.property == FACE_TEXTURE_SOLID_ALT;
                 out.add(e, normals, textureMaterial(u->textureID, replaces, twoSided), q.ids, 4, 0xffffffffu, u->uvs, (float)img->width, (float)img->height);
             }
         }

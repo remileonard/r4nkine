@@ -1,6 +1,7 @@
 //
 //  TerrainDiag.cpp
 //
+#include "../../r4bridge/R4Data.h"
 #include "TerrainDiag.h"
 
 #include "engine/Texture.h"
@@ -31,8 +32,8 @@ bool writePpm(const std::string &path, int w, int h, const std::vector<Rgb> &px)
     return true;
 }
 
-constexpr int kSide = BLOCK_PER_MAP_SIDE * 20; // les sommets de LVL0 sur un côté
-constexpr int kCell = 3;                       // les pixels d'une cellule dans textures.ppm
+constexpr int kSide = BLOCK_PER_MAP_SIDE * r4bridge::BLOCK_SIDE_LVL0; // les sommets de LVL0 sur un côté
+constexpr int kCell = 3;                                              // les pixels d'une cellule dans textures.ppm
 
 } // namespace
 
@@ -43,11 +44,11 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
     }
     // le sommet (x, y) de la carte, x vers l'est, y vers le sud (z de libRealSpace)
     auto vertex = [&](int x, int y) -> MapVertex * {
-        AreaBlock *b = area->GetAreaBlockByCoo(0, x / 20, y / 20);
-        if (!b || b->sideSize != 20) {
+        AreaBlock *b = area->GetAreaBlockByCoo(0, x / r4bridge::BLOCK_SIDE_LVL0, y / r4bridge::BLOCK_SIDE_LVL0);
+        if (!b || b->sideSize != r4bridge::BLOCK_SIDE_LVL0) {
             return nullptr;
         }
-        return b->GetVertice(x % 20, y % 20);
+        return b->GetVertice(x % r4bridge::BLOCK_SIDE_LVL0, y % r4bridge::BLOCK_SIDE_LVL0);
     };
 
     // la couleur d'un type : le ton le plus clair de sa rampe (l'eau bleue,
@@ -109,7 +110,7 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
                     uint8_t k = img->data[i];
                     const Texel &t = palette.colors[k];
                     px[i] = {t.r, t.g, t.b};
-                    if (k == 255) {
+                    if (k == r4bridge::PALETTE_CLEAR) {
                         px[i] = {255, 0, 255}; // clair : en magenta
                         continue;
                     }
@@ -139,7 +140,7 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
             // en bas) et le triangle haut (le sommet, à droite, en bas à droite)
             for (int half = 0; half < 2; half++) {
                 int id = half == 0 ? v->lowerImageID : v->upperImageID;
-                if (id == 0xFF) {
+                if (id == r4bridge::TEXTURE_NONE) {
                     continue;
                 }
                 Use &u = useOf(id);
@@ -169,7 +170,7 @@ bool terrainDiagnostic(RSArea *area, const VGAPalette &palette, const std::vecto
         std::vector<Rgb> px(img->width * img->height);
         for (size_t i = 0; i < px.size(); i++) {
             const Texel &t = palette.colors[img->data[i]];
-            px[i] = img->data[i] == 255 ? Rgb{255, 0, 255} : Rgb{t.r, t.g, t.b};
+            px[i] = img->data[i] == r4bridge::PALETTE_CLEAR ? Rgb{255, 0, 255} : Rgb{t.r, t.g, t.b};
         }
         writePpm(dir + "/all_" + std::to_string(id) + ".ppm", (int)img->width, (int)img->height, px);
     }

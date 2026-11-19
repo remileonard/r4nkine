@@ -34,7 +34,7 @@ struct Lighting {
 // turned at once by realSpaceToR4() at its root.
 enum class Axes {
     R4,
-    RealSpace
+    REAL_SPACE
 };
 
 // libRealSpace's axes (Y up, as OpenGL) to R4nkine's (Z up):
@@ -58,7 +58,7 @@ void bleedClearTexels(r4::assets::Image &image);
 // (2xSaI, xBR), and with mipmaps, they stay sharp near and calm far; the
 // anisotropic filtering is the renderer's (RenderOptions::anisotropy).
 struct TextureQuality {
-    r4::assets::Upscale upscale = r4::assets::Upscale::None;
+    r4::assets::Upscale upscale = r4::assets::Upscale::NONE;
     bool mipmaps = false;
 };
 TextureQuality &textureQuality();
@@ -70,7 +70,7 @@ void finishTexture(r4::assets::Image &image);
 
 // An RSEntity as a model of R4nkine, as SCRenderer::drawModel draws it:
 // - the axes: the game has Y up, R4nkine Z up (a turn of 90 degrees about X),
-//   or kept as they are with Axes::RealSpace;
+//   or kept as they are with Axes::REAL_SPACE;
 //   the faces of the game turn clockwise (glFrontFace(GL_CW)), they are
 //   turned the other way for R4nkine;
 // - the levels of detail (LVL0, LVL1...) become a LOD node, at their distances;
@@ -78,7 +78,7 @@ void finishTexture(r4::assets::Image &image);
 //   of the vertex colors; color for a triangle, color - 1 for a quad);
 // - the texture pass, on LVL0: the image through the palette, index 255
 //   clear; property 6 or 9 the texture is the face, else a decal over it;
-// - the clear pass (property 2): palette color - 1, added (AlphaMode::Additive);
+// - the clear pass (property 2): palette color - 1, added (AlphaMode::ADDITIVE);
 // - two-sided: flags[2] == 1 for a triangle, props2 == 1 of its ATTR for a quad.
 std::shared_ptr<r4::assets::Model> toModel(RSEntity *entity, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, Lighting lighting = {}, Axes axes = Axes::R4);
 

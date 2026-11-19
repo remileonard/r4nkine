@@ -48,6 +48,57 @@ enum GeomType {
     TLPU = 100,
 };
 
+// what a line of vertices holds
+enum class VertexLayout {
+    XYZ,
+    XYZ_NORMAL,
+    XYZ_UV,
+    COLOR_XYZ,
+    XYZ_COLOR
+};
+
+// the numbers of a line of polygon before its indices
+enum class PolygonPrefix {
+    NONE,
+    COLOR,
+    TYPE_COLOR,
+    NORMAL,
+    TYPE
+};
+
+// the type of a polygon of the immediate geometries (IMU, IMV)
+enum ImmediateType {
+    IMMEDIATE_POINTS = 0,
+    IMMEDIATE_LINE = 1,
+    IMMEDIATE_POLYGON = 2,
+    IMMEDIATE_CLOSED_LINE = 3,
+    IMMEDIATE_FILLED = 4
+};
+
+// what a polygon draws
+enum class PolygonKind {
+    POINTS,
+    LINE,
+    POLYGON,
+    CLOSED_LINE,
+    STRIP
+};
+
+enum TransformType {
+    ROTATE_X = 0,
+    ROTATE_Y = 1,
+    ROTATE_Z = 2,
+    TRANSLATE = 3,
+    SCALE = 4
+};
+
+// the sections of the old files, whose counts come in this order
+enum OldSection {
+    OLD_BRANCHES = 0,
+    OLD_TRANSFORMS = 1,
+    OLD_GEOMETRIES = 2
+};
+
 constexpr uint32_t kCull = 0x80000000u;
 constexpr uint32_t kEightView = 0x10000000u;
 constexpr uint32_t kBackface = 0x1;
@@ -224,7 +275,7 @@ private:
     int line_ = 0;
 };
 
-bool readVertices(Reader &r, Geometry &g, int perVertex) {
+bool readVertices(Reader &r, Geometry &g, VertexLayout layout) {
     if (!r.next()) {
         return false;
     }
@@ -235,23 +286,23 @@ bool readVertices(Reader &r, Geometry &g, int perVertex) {
         }
         std::vector<double> n = r.numbers();
         n.resize(std::max<size_t>(n.size(), 6), 0);
-        switch (perVertex) {
-        case 0: // x y z
+        switch (layout) {
+        case VertexLayout::XYZ:
             g.v.push_back({(float)n[0], (float)n[1], (float)n[2]});
             break;
-        case 1: // x y z nx ny nz
+        case VertexLayout::XYZ_NORMAL:
             g.v.push_back({(float)n[0], (float)n[1], (float)n[2]});
             g.n.push_back({(float)n[3], (float)n[4], (float)n[5]});
             break;
-        case 2: // x y z s t
+        case VertexLayout::XYZ_UV:
             g.v.push_back({(float)n[0], (float)n[1], (float)n[2]});
             g.uv.push_back({(float)n[3], (float)n[4]});
             break;
-        case 3: // color x y z
+        case VertexLayout::COLOR_XYZ:
             g.vcolor.push_back((long)n[0]);
             g.v.push_back({(float)n[1], (float)n[2], (float)n[3]});
             break;
-        case 4: // x y z color
+        case VertexLayout::XYZ_COLOR:
             g.v.push_back({(float)n[0], (float)n[1], (float)n[2]});
             g.vcolor.push_back((long)n[3]);
             break;
@@ -260,9 +311,7 @@ bool readVertices(Reader &r, Geometry &g, int perVertex) {
     return true;
 }
 
-// the polygons: each line has `prefix` numbers before the indices
-// (0: none, 1: a color, 2: type and color, 3: a normal, -1: a type)
-bool readPolygons(Reader &r, Geometry &g, int prefix) {
+bool readPolygons(Reader &r, Geometry &g, PolygonPrefix prefix) {
     if (!r.next()) {
         return false;
     }
@@ -274,20 +323,20 @@ bool readPolygons(Reader &r, Geometry &g, int prefix) {
         std::vector<double> n = r.numbers();
         Polygon p;
         size_t k = 0;
-        if (prefix == 3 && n.size() >= 3) {
+        if (prefix == PolygonPrefix::NORMAL && n.size() >= 3) {
             p.normal = {(float)n[0], (float)n[1], (float)n[2]};
             p.hasNormal = true;
             k = 3;
-        } else if (prefix == 1 && !n.empty()) {
+        } else if (prefix == PolygonPrefix::COLOR && !n.empty()) {
             p.color = (long)n[0];
             p.hasColor = true;
             k = 1;
-        } else if (prefix == 2 && n.size() >= 2) {
+        } else if (prefix == PolygonPrefix::TYPE_COLOR && n.size() >= 2) {
             p.type = (int)n[0];
             p.color = (long)n[1];
             p.hasColor = true;
             k = 2;
-        } else if (prefix == -1 && !n.empty()) {
+        } else if (prefix == PolygonPrefix::TYPE && !n.empty()) {
             p.type = (int)n[0];
             k = 1;
         }
@@ -302,6 +351,19 @@ bool readPolygons(Reader &r, Geometry &g, int prefix) {
     return true;
 }
 
+PolygonKind immediateKind(int type) {
+    switch (type) {
+    case IMMEDIATE_POINTS:
+        return PolygonKind::POINTS;
+    case IMMEDIATE_LINE:
+        return PolygonKind::LINE;
+    case IMMEDIATE_CLOSED_LINE:
+        return PolygonKind::CLOSED_LINE;
+    default:
+        return PolygonKind::POLYGON;
+    }
+}
+
 bool readGeometry(Reader &r, Geometry &g) {
     auto header = [&](long &value) {
         if (!r.next()) {
@@ -313,11 +375,11 @@ bool readGeometry(Reader &r, Geometry &g) {
     switch (g.type) {
     case LPV: // per vertex normals
     case LTV: // the same in triangle strips
-        return header(g.material) && readVertices(r, g, 1) && readPolygons(r, g, 0);
+        return header(g.material) && readVertices(r, g, VertexLayout::XYZ_NORMAL) && readPolygons(r, g, PolygonPrefix::NONE);
     case LPU: // a normal per polygon
-        return header(g.material) && readVertices(r, g, 0) && readPolygons(r, g, 3);
+        return header(g.material) && readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NORMAL);
     case TLPU: // textured, a normal per polygon
-        return header(g.material) && readVertices(r, g, 2) && readPolygons(r, g, 3);
+        return header(g.material) && readVertices(r, g, VertexLayout::XYZ_UV) && readPolygons(r, g, PolygonPrefix::NORMAL);
     case LPS: { // one normal for all
         if (!header(g.material) || !r.next()) {
             return false;
@@ -325,26 +387,26 @@ bool readGeometry(Reader &r, Geometry &g) {
         std::vector<double> n = r.numbers();
         n.resize(3, 0);
         g.normal = {(float)n[0], (float)n[1], (float)n[2]};
-        return readVertices(r, g, 0) && readPolygons(r, g, 0);
+        return readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NONE);
     }
     case CSECT: // one color: polygons, lines or points
     case CLS:
     case CDS:
-        return header(g.color) && readVertices(r, g, 0) && readPolygons(r, g, 0);
+        return header(g.color) && readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::NONE);
     case CPV:
     case CDV:
-        return readVertices(r, g, 3) && readPolygons(r, g, 0);
+        return readVertices(r, g, VertexLayout::COLOR_XYZ) && readPolygons(r, g, PolygonPrefix::NONE);
     case CPU:
     case CDU:
-        return readVertices(r, g, 0) && readPolygons(r, g, 1);
+        return readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::COLOR);
     case IMU:
-        return readVertices(r, g, 0) && readPolygons(r, g, 2);
+        return readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::TYPE_COLOR);
     case IMV:
-        return readVertices(r, g, 4) && readPolygons(r, g, -1);
+        return readVertices(r, g, VertexLayout::XYZ_COLOR) && readPolygons(r, g, PolygonPrefix::TYPE);
     case IPU:
-        return readVertices(r, g, 0) && readPolygons(r, g, 1);
+        return readVertices(r, g, VertexLayout::XYZ) && readPolygons(r, g, PolygonPrefix::COLOR);
     case IPV:
-        return readVertices(r, g, 4) && readPolygons(r, g, 0);
+        return readVertices(r, g, VertexLayout::XYZ_COLOR) && readPolygons(r, g, PolygonPrefix::NONE);
     }
     return false;
 }
@@ -365,7 +427,7 @@ struct Loader {
     void applyMode(Material &m, uint32_t mode) {
         m.doubleSided = !(mode & kBackface);
         if (mode & kTransparent) {
-            m.alpha = AlphaMode::Blend;
+            m.alpha = AlphaMode::BLEND;
             if (m.diffuse.w >= 1) {
                 m.diffuse.w = 0.5f;
             }
@@ -395,7 +457,7 @@ struct Loader {
                     m.specular = {f.spec[0], f.spec[1], f.spec[2]};
                     m.shininess = f.shininess;
                     if (f.alpha < 1) {
-                        m.alpha = AlphaMode::Blend;
+                        m.alpha = AlphaMode::BLEND;
                     }
                 }
             }
@@ -415,7 +477,7 @@ struct Loader {
         }
         Material m;
         m.name = "colors";
-        m.shading = Shading::Unlit;
+        m.shading = Shading::UNLIT;
         m.diffuse = {1, 1, 1, 1};
         m.vertexColors = true;
         applyMode(m, mode);
@@ -438,9 +500,9 @@ struct Loader {
         Mesh tris;
         Mesh lines;
         Mesh points;
-        tris.primitive = Primitive::Triangles;
-        lines.primitive = Primitive::Lines;
-        points.primitive = Primitive::Points;
+        tris.primitive = Primitive::TRIANGLES;
+        lines.primitive = Primitive::LINES;
+        points.primitive = Primitive::POINTS;
         auto colorOf = [&](const Polygon &p, int corner) -> uint32_t {
             long c;
             if (!g.vcolor.empty()) {
@@ -474,24 +536,21 @@ struct Loader {
             if (!n) {
                 continue;
             }
-            // what the polygon draws
-            int kind; // 0 points, 1 line, 2 polygon, 3 closed line, 5 strip
+            PolygonKind kind = PolygonKind::POLYGON;
             if (g.type == CLS) {
-                kind = 1;
+                kind = PolygonKind::LINE;
             } else if (g.type == CDS || g.type == CDV || g.type == CDU) {
-                kind = 0;
+                kind = PolygonKind::POINTS;
             } else if (g.type == IMU || g.type == IMV) {
-                kind = p.type == 4 ? 2 : p.type;
+                kind = immediateKind(p.type);
             } else if (g.type == LTV) {
-                kind = 5;
-            } else {
-                kind = 2;
+                kind = PolygonKind::STRIP;
             }
             Vec3 normal = p.hasNormal ? p.normal : g.normal;
             if (lit && !p.hasNormal && g.type != LPS && g.n.empty() && n >= 3) {
                 normal = normalize(cross(g.v[p.v[1]] - g.v[p.v[0]], g.v[p.v[2]] - g.v[p.v[0]]));
             }
-            if (kind == 2 || kind == 5) {
+            if (kind == PolygonKind::POLYGON || kind == PolygonKind::STRIP) {
                 if (n < 3) {
                     continue;
                 }
@@ -500,7 +559,7 @@ struct Loader {
                     tris.vertices.push_back(vertexOf(p, c, normal));
                 }
                 for (int c = 1; c + 1 < n; c++) {
-                    if (kind == 2) { // a fan
+                    if (kind == PolygonKind::POLYGON) { // a fan
                         tris.indices.insert(tris.indices.end(), {base, base + c, base + c + 1});
                     } else if (c % 2) { // a strip, the odd triangles turned
                         tris.indices.insert(tris.indices.end(), {base + c - 1, base + c, base + c + 1});
@@ -508,7 +567,7 @@ struct Loader {
                         tris.indices.insert(tris.indices.end(), {base + c, base + c - 1, base + c + 1});
                     }
                 }
-            } else if (kind == 1 || kind == 3) {
+            } else if (kind == PolygonKind::LINE || kind == PolygonKind::CLOSED_LINE) {
                 uint32_t base = (uint32_t)lines.vertices.size();
                 for (int c = 0; c < n; c++) {
                     lines.vertices.push_back(vertexOf(p, c, normal));
@@ -516,7 +575,7 @@ struct Loader {
                 for (int c = 0; c + 1 < n; c++) {
                     lines.indices.insert(lines.indices.end(), {base + c, base + c + 1});
                 }
-                if (kind == 3 && n > 2) {
+                if (kind == PolygonKind::CLOSED_LINE && n > 2) {
                     lines.indices.insert(lines.indices.end(), {base + n - 1, base});
                 }
             } else {
@@ -657,7 +716,7 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
                 m.diffuse.w = 1;
             }
             if (m.diffuse.w < 1) {
-                m.alpha = AlphaMode::Blend;
+                m.alpha = AlphaMode::BLEND;
             }
             m.specular = {(float)v[2][0], (float)v[2][1], (float)v[2][2]};
             m.shininess = (float)v[3][0];
@@ -688,13 +747,13 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
                 // the old files: the counts in the order B, T, G
                 int count = std::atoi(s);
                 switch (oldOrder++) {
-                case 0:
+                case OLD_BRANCHES:
                     readBranches(count);
                     break;
-                case 1:
+                case OLD_TRANSFORMS:
                     readTransforms(count);
                     break;
-                case 2:
+                case OLD_GEOMETRIES:
                     readGeometries(count);
                     break;
                 default:
@@ -728,19 +787,19 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
             }
             const Transform &t = L.transforms[ti];
             switch (t.type) {
-            case 0:
+            case ROTATE_X:
                 m = m * rotate(radians(t.angle / 10.0f), {1, 0, 0});
                 break;
-            case 1:
+            case ROTATE_Y:
                 m = m * rotate(radians(t.angle / 10.0f), {0, 1, 0});
                 break;
-            case 2:
+            case ROTATE_Z:
                 m = m * rotate(radians(t.angle / 10.0f), {0, 0, 1});
                 break;
-            case 3:
+            case TRANSLATE:
                 m = m * translate(t.v);
                 break;
-            case 4:
+            case SCALE:
                 m = m * scale(t.v);
                 break;
             }
@@ -755,7 +814,8 @@ std::shared_ptr<Model> loadGObj(const std::string &path, std::string *error) {
         size_t first = (b.state & kCull) ? 1 : 0; // a culling volume, not drawn
         bool eight = (b.mode & kEightView) != 0;
         if (eight) {
-            model->nodes[1 + i].kind = NodeKind::Switch, model->nodes[1 + i].switchValue = 0;
+            model->nodes[1 + i].kind = NodeKind::SWITCH;
+            model->nodes[1 + i].switchValue = 0;
         }
         for (size_t k = first; k < b.children.size(); k++) {
             auto [isGeom, index] = b.children[k];

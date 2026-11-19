@@ -37,7 +37,7 @@ bool postProcessControls(Context &g, render::PostSettings &s) {
         s.pixelate = (int)pixelate;
         changed = true;
     }
-    g.label("Colors", Font::Bold);
+    g.label("Colors", Font::BOLD);
     changed |= g.slider("Brightness", s.brightness, -0.5f, 0.5f, "%.2f");
     changed |= g.slider("Contrast", s.contrast, 0.2f, 3, "%.2f", true);
     changed |= g.slider("Saturation", s.saturation, 0, 2, "%.2f");
@@ -47,7 +47,7 @@ bool postProcessControls(Context &g, render::PostSettings &s) {
     if (s.fade > 0) {
         changed |= g.color("Fade Color", s.fadeColor);
     }
-    g.label("Palette", Font::Bold);
+    g.label("Palette", Font::BOLD);
     changed |= g.toggle("Reduce to a Palette", s.quantize);
     if (s.quantize) {
         const auto &presets = palettePresets();
@@ -66,7 +66,7 @@ bool postProcessControls(Context &g, render::PostSettings &s) {
         }
         changed |= g.toggle("Dither", s.dither);
     }
-    g.label("Screen", Font::Bold);
+    g.label("Screen", Font::BOLD);
     changed |= g.toggle("Scanlines", s.scanlines);
     if (s.scanlines) {
         changed |= g.slider("Line Darkness", s.scanlineStrength, 0, 1, "%.2f");

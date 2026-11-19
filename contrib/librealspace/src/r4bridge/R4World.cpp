@@ -4,6 +4,7 @@
 //
 //  The terrain and the places of the objects of a world. See R4World.h.
 //
+#include "R4Data.h"
 #include "R4World.h"
 
 #include "../realspace/RSArea.h"
@@ -52,12 +53,12 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
     colors.doubleSided = true;
     if (dynamic) {
         model->images.push_back(rampImage(palette, *light.ranges));
-        colors.shading = Shading::PaletteRamp;
+        colors.shading = Shading::PALETTE_RAMP;
         colors.diffuseImage = 0;
         colors.rampAmbient = light.lighting.ambient;
         colors.rampLight = light.lighting.light;
     } else {
-        colors.shading = Shading::Unlit;
+        colors.shading = Shading::UNLIT;
         colors.vertexColors = true;
         colors.diffuse = {1, 1, 1, 1};
     }
@@ -117,9 +118,9 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             model->images.push_back(std::move(img));
             Material m;
             m.name = std::string("terrain ") + src->name;
-            m.shading = Shading::Unlit;
+            m.shading = Shading::UNLIT;
             if (dynamic) { // the texture times the intensity of the sun
-                m.shading = Shading::PaletteRamp;
+                m.shading = Shading::PALETTE_RAMP;
                 m.rampTextured = true;
                 m.rampAmbient = light.lighting.ambient;
                 m.rampLight = light.lighting.light;
@@ -127,7 +128,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
             m.diffuseImage = (int)model->images.size() - 1;
             // the GL_DECAL of the game: mix(color, texel, alpha of the texel),
             // the colored triangle under it giving the color
-            m.alpha = AlphaMode::Blend;
+            m.alpha = AlphaMode::BLEND;
             m.decal = true;
             m.doubleSided = true;
             model->materials.push_back(m);
@@ -230,7 +231,7 @@ std::shared_ptr<r4::assets::Model> terrainModel(RSArea *area, const VGAPalette &
                 add(0, corner[k], packColor(cols[k]), {0, 0});
             }
         }
-        if (imageID == 0xFF) {
+        if (imageID == TEXTURE_NONE) {
             return;
         }
         int material = textured(imageID);
@@ -386,10 +387,10 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
                 continue;
             }
             int c = ov.trianles[j].color;
-            if (c == 255 || cellOf.count(c)) {
+            if (c == PALETTE_CLEAR || cellOf.count(c)) {
                 continue;
             }
-            RSImage *src = area->GetImageByID(c + 255);
+            RSImage *src = area->GetImageByID(c + OVERLAY_IMAGE_BASE);
             if (!src || !src->data || !src->width || !src->height || src->width > 128 || src->height > 128) {
                 continue;
             }
@@ -472,13 +473,13 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
     // the ones before it, as the GL_LEQUAL of SCRenderer::renderMapOverlay
     Material m;
     m.name = "overlays";
-    m.shading = Shading::Unlit;
+    m.shading = Shading::UNLIT;
     m.vertexColors = true;
     m.diffuse = {1, 1, 1, 1};
     m.diffuseImage = 0;
     m.doubleSided = true;
     m.decal = true;
-    m.alpha = AlphaMode::Blend; // opaque texels: with the transparent ones, without depth
+    m.alpha = AlphaMode::BLEND; // opaque texels: with the transparent ones, without depth
     m.drawOrder = 1;
     model->materials.push_back(m);
 
@@ -498,7 +499,7 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
             }
             const AreaOverlayTriangles &tri = ov.trianles[j];
             auto it = cellOf.find(tri.color);
-            int cell = tri.color != 255 && it != cellOf.end() ? it->second : 0;
+            int cell = tri.color != PALETTE_CLEAR && it != cellOf.end() ? it->second : 0;
             const Texel &t = palette.colors[tri.color & 0xff];
             uint32_t color = cell == 0 ? (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | 0xff000000u : 0xffffffffu;
             RSImage *img = cellImage[cell];
@@ -589,13 +590,8 @@ struct Random {
 
 namespace {
 
-constexpr int kMapSide = BLOCK_PER_MAP_SIDE * 20; // the vertices of LVL0 on a side
-constexpr float kCell = BLOCK_WIDTH / 20.0f;      // between two of them
-// the green types: 3 the green of the palette from 64 (meadows and woods),
-// 4 the darker one from 128 (the jungle of NICARAGA)
-constexpr int kGreen = 3;
-constexpr int kJungle = 4;
-constexpr int kWater = 0;
+constexpr int kMapSide = BLOCK_PER_MAP_SIDE * BLOCK_SIDE_LVL0; // the vertices of LVL0 on a side
+constexpr float kCell = BLOCK_WIDTH / (float)BLOCK_SIDE_LVL0;  // between two of them
 // the density at the heart of a wood, and between the woods, x perKm2
 constexpr float kWoodCore = 25;
 constexpr float kScattered = 0.1f;
@@ -604,11 +600,11 @@ const MapVertex *mapVertex(RSArea *area, int x, int y) {
     if (x < 0 || y < 0 || x >= kMapSide || y >= kMapSide) {
         return nullptr;
     }
-    AreaBlock *b = area->GetAreaBlockByCoo(0, x / 20, y / 20);
-    if (!b || b->sideSize != 20) {
+    AreaBlock *b = area->GetAreaBlockByCoo(0, x / BLOCK_SIDE_LVL0, y / BLOCK_SIDE_LVL0);
+    if (!b || b->sideSize != BLOCK_SIDE_LVL0) {
         return nullptr;
     }
-    return b->GetVertice(x % 20, y % 20);
+    return b->GetVertice(x % BLOCK_SIDE_LVL0, y % BLOCK_SIDE_LVL0);
 }
 
 // the type of a triangle: the one of its highest vertex (RSArea::highestVertex)
@@ -625,7 +621,7 @@ const MapVertex *highest(const MapVertex *a, const MapVertex *b, const MapVertex
 
 bool green(const MapVertex *a, const MapVertex *b, const MapVertex *c) {
     int type = highest(a, b, c)->type;
-    return (type == kGreen || type == kJungle) && a->type != kWater && b->type != kWater && c->type != kWater;
+    return (type == TERRAIN_GREEN || type == TERRAIN_JUNGLE) && a->type != TERRAIN_WATER && b->type != TERRAIN_WATER && c->type != TERRAIN_WATER;
 }
 
 // each cell of a chunk: its 4 corners, the lower triangle then the upper
@@ -651,11 +647,11 @@ int cellsPerChunk(const ForestSettings &st) {
     return std::max(1, (int)std::lround(st.chunk / kCell));
 }
 
-// the texels of trees of a texture (ForestMode::Textures): dark green, and
+// the texels of trees of a texture (ForestMode::TEXTURES): dark green, and
 // not a flat fill (their neighbors vary); none when they are too few
 const std::vector<uint32_t> &treeTexelsOf(RSArea *area, const ForestSettings &st, int id) {
     static const std::vector<uint32_t> none;
-    if (id == 0xFF || !st.palette || st.notWoods.count(id) || st.bare.count(id)) {
+    if (id == TEXTURE_NONE || !st.palette || st.notWoods.count(id) || st.bare.count(id)) {
         return none;
     }
     auto &cache = *st.treeTexels;
@@ -678,7 +674,7 @@ const std::vector<uint32_t> &treeTexelsOf(RSArea *area, const ForestSettings &st
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
             uint8_t k = img->data[(size_t)y * w + x];
-            if (k == 255) {
+            if (k == PALETTE_CLEAR) {
                 continue;
             }
             visible++;
@@ -690,7 +686,7 @@ const std::vector<uint32_t> &treeTexelsOf(RSArea *area, const ForestSettings &st
             int hi = 0;
             for (int yy = std::max(0, y - 1); yy <= std::min(h - 1, y + 1); yy++) {
                 for (int xx = std::max(0, x - 1); xx <= std::min(w - 1, x + 1); xx++) {
-                    if (img->data[(size_t)yy * w + xx] != 255) {
+                    if (img->data[(size_t)yy * w + xx] != PALETTE_CLEAR) {
                         int l = lum(xx, yy);
                         lo = std::min(lo, l);
                         hi = std::max(hi, l);
@@ -724,7 +720,7 @@ std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &st) {
             float low = 1e30f;
             float high = -1e30f;
             forEachTriangle(area, cx, cz, cells, [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t, const float(*)[2]) {
-                if (st.mode == ForestMode::Textures ? treeTexelsOf(area, st, image).empty() : !green(a, b, c)) {
+                if (st.mode == ForestMode::TEXTURES ? treeTexelsOf(area, st, image).empty() : !green(a, b, c)) {
                     return;
                 }
                 any = true;
@@ -796,7 +792,7 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
     // in the jungle), its turn and size; the 4 numbers drawn for each
     auto plant = [&](r4::Vec3 p, bool jungle, float species, float turn, float size) {
         float conifers = jungle ? 0.1f : 0.35f + std::clamp((p.y - 500) / 3000, 0.0f, 0.5f);
-        int sp = (species < conifers ? 0 : 1) + (jungle ? 2 : 0);
+        int sp = species < conifers ? (jungle ? TREE_JUNGLE_CONIFER : TREE_CONIFER) : (jungle ? TREE_JUNGLE_BROADLEAF : TREE_BROADLEAF);
         r4::scene::Placement t;
         t.position = p;
         t.heading = turn * 6.2831853f;
@@ -805,7 +801,7 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
         chunk.trees[sp].push_back(t);
     };
     forEachTriangle(area, chunk.cx, chunk.cz, cellsPerChunk(st), [&](const MapVertex *a, const MapVertex *b, const MapVertex *c, int image, uint32_t key, const float(*uv)[2]) {
-        if (st.mode == ForestMode::Textures) {
+        if (st.mode == ForestMode::TEXTURES) {
             // the trees painted in the texture: a tree on its texels of trees
             // (each by chance: one by areaPerTree), through the triangle's uvs
             const std::vector<uint32_t> &texels = treeTexelsOf(area, st, image);
@@ -825,7 +821,7 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
             r4::Vec3 pa{a->v.x, a->v.y, a->v.z};
             r4::Vec3 pb{b->v.x, b->v.y, b->v.z};
             r4::Vec3 pc{c->v.x, c->v.y, c->v.z};
-            const bool jungle = highest(a, b, c)->type == kJungle;
+            const bool jungle = highest(a, b, c)->type == TERRAIN_JUNGLE;
             const float chance = (kCell / w) * (kCell / h) / st.areaPerTree * st.density;
             Random rnd{key * 2654435761u + st.seed * 97u + 1};
             for (uint32_t texel : texels) {
@@ -853,9 +849,9 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
         if (!green(a, b, c) || st.bare.count(image)) {
             return;
         }
-        const bool jungle = highest(a, b, c)->type == kJungle;
+        const bool jungle = highest(a, b, c)->type == TERRAIN_JUNGLE;
         auto it = st.images.find(image);
-        bool woodImage = image != 0xFF && it != st.images.end();
+        bool woodImage = image != TEXTURE_NONE && it != st.images.end();
         r4::Vec3 pa{a->v.x, a->v.y, a->v.z};
         r4::Vec3 pb{b->v.x, b->v.y, b->v.z};
         r4::Vec3 pc{c->v.x, c->v.y, c->v.z};
@@ -899,11 +895,11 @@ void plantForest(RSArea *area, const ForestSettings &st, ForestChunk &chunk) {
 std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGAPalette &palette, const std::vector<PaletteRange> &ranges, Lighting lighting) {
     using namespace r4::assets;
     auto model = std::make_shared<Model>();
-    const std::string name = std::string(species % 2 == 0 ? "conifer" : "broadleaf") + (species >= 2 ? " (jungle)" : "") + (simple ? " simple" : "");
+    const std::string name = std::string(isConifer(species) ? "conifer" : "broadleaf") + (isJungleTree(species) ? " (jungle)" : "") + (simple ? " simple" : "");
     model->images.push_back(rampImage(palette, ranges));
     Material m;
     m.name = "tree, palette ramp";
-    m.shading = Shading::PaletteRamp;
+    m.shading = Shading::PALETTE_RAMP;
     m.diffuseImage = 0;
     m.rampAmbient = lighting.ambient;
     m.rampLight = lighting.light;
@@ -913,10 +909,10 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
     mesh.material = 0;
     // the colors at full light: their ramps darken them (the green ramp from
     // 64, the brown one from 96)
-    const uint32_t green = species >= 2 ? 128 : 64; // the ramp of their ground
+    const uint32_t green = isJungleTree(species) ? PALETTE_JUNGLE_RAMP : PALETTE_GREEN_RAMP; // the ramp of their ground
     const uint32_t conifer = green + 13;
     const uint32_t leaves = green + 18;
-    const uint32_t trunk = 96 + 10;
+    const uint32_t trunk = PALETTE_BROWN_RAMP + 10;
     // a triangle with its face normal, turned outward from the center of its solid
     auto tri = [&](r4::Vec3 a, r4::Vec3 b, r4::Vec3 c, r4::Vec3 center, uint32_t color) {
         r4::Vec3 n = r4::cross(b - a, c - a);
@@ -966,7 +962,7 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
             }
         }
     };
-    if (species % 2 == 0) {
+    if (isConifer(species)) {
         if (simple) {
             solid({{5.5f, 2}, {0, 25}}, 4, conifer, 0.5f);
         } else {
@@ -1008,44 +1004,43 @@ struct Footprint {
 // map), read on their images by hand; the dark towers of the downtowns higher
 const std::map<int, std::vector<Footprint>> kBuildings{
     // 223-228 : the harbor (64 x 64, a triangle each half): sheds on the piers, goods
-    {223, {{16, 13, 63, 16, 16}, {50, 17, 55, 39, 16}, {5, 50, 38, 54, 16}}},
-    {224, {{22, 3, 58, 7, 16}, {8, 34, 19, 52, 12}, {23, 48, 45, 53, 16}}},
-    {225, {{22, 3, 56, 9, 16}, {7, 15, 14, 40, 16}}},
-    {226, {{15, 4, 44, 10, 16}, {4, 18, 12, 38, 16}, {47, 19, 58, 32, 12}, {13, 53, 19, 58, 10}, {48, 41, 56, 46, 10}}},
-    {227, {{25, 8, 63, 15, 16}, {6, 45, 46, 54, 16}}},
-    {228, {{47, 9, 56, 46, 16}, {9, 50, 44, 55, 16}}},
+    {TEXTURE_HARBOR_A, {{16, 13, 63, 16, 16}, {50, 17, 55, 39, 16}, {5, 50, 38, 54, 16}}},
+    {TEXTURE_HARBOR_B, {{22, 3, 58, 7, 16}, {8, 34, 19, 52, 12}, {23, 48, 45, 53, 16}}},
+    {TEXTURE_HARBOR_C, {{22, 3, 56, 9, 16}, {7, 15, 14, 40, 16}}},
+    {TEXTURE_HARBOR_D, {{15, 4, 44, 10, 16}, {4, 18, 12, 38, 16}, {47, 19, 58, 32, 12}, {13, 53, 19, 58, 10}, {48, 41, 56, 46, 10}}},
+    {TEXTURE_HARBOR_E, {{25, 8, 63, 15, 16}, {6, 45, 46, 54, 16}}},
+    {TEXTURE_HARBOR_F, {{47, 9, 56, 46, 16}, {9, 50, 44, 55, 16}}},
     // 229 : downtown
-    {229, {{5, 4, 24, 27, 140}, {25, 3, 41, 12, 30}, {43, 3, 57, 29, 70}, {67, 3, 93, 23, 60}, {5, 37, 26, 57, 160}, {26, 37, 46, 57, 90}, {46, 37, 58, 57, 120}, {67, 34, 88, 58, 200}, {98, 35, 117, 58, 80}, {8, 67, 55, 91, 35}, {100, 68, 122, 92, 150}, {68, 82, 100, 90, 25}, {35, 102, 53, 119, 60}, {76, 99, 119, 121, 50}}},
+    {TEXTURE_DOWNTOWN_A, {{5, 4, 24, 27, 140}, {25, 3, 41, 12, 30}, {43, 3, 57, 29, 70}, {67, 3, 93, 23, 60}, {5, 37, 26, 57, 160}, {26, 37, 46, 57, 90}, {46, 37, 58, 57, 120}, {67, 34, 88, 58, 200}, {98, 35, 117, 58, 80}, {8, 67, 55, 91, 35}, {100, 68, 122, 92, 150}, {68, 82, 100, 90, 25}, {35, 102, 53, 119, 60}, {76, 99, 119, 121, 50}}},
     // 230 : downtown, the other
-    {230, {{5, 5, 27, 24, 90}, {37, 4, 57, 27, 150}, {5, 26, 14, 59, 40}, {13, 46, 29, 58, 40}, {38, 29, 57, 59, 180}, {68, 8, 92, 55, 70}, {104, 17, 116, 53, 110}, {4, 68, 25, 94, 60}, {34, 67, 59, 88, 130}, {69, 68, 89, 98, 160}, {69, 101, 92, 124, 100}, {100, 77, 122, 119, 25}, {44, 99, 60, 115, 25}}},
+    {TEXTURE_DOWNTOWN_B, {{5, 5, 27, 24, 90}, {37, 4, 57, 27, 150}, {5, 26, 14, 59, 40}, {13, 46, 29, 58, 40}, {38, 29, 57, 59, 180}, {68, 8, 92, 55, 70}, {104, 17, 116, 53, 110}, {4, 68, 25, 94, 60}, {34, 67, 59, 88, 130}, {69, 68, 89, 98, 160}, {69, 101, 92, 124, 100}, {100, 77, 122, 119, 25}, {44, 99, 60, 115, 25}}},
     // 233 : a farm
-    {233, {{34, 69, 53, 82, 18}, {74, 74, 80, 80, 14}, {84, 86, 94, 96, 12}, {17, 87, 24, 105, 12}, {17, 107, 24, 117, 10}, {56, 80, 61, 84, 8}}},
+    {TEXTURE_FARM, {{34, 69, 53, 82, 18}, {74, 74, 80, 80, 14}, {84, 86, 94, 96, 12}, {17, 87, 24, 105, 12}, {17, 107, 24, 117, 10}, {56, 80, 61, 84, 8}}},
     // 248 : a village on green, with its church
-    {248, {{9, 11, 32, 30, 18}, {36, 34, 50, 57, 30}, {51, 44, 59, 57, 12}, {84, 18, 109, 46, 25}, {107, 4, 114, 8, 10}, {119, 28, 126, 35, 10}, {3, 53, 9, 58, 10}, {11, 53, 17, 58, 10}, {19, 53, 25, 58, 10}, {12, 69, 56, 78, 14}, {47, 81, 54, 87, 10}, {20, 88, 30, 97, 12}, {20, 100, 30, 109, 12}, {44, 89, 56, 100, 16}, {44, 103, 56, 113, 16}, {81, 69, 86, 79, 14}, {93, 71, 107, 80, 12}, {113, 71, 123, 82, 12}, {69, 73, 77, 79, 10}, {69, 80, 77, 85, 10}, {69, 86, 77, 91, 10}, {69, 98, 76, 102, 10}, {69, 104, 76, 108, 10}, {99, 91, 107, 100, 12}, {99, 102, 107, 106, 10}, {99, 108, 107, 113, 10}, {69, 115, 104, 124, 14}}},
+    {TEXTURE_VILLAGE_GREEN_A, {{9, 11, 32, 30, 18}, {36, 34, 50, 57, 30}, {51, 44, 59, 57, 12}, {84, 18, 109, 46, 25}, {107, 4, 114, 8, 10}, {119, 28, 126, 35, 10}, {3, 53, 9, 58, 10}, {11, 53, 17, 58, 10}, {19, 53, 25, 58, 10}, {12, 69, 56, 78, 14}, {47, 81, 54, 87, 10}, {20, 88, 30, 97, 12}, {20, 100, 30, 109, 12}, {44, 89, 56, 100, 16}, {44, 103, 56, 113, 16}, {81, 69, 86, 79, 14}, {93, 71, 107, 80, 12}, {113, 71, 123, 82, 12}, {69, 73, 77, 79, 10}, {69, 80, 77, 85, 10}, {69, 86, 77, 91, 10}, {69, 98, 76, 102, 10}, {69, 104, 76, 108, 10}, {99, 91, 107, 100, 12}, {99, 102, 107, 106, 10}, {99, 108, 107, 113, 10}, {69, 115, 104, 124, 14}}},
     // 249 : a village on green
-    {249, {{33, 24, 44, 33, 12}, {19, 33, 28, 43, 12}, {30, 46, 40, 56, 12}, {49, 35, 56, 45, 10}, {50, 48, 57, 56, 10}, {68, 51, 75, 56, 9}, {3, 53, 9, 58, 9}, {11, 53, 17, 58, 9}, {19, 53, 25, 58, 9}, {77, 53, 83, 58, 9}, {85, 53, 91, 58, 9}, {93, 53, 99, 58, 9}, {101, 53, 107, 58, 9}, {109, 53, 115, 58, 9}, {117, 53, 123, 58, 9}, {78, 69, 122, 78, 14}, {113, 81, 120, 87, 10}, {19, 71, 34, 82, 12}, {38, 70, 44, 76, 10}, {47, 70, 54, 80, 12}}},
+    {TEXTURE_VILLAGE_GREEN_B, {{33, 24, 44, 33, 12}, {19, 33, 28, 43, 12}, {30, 46, 40, 56, 12}, {49, 35, 56, 45, 10}, {50, 48, 57, 56, 10}, {68, 51, 75, 56, 9}, {3, 53, 9, 58, 9}, {11, 53, 17, 58, 9}, {19, 53, 25, 58, 9}, {77, 53, 83, 58, 9}, {85, 53, 91, 58, 9}, {93, 53, 99, 58, 9}, {101, 53, 107, 58, 9}, {109, 53, 115, 58, 9}, {117, 53, 123, 58, 9}, {78, 69, 122, 78, 14}, {113, 81, 120, 87, 10}, {19, 71, 34, 82, 12}, {38, 70, 44, 76, 10}, {47, 70, 54, 80, 12}}},
     // 250 : a village on sand
-    {250, {{55, 31, 61, 41, 10}, {26, 41, 40, 45, 8}, {26, 48, 40, 53, 8}, {45, 40, 51, 45, 9}, {57, 47, 63, 56, 10}, {43, 52, 48, 55, 8}, {73, 44, 90, 49, 8}, {73, 50, 90, 55, 8}, {98, 50, 116, 56, 10}, {22, 70, 35, 75, 8}, {38, 76, 42, 92, 7}, {48, 76, 52, 92, 7}, {53, 89, 58, 93, 8}, {62, 69, 82, 86, 12}, {76, 84, 82, 95, 10}, {88, 69, 95, 75, 10}, {97, 69, 112, 76, 12}, {97, 81, 110, 86, 8}, {98, 92, 105, 98, 10}, {38, 102, 45, 108, 9}}},
+    {TEXTURE_VILLAGE_SAND_A, {{55, 31, 61, 41, 10}, {26, 41, 40, 45, 8}, {26, 48, 40, 53, 8}, {45, 40, 51, 45, 9}, {57, 47, 63, 56, 10}, {43, 52, 48, 55, 8}, {73, 44, 90, 49, 8}, {73, 50, 90, 55, 8}, {98, 50, 116, 56, 10}, {22, 70, 35, 75, 8}, {38, 76, 42, 92, 7}, {48, 76, 52, 92, 7}, {53, 89, 58, 93, 8}, {62, 69, 82, 86, 12}, {76, 84, 82, 95, 10}, {88, 69, 95, 75, 10}, {97, 69, 112, 76, 12}, {97, 81, 110, 86, 8}, {98, 92, 105, 98, 10}, {38, 102, 45, 108, 9}}},
     // 251 : a village on sand, with its silos
-    {251, {{39, 13, 45, 26, 30}, {49, 13, 56, 27, 30}, {5, 25, 13, 37, 12}, {70, 6, 88, 17, 10}, {8, 47, 26, 57, 12}, {28, 44, 41, 51, 10}, {28, 52, 42, 59, 10}, {43, 53, 50, 59, 9}, {71, 31, 103, 56, 14}, {104, 43, 111, 49, 12}, {51, 42, 57, 47, 10}, {9, 68, 40, 74, 10}, {23, 77, 43, 84, 10}, {44, 75, 51, 80, 9}, {45, 81, 52, 86, 10}, {86, 70, 112, 77, 10}, {79, 75, 86, 81, 10}, {104, 78, 125, 92, 12}, {15, 90, 42, 117, 12}, {44, 90, 54, 103, 10}, {44, 107, 51, 112, 10}, {60, 96, 95, 117, 10}, {99, 98, 120, 117, 12}, {61, 87, 73, 92, 9}, {89, 90, 97, 96, 10}, {68, 115, 75, 121, 9}}},
+    {TEXTURE_VILLAGE_SAND_B, {{39, 13, 45, 26, 30}, {49, 13, 56, 27, 30}, {5, 25, 13, 37, 12}, {70, 6, 88, 17, 10}, {8, 47, 26, 57, 12}, {28, 44, 41, 51, 10}, {28, 52, 42, 59, 10}, {43, 53, 50, 59, 9}, {71, 31, 103, 56, 14}, {104, 43, 111, 49, 12}, {51, 42, 57, 47, 10}, {9, 68, 40, 74, 10}, {23, 77, 43, 84, 10}, {44, 75, 51, 80, 9}, {45, 81, 52, 86, 10}, {86, 70, 112, 77, 10}, {79, 75, 86, 81, 10}, {104, 78, 125, 92, 12}, {15, 90, 42, 117, 12}, {44, 90, 54, 103, 10}, {44, 107, 51, 112, 10}, {60, 96, 95, 117, 10}, {99, 98, 120, 117, 12}, {61, 87, 73, 92, 9}, {89, 90, 97, 96, 10}, {68, 115, 75, 121, 9}}},
 };
 // the houses: found on their image, by their light grey roofs
-constexpr int kHousesImage = 231;
 
 // the facade of a texture's buildings
 enum class Facade {
-    Offices,
-    Houses,
-    Industry
+    OFFICES,
+    HOUSES,
+    INDUSTRY
 };
 Facade facadeOf(int image) {
-    if (image == 229 || image == 230) {
-        return Facade::Offices;
+    if (image == TEXTURE_DOWNTOWN_A || image == TEXTURE_DOWNTOWN_B) {
+        return Facade::OFFICES;
     }
-    if (image >= 223 && image <= 228) {
-        return Facade::Industry;
+    if (image >= TEXTURE_HARBOR_A && image <= TEXTURE_HARBOR_F) {
+        return Facade::INDUSTRY;
     }
-    return Facade::Houses;
+    return Facade::HOUSES;
 }
 
 // the houses: the components of light grey texels (their roofs), 2 x 2 at
@@ -1060,7 +1055,7 @@ std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
         const Texel &t = palette.colors[k];
         int lo = std::min({t.r, t.g, t.b});
         int hi = std::max({t.r, t.g, t.b});
-        light[i] = k != 255 && hi - lo <= 12 && (t.r + t.g + t.b) / 3 >= 0x8c;
+        light[i] = k != PALETTE_CLEAR && hi - lo <= 12 && (t.r + t.g + t.b) / 3 >= 0x8c;
     }
     std::vector<int> stack;
     for (int start = 0; start < w * h; start++) {
@@ -1105,7 +1100,7 @@ std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
 // sheds of the harbor)
 r4::assets::Image facadeImage(Facade kind) {
     r4::assets::Image img;
-    img.name = kind == Facade::Offices ? "facade, offices" : kind == Facade::Houses ? "facade, houses" : "facade, industry";
+    img.name = kind == Facade::OFFICES ? "facade, offices" : kind == Facade::HOUSES ? "facade, houses" : "facade, industry";
     img.width = img.height = 16;
     img.channels = 4;
     img.pixels.resize(16 * 16 * 4);
@@ -1115,7 +1110,7 @@ r4::assets::Image facadeImage(Facade kind) {
             uint8_t *d = &img.pixels[((size_t)y * 16 + x) * 4];
             uint8_t c[3];
             switch (kind) {
-            case Facade::Offices:
+            case Facade::OFFICES:
                 if (y >= 5 && y <= 12 && (x % 8) >= 1 && (x % 8) <= 6) {
                     c[0] = 46;
                     c[1] = 58;
@@ -1126,7 +1121,7 @@ r4::assets::Image facadeImage(Facade kind) {
                     c[2] = 146;
                 }
                 break;
-            case Facade::Houses:
+            case Facade::HOUSES:
                 if (y >= 6 && y <= 11 && x >= 5 && x <= 10) {
                     c[0] = 46;
                     c[1] = 58;
@@ -1170,7 +1165,7 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
     auto material = [&](const std::string &name, int image) {
         Material m;
         m.name = name;
-        m.shading = Shading::PaletteRamp;
+        m.shading = Shading::PALETTE_RAMP;
         m.rampTextured = true;
         m.rampAmbient = lighting.ambient;
         m.rampLight = lighting.light;
@@ -1179,7 +1174,7 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         return (int)model->materials.size() - 1;
     };
     int walls[3];
-    for (Facade f : {Facade::Offices, Facade::Houses, Facade::Industry}) {
+    for (Facade f : {Facade::OFFICES, Facade::HOUSES, Facade::INDUSTRY}) {
         model->images.push_back(facadeImage(f));
         walls[(int)f] = material(model->images.back().name, (int)model->images.size() - 1);
     }
@@ -1193,7 +1188,7 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
     };
     std::map<int, Built> built;
     auto builtOf = [&](int id) -> Built * {
-        if (id == 0xFF || (id != kHousesImage && !kBuildings.count(id))) {
+        if (id == TEXTURE_NONE || (id != TEXTURE_HOUSES && !kBuildings.count(id))) {
             return nullptr;
         }
         auto it = built.find(id);
@@ -1227,7 +1222,7 @@ std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &pal
         b.w = (float)src->width;
         b.h = (float)src->height;
         b.walls = walls[(int)facadeOf(id)];
-        b.footprints = id == kHousesImage ? housesOf(src, palette) : kBuildings.at(id);
+        b.footprints = id == TEXTURE_HOUSES ? housesOf(src, palette) : kBuildings.at(id);
         return &b;
     };
     // none on the objects of the map and of the mission: a footprint whose

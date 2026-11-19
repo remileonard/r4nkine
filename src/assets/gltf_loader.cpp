@@ -176,13 +176,13 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
         if (gm.unlit) {
-            m.shading = Shading::Unlit;
+            m.shading = Shading::UNLIT;
         }
         m.doubleSided = gm.double_sided;
         if (gm.alpha_mode == cgltf_alpha_mode_blend) {
-            m.alpha = AlphaMode::Blend;
+            m.alpha = AlphaMode::BLEND;
         } else if (gm.alpha_mode == cgltf_alpha_mode_mask) {
-            m.alpha = AlphaMode::Mask;
+            m.alpha = AlphaMode::MASK;
             m.alphaCutoff = gm.alpha_cutoff;
         }
         materials[&gm] = (int)model->materials.size();
@@ -288,12 +288,12 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                 }
                 break;
             case cgltf_primitive_type_lines:
-                m.primitive = Primitive::Lines;
+                m.primitive = Primitive::LINES;
                 m.indices = idx;
                 break;
             case cgltf_primitive_type_line_strip:
             case cgltf_primitive_type_line_loop:
-                m.primitive = Primitive::Lines;
+                m.primitive = Primitive::LINES;
                 for (size_t k = 0; k + 1 < idx.size(); k++) {
                     m.indices.insert(m.indices.end(), {idx[k], idx[k + 1]});
                 }
@@ -302,7 +302,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                 }
                 break;
             case cgltf_primitive_type_points:
-                m.primitive = Primitive::Points;
+                m.primitive = Primitive::POINTS;
                 m.indices = idx;
                 break;
             default:
@@ -311,7 +311,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             if (m.indices.empty()) {
                 continue;
             }
-            if (!nrm && m.primitive == Primitive::Triangles) {
+            if (!nrm && m.primitive == Primitive::TRIANGLES) {
                 m.computeNormals();
             }
             m.material = materialFor(prim.material, col != nullptr);

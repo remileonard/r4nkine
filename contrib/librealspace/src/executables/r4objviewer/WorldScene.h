@@ -170,12 +170,12 @@ private:
     bool terrainDynamic_ = false;
     float terrainRelief_ = 4;
     float forestDensity_ = 1;
-    r4bridge::ForestMode forestMode_ = r4bridge::ForestMode::Noise;
+    r4bridge::ForestMode forestMode_ = r4bridge::ForestMode::NOISE;
     int terrainLod_ = 0;
     std::vector<r4::scene::LOD *> terrainLods_;
     struct ForestNode {
         r4bridge::ForestChunk chunk;
-        std::shared_ptr<r4::scene::Instancer> trees[r4bridge::kTreeSpecies];
+        std::shared_ptr<r4::scene::Instancer> trees[r4bridge::TREE_SPECIES_COUNT];
     };
     std::vector<ForestNode> forestNodes_;
     r4bridge::ForestSettings forestSettings_;

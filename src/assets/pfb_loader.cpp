@@ -22,6 +22,35 @@ namespace {
 
 constexpr int kInherit = -1000;
 
+enum Chunk {
+    CHUNK_MATERIALS = 0,
+    CHUNK_TEXTURES = 1,
+    CHUNK_TEXENVS = 2,
+    CHUNK_GSTATES = 3,
+    CHUNK_LENGTHS = 4,
+    CHUNK_COORDS = 5,
+    CHUNK_COLORS = 6,
+    CHUNK_NORMALS = 7,
+    CHUNK_TEXCOORDS = 8,
+    CHUNK_GSETS = 10,
+    CHUNK_USER_DATA = 11,
+    CHUNK_NODES = 12,
+    CHUNK_MORPHS = 14
+};
+constexpr int kListChunks = CHUNK_TEXCOORDS + 1;
+
+// the modes of a geostate, as the file stores them
+enum GStateMode {
+    GS_MODE_OFF = 1,
+    GS_MODE_ON = 2
+};
+enum {
+    GS_CULL_BACK = 2
+};
+enum {
+    CMODE_AMBIENT_AND_DIFFUSE = 2
+};
+
 enum {
     TRIFANS,
     TRISTRIPS,
@@ -228,7 +257,7 @@ struct File {
     std::vector<PMtl> mtl;
     std::vector<std::string> tex;
     std::vector<PGState> gstate;
-    std::vector<PList> list[9];
+    std::vector<PList> list[kListChunks];
     std::vector<PGSet> gset;
     std::vector<PNode> node;
     std::vector<std::vector<int>> morph;
@@ -284,7 +313,7 @@ void readGState(Reader &r, PGState &g) {
 }
 
 void readList(Reader &r, int type, PList &l, int version) {
-    static const int comps[9] = {0, 0, 0, 0, 1, 3, 4, 3, 2};
+    static const int comps[kListChunks] = {0, 0, 0, 0, 1, 3, 4, 3, 2};
     int n = r.i32();
     r.i32(); // a cycle buffer
     r.i32(); // user data
@@ -294,7 +323,7 @@ void readList(Reader &r, int type, PList &l, int version) {
     }
     l.count = n;
     l.comps = comps[type];
-    if (type == 4) {
+    if (type == CHUNK_LENGTHS) {
         l.i.resize(n);
         for (int i = 0; i < n; i++) {
             l.i[i] = r.i32();
@@ -304,7 +333,7 @@ void readList(Reader &r, int type, PList &l, int version) {
         for (float &v : l.f) {
             v = r.f32();
         }
-        if (type == 5 && version >= 2) {
+        if (type == CHUNK_COORDS && version >= 2) {
             unscramble(l.f);
         }
     }
@@ -448,7 +477,7 @@ void readNode(Reader &r, PNode &nd) {
 // pfMorph: attributes (type, floats per element, elements, sources, dest
 // list, index flag, sources), then one weight per source
 void applyMorph(File &f, const std::vector<int> &w) {
-    static const int listType[6] = {0, 6, 7, 8, 5, 0};
+    static const int listType[6] = {0, CHUNK_COLORS, CHUNK_NORMALS, CHUNK_TEXCOORDS, CHUNK_COORDS, 0};
     if (w.empty()) {
         return;
     }
@@ -523,7 +552,7 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
             break;
         }
         switch (type) {
-        case 0:
+        case CHUNK_MATERIALS:
             for (int i = 0; i < count && !r.error; i++) {
                 PMtl m;
                 r.i32(); // side
@@ -540,7 +569,7 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
                 f.mtl.push_back(m);
             }
             break;
-        case 1:
+        case CHUNK_TEXTURES:
             for (int i = 0; i < count && !r.error; i++) {
                 std::string name = r.name();
                 const unsigned char *body = r.p;
@@ -561,39 +590,39 @@ bool parse(const std::vector<unsigned char> &buf, File &f) {
                 f.tex.push_back(name);
             }
             break;
-        case 3:
+        case CHUNK_GSTATES:
             for (int i = 0; i < count && !r.error; i++) {
                 PGState g;
                 readGState(r, g);
                 f.gstate.push_back(g);
             }
             break;
-        case 4:
-        case 5:
-        case 6:
-        case 7:
-        case 8:
+        case CHUNK_LENGTHS:
+        case CHUNK_COORDS:
+        case CHUNK_COLORS:
+        case CHUNK_NORMALS:
+        case CHUNK_TEXCOORDS:
             for (int i = 0; i < count && !r.error; i++) {
                 PList l;
                 readList(r, type, l, f.version);
                 f.list[type].push_back(std::move(l));
             }
             break;
-        case 10:
+        case CHUNK_GSETS:
             for (int i = 0; i < count && !r.error; i++) {
                 PGSet g;
                 readGSet(r, g);
                 f.gset.push_back(g);
             }
             break;
-        case 12:
+        case CHUNK_NODES:
             for (int i = 0; i < count && !r.error; i++) {
                 PNode nd;
                 readNode(r, nd);
                 f.node.push_back(std::move(nd));
             }
             break;
-        case 14:
+        case CHUNK_MORPHS:
             for (int i = 0; i < count && !r.error; i++) {
                 f.morph.push_back(r.words());
             }
@@ -646,7 +675,7 @@ struct Builder {
 
     int material(int gs, bool vcolors, bool hasNormals, bool decal) {
         const PGState *g = gs >= 0 && gs < (int)f.gstate.size() ? &f.gstate[gs] : nullptr;
-        bool lit = g && g->lighting != kInherit ? g->lighting == 2 : hasNormals;
+        bool lit = g && g->lighting != kInherit ? g->lighting == GS_MODE_ON : hasNormals;
         auto key = std::make_tuple(gs, vcolors, lit, decal);
         auto it = materials.find(key);
         if (it != materials.end()) {
@@ -654,7 +683,7 @@ struct Builder {
         }
         Material m;
         m.name = "gstate " + std::to_string(gs);
-        m.shading = lit ? Shading::Phong : Shading::Unlit;
+        m.shading = lit ? Shading::PHONG : Shading::UNLIT;
         m.diffuse = {1, 1, 1, 1};
         m.ambient = {1, 1, 1};
         m.doubleSided = true;
@@ -668,31 +697,31 @@ struct Builder {
                 m.emissive = {p.emission[0], p.emission[1], p.emission[2]};
                 m.shininess = p.shininess;
                 // the vertex colors drive ambient and diffuse (PFMTL_CMODE_AD)
-                if (vcolors && lit && p.cmode == 2) {
+                if (vcolors && lit && p.cmode == CMODE_AMBIENT_AND_DIFFUSE) {
                     m.diffuse = {1, 1, 1, p.alpha};
                     m.ambient = {1, 1, 1};
                 }
             }
-            bool textured = g->texturing != kInherit ? g->texturing == 2 : g->texture >= 0;
+            bool textured = g->texturing != kInherit ? g->texturing == GS_MODE_ON : g->texture >= 0;
             if (textured && g->texture >= 0 && g->texture < (int)f.tex.size()) {
                 m.diffuseImage = image(f.tex[g->texture]);
             }
-            if (g->transparency != kInherit && g->transparency >= 2) {
-                m.alpha = AlphaMode::Blend;
+            if (g->transparency != kInherit && g->transparency >= GS_MODE_ON) {
+                m.alpha = AlphaMode::BLEND;
             } else if (m.diffuse.w < 1) {
-                m.alpha = AlphaMode::Blend;
-            } else if (g->alphafunc != kInherit && g->alphafunc > 1 && m.diffuseImage >= 0) {
-                m.alpha = AlphaMode::Mask;
+                m.alpha = AlphaMode::BLEND;
+            } else if (g->alphafunc != kInherit && g->alphafunc > GS_MODE_OFF && m.diffuseImage >= 0) {
+                m.alpha = AlphaMode::MASK;
             }
-            if (m.diffuseImage >= 0 && m.alpha == AlphaMode::Opaque && model.images[m.diffuseImage].channels == 4) {
-                m.alpha = AlphaMode::Mask;
+            if (m.diffuseImage >= 0 && m.alpha == AlphaMode::NONE && model.images[m.diffuseImage].channels == 4) {
+                m.alpha = AlphaMode::MASK;
             }
-            if (g->cullface == 2) {
+            if (g->cullface == GS_CULL_BACK) {
                 m.doubleSided = false;
             }
         }
         // lit, the colors only count with the color mode; unlit, always
-        m.vertexColors = vcolors && (!lit || (g && g->frontmtl >= 0 && g->frontmtl < (int)f.mtl.size() ? f.mtl[g->frontmtl].cmode == 2 : true));
+        m.vertexColors = vcolors && (!lit || (g && g->frontmtl >= 0 && g->frontmtl < (int)f.mtl.size() ? f.mtl[g->frontmtl].cmode == CMODE_AMBIENT_AND_DIFFUSE : true));
         int index = (int)model.materials.size();
         model.materials.push_back(m);
         materials[key] = index;
@@ -711,7 +740,7 @@ struct Builder {
             return -1;
         }
         const PGSet &g = f.gset[gi];
-        static const int listType[4] = {5, 6, 7, 8};
+        static const int listType[4] = {CHUNK_COORDS, CHUNK_COLORS, CHUNK_NORMALS, CHUNK_TEXCOORDS};
         const PList *L[4] = {};
         for (int a = 0; a < 4; a++) {
             if (g.list[a] >= 0 && g.list[a] < (int)f.list[listType[a]].size() && g.bind[a] >= PER_VERTEX) {
@@ -721,10 +750,10 @@ struct Builder {
         if (!L[0]) {
             return -1;
         }
-        const std::vector<int> *lengths = g.lengths >= 0 && g.lengths < (int)f.list[4].size() ? &f.list[4][g.lengths].i : nullptr;
+        const std::vector<int> *lengths = g.lengths >= 0 && g.lengths < (int)f.list[CHUNK_LENGTHS].size() ? &f.list[CHUNK_LENGTHS][g.lengths].i : nullptr;
         Mesh m;
         int prim = g.prim;
-        m.primitive = prim == POINTS ? Primitive::Points : prim == LINES || prim == LINESTRIPS || prim == FLAT_LINESTRIPS ? Primitive::Lines : Primitive::Triangles;
+        m.primitive = prim == POINTS ? Primitive::POINTS : prim == LINES || prim == LINESTRIPS || prim == FLAT_LINESTRIPS ? Primitive::LINES : Primitive::TRIANGLES;
         int vert = 0; // the next vertex of the lists
         auto attrib = [&](int a, int primIndex, int vertex, int comps) -> const float * {
             const PList *l = L[a];
@@ -839,7 +868,7 @@ struct Builder {
             return -1;
         }
         bool hasNormals = L[2] != nullptr;
-        if (!hasNormals && m.primitive == Primitive::Triangles) {
+        if (!hasNormals && m.primitive == Primitive::TRIANGLES) {
             // no normals: lit only when the geostate says so; flat ones then
             for (size_t i = 0; i + 2 < m.indices.size(); i += 3) {
                 Vertex &a = m.vertices[m.indices[i]];
@@ -891,7 +920,7 @@ struct Builder {
                 }
                 Node b;
                 b.name = "billboard";
-                b.kind = NodeKind::Billboard;
+                b.kind = NodeKind::BILLBOARD;
                 b.billboardPoint = pn.bbPoint;
                 if (i < pn.bbPositions.size()) {
                     b.local = translate(pn.bbPositions[i]);
@@ -917,7 +946,7 @@ struct Builder {
             }
         }
         if (pn.type == NODE_SWITCH || pn.type == NODE_SEQUENCE || (pn.type == NODE_LOD && pn.lodRanges.empty())) {
-            n.kind = NodeKind::Switch;
+            n.kind = NodeKind::SWITCH;
             // Performer: PFSWITCH_ON -1, OFF -2 (a sequence shows its first frame,
             // a LOD without ranges its most detailed child)
             n.switchValue = pn.type == NODE_SWITCH ? (pn.switchVal < -1 ? -2 : pn.switchVal) : pn.type == NODE_SEQUENCE ? std::max(0, pn.seqBegin) : 0;
@@ -927,13 +956,13 @@ struct Builder {
             n.lodCenter = pn.lodCenter;
             n.hasLodCenter = pn.hasLodCenter;
         }
-        if (n.kind != NodeKind::Group && !n.meshes.empty()) {
+        if (n.kind != NodeKind::GROUP && !n.meshes.empty()) {
             Node g;
             g.meshes = std::move(n.meshes);
             n.meshes.clear();
             kids.insert(kids.begin(), (int)model.nodes.size());
             model.nodes.push_back(g);
-            if (n.kind == NodeKind::Switch && n.switchValue >= 0) {
+            if (n.kind == NodeKind::SWITCH && n.switchValue >= 0) {
                 n.switchValue++;
             }
         }

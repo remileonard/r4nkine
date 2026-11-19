@@ -324,7 +324,7 @@ void Surface::put(int x, int y, uint32_t c) {
     if (x < cx0_ || x >= cx1_ || y < cy0_ || y >= cy1_) {
         return;
     }
-    if (format_ == Format::Indexed8) {
+    if (format_ == Format::INDEXED8) {
         data_[(size_t)y * width_ + x] = (uint8_t)c;
     } else {
         uint32_t *p = reinterpret_cast<uint32_t *>(data_.data()) + (size_t)y * width_ + x;
@@ -344,7 +344,7 @@ void Surface::span(int x0, int x1, int y, uint32_t c) {
     if (x0 > x1) {
         return;
     }
-    if (format_ == Format::Indexed8) {
+    if (format_ == Format::INDEXED8) {
         std::memset(&data_[(size_t)y * width_ + x0], (uint8_t)c, (size_t)(x1 - x0 + 1));
     } else {
         uint32_t *p = reinterpret_cast<uint32_t *>(data_.data()) + (size_t)y * width_;
@@ -360,7 +360,7 @@ void Surface::span(int x0, int x1, int y, uint32_t c) {
 
 void Surface::clear(uint32_t color) {
     touch();
-    if (format_ == Format::Indexed8) {
+    if (format_ == Format::INDEXED8) {
         std::fill(data_.begin(), data_.end(), (uint8_t)color);
     } else {
         std::fill(reinterpret_cast<uint32_t *>(data_.data()), reinterpret_cast<uint32_t *>(data_.data()) + (size_t)width_ * height_, color);
@@ -376,7 +376,7 @@ uint32_t Surface::get(int x, int y) const {
     if (x < 0 || y < 0 || x >= width_ || y >= height_) {
         return 0;
     }
-    if (format_ == Format::Indexed8) {
+    if (format_ == Format::INDEXED8) {
         return data_[(size_t)y * width_ + x];
     }
     return reinterpret_cast<const uint32_t *>(data_.data())[(size_t)y * width_ + x];
@@ -604,11 +604,11 @@ void Surface::blit(const Surface &src, int dx, int dy, int sx, int sy, int sw, i
                 continue;
             }
             uint32_t c = src.get(fx, fy);
-            if (src.format_ == Format::Indexed8) {
+            if (src.format_ == Format::INDEXED8) {
                 if ((int)c == src.transparentIndex) {
                     continue;
                 }
-                if (format_ == Format::Indexed8) {
+                if (format_ == Format::INDEXED8) {
                     put(tx, ty, (c + colorOffset) & 0xff);
                 } else {
                     put(tx, ty, palette ? palette->colors[(c + colorOffset) & 0xff] : rgba(c, c, c));
@@ -671,11 +671,11 @@ void Surface::blitScaled(const Surface &src, int dx, int dy, int dw, int dh, con
             }
             int fx = (int)((long)x * src.width_ / dw);
             uint32_t c = src.get(fx, fy);
-            if (src.format_ == Format::Indexed8) {
+            if (src.format_ == Format::INDEXED8) {
                 if ((int)c == src.transparentIndex) {
                     continue;
                 }
-                put(tx, ty, format_ == Format::Indexed8 ? c : palette ? palette->colors[c] : rgba(c, c, c));
+                put(tx, ty, format_ == Format::INDEXED8 ? c : palette ? palette->colors[c] : rgba(c, c, c));
             } else if (format_ == Format::RGBA8) {
                 put(tx, ty, c);
             } else if (palette && alpha(c) >= 128) {

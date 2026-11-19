@@ -40,6 +40,13 @@ using YobjP = std::shared_ptr<Yobj>;
 
 // --- the recording of the IRIS GL immediate mode -----------------------------
 
+enum ContourMode {
+    CONTOUR_UNKNOWN = -1,
+    CONTOUR_OFF = 0,
+    CONTOUR_LINEAR = 1,
+    CONTOUR_SPHERE_MAP = 2
+};
+
 struct Recorder {
     Model &model;
     std::string dir;
@@ -53,12 +60,12 @@ struct Recorder {
     // the texture coordinate generation of s and t: 0 off, 1 a plane of the
     // object (contour, linear), 2 the sphere map
     struct Contour {
-        int mode = 0;
+        int mode = CONTOUR_OFF;
         float plane[4] = {0, 0, 0, 0};
     };
     const Contour *contour[2] = {nullptr, nullptr};
     bool sphereMap() const {
-        return contour[0] && contour[0]->mode == 2;
+        return contour[0] && contour[0]->mode == CONTOUR_SPHERE_MAP;
     }
     std::map<std::string, int> textureByName;
 
@@ -106,7 +113,7 @@ struct Recorder {
         v.normal = normalize(transformVector(normalMatrix(top()), normal));
         v.uv = uv;
         for (int c = 0; c < 2; c++) {
-            if (contour[c] && contour[c]->mode == 1) {
+            if (contour[c] && contour[c]->mode == CONTOUR_LINEAR) {
                 const float *pl = contour[c]->plane;
                 (c ? v.uv.y : v.uv.x) = pl[0] * p.x + pl[1] * p.y + pl[2] * p.z + pl[3];
             }
@@ -145,7 +152,7 @@ struct Recorder {
                     v.normal = fn;
                 }
             }
-            Mesh &m = mesh(unlit == 0, Primitive::Triangles);
+            Mesh &m = mesh(unlit == 0, Primitive::TRIANGLES);
             uint32_t base = (uint32_t)m.vertices.size();
             m.vertices.insert(m.vertices.end(), prim.begin(), prim.end());
             for (uint32_t c = 1; c + 1 < n; c++) {
@@ -165,7 +172,7 @@ struct Recorder {
             for (bool b : primNormal) {
                 lit = lit && b;
             }
-            Mesh &m = mesh(lit, Primitive::Lines);
+            Mesh &m = mesh(lit, Primitive::LINES);
             uint32_t base = (uint32_t)m.vertices.size();
             m.vertices.insert(m.vertices.end(), prim.begin(), prim.end());
             for (uint32_t c = 0; c + 1 < n; c++) {
@@ -211,23 +218,23 @@ struct Recorder {
 // --- the objects ---------------------------------------------------------------
 
 enum class Cls {
-    Float,
-    Int,
-    String,
-    Group,
-    Lines,
-    Polygons,
-    IndexPolygons,
-    Indices,
-    Vertices,
-    Normals,
-    Colors,
-    Colors4f,
-    Translates,
-    Scales,
-    Rotates,
-    Untransform,
-    NoFlipLighting,
+    FLOAT,
+    INT,
+    STRING,
+    GROUP,
+    LINES,
+    POLYGONS,
+    INDEX_POLYGONS,
+    INDICES,
+    VERTICES,
+    NORMALS,
+    COLORS,
+    COLORS4F,
+    TRANSLATES,
+    SCALES,
+    ROTATES,
+    UNTRANSFORM,
+    NO_FLIP_LIGHTING,
     Textures,
     TexCoords,
     Contours,
@@ -266,7 +273,7 @@ struct Yobj {
 };
 
 bool isData(const Yobj &o) {
-    return o.cls == Cls::Float || o.cls == Cls::Int || o.cls == Cls::String;
+    return o.cls == Cls::FLOAT || o.cls == Cls::INT || o.cls == Cls::STRING;
 }
 int clampIndex(int i, int n) {
     return i < n ? i : n - 1;
@@ -313,27 +320,27 @@ struct Exec {
 
     void push(Yobj &o, bool full) {
         switch (o.cls) {
-        case Cls::Group:
-        case Cls::Lines:
-        case Cls::Polygons:
-        case Cls::IndexPolygons:
+        case Cls::GROUP:
+        case Cls::LINES:
+        case Cls::POLYGONS:
+        case Cls::INDEX_POLYGONS:
         case Cls::RegularMesh:
             for (auto &k : o.kids) {
                 push(*k, full);
             }
             break;
-        case Cls::Translates:
-        case Cls::Scales:
-        case Cls::Rotates:
+        case Cls::TRANSLATES:
+        case Cls::SCALES:
+        case Cls::ROTATES:
             r.push();
             break;
-        case Cls::Untransform:
+        case Cls::UNTRANSFORM:
             if (full) {
                 r.push();
                 r.top() = Mat4();
             }
             break;
-        case Cls::NoFlipLighting:
+        case Cls::NO_FLIP_LIGHTING:
             r.unlit++;
             break;
         case Cls::Textures:
@@ -356,26 +363,26 @@ struct Exec {
 
     void pop(Yobj &o, bool full) {
         switch (o.cls) {
-        case Cls::Group:
-        case Cls::Lines:
-        case Cls::Polygons:
-        case Cls::IndexPolygons:
+        case Cls::GROUP:
+        case Cls::LINES:
+        case Cls::POLYGONS:
+        case Cls::INDEX_POLYGONS:
         case Cls::RegularMesh:
             for (auto &k : o.kids) {
                 pop(*k, full);
             }
             break;
-        case Cls::Translates:
-        case Cls::Scales:
-        case Cls::Rotates:
+        case Cls::TRANSLATES:
+        case Cls::SCALES:
+        case Cls::ROTATES:
             r.pop();
             break;
-        case Cls::Untransform:
+        case Cls::UNTRANSFORM:
             if (full) {
                 r.pop();
             }
             break;
-        case Cls::NoFlipLighting:
+        case Cls::NO_FLIP_LIGHTING:
             r.unlit--;
             break;
         case Cls::Textures:
@@ -399,58 +406,58 @@ struct Exec {
 
     void executeN(Yobj &o, int i) {
         switch (o.cls) {
-        case Cls::Vertices: {
+        case Cls::VERTICES: {
             const float *v = element(o, i);
             r.vertex({v[0], v[1], v[2]});
             break;
         }
-        case Cls::Normals: {
+        case Cls::NORMALS: {
             const float *v = element(o, i);
             r.normal = {v[0], v[1], v[2]};
             r.haveNormal = true;
             break;
         }
-        case Cls::Colors: {
+        case Cls::COLORS: {
             const float *v = element(o, i);
             r.color = {v[0], v[1], v[2], 1};
             break;
         }
-        case Cls::Colors4f: {
+        case Cls::COLORS4F: {
             const float *v = element(o, i);
             r.color = {v[0], v[1], v[2], v[3]};
             break;
         }
-        case Cls::Translates: {
+        case Cls::TRANSLATES: {
             const float *t = element(o, i);
             r.top() = r.top() * translate({t[0], t[1], t[2]});
             break;
         }
-        case Cls::Scales: {
+        case Cls::SCALES: {
             const float *s = element(o, i);
             r.top() = r.top() * scale({s[0], s[1], s[2]});
             break;
         }
-        case Cls::Rotates: {
+        case Cls::ROTATES: {
             const float *a = element(o, i);
             if (a[1] != 0 || a[2] != 0 || a[3] != 0) {
                 r.top() = r.top() * rotate(radians(a[0]), {a[1], a[2], a[3]});
             }
             break;
         }
-        case Cls::Group:
+        case Cls::GROUP:
             execute(*o.kids[i]);
             break;
-        case Cls::Lines:
+        case Cls::LINES:
             r.begin(Recorder::Line);
             execute(*o.kids[i]);
             r.end();
             break;
-        case Cls::Polygons:
+        case Cls::POLYGONS:
             r.begin(Recorder::Polygon);
             execute(*o.kids[i]);
             r.end();
             break;
-        case Cls::IndexPolygons: {
+        case Cls::INDEX_POLYGONS: {
             r.begin(Recorder::Polygon);
             Yobj &verts = *o.kids[0];
             Yobj &ind = *o.kids[1];
@@ -501,15 +508,15 @@ struct Exec {
 
     void execute(Yobj &o) {
         switch (o.cls) {
-        case Cls::Lines: {
+        case Cls::LINES: {
             // lines without normals are not lit
             bool lit = false;
             for (auto &a : o.assoc) {
-                lit = lit || a->cls == Cls::Normals;
+                lit = lit || a->cls == Cls::NORMALS;
             }
             for (auto &k : o.kids) {
                 for (auto &a : k->assoc) {
-                    lit = lit || a->cls == Cls::Normals;
+                    lit = lit || a->cls == Cls::NORMALS;
                 }
             }
             if (!lit) {
@@ -767,12 +774,12 @@ struct Parser {
         }
         auto o = std::make_shared<Yobj>();
         if (isFloat) {
-            o->cls = Cls::Float;
+            o->cls = Cls::FLOAT;
             for (double d : v) {
                 o->f.push_back((float)d);
             }
         } else {
-            o->cls = Cls::Int;
+            o->cls = Cls::INT;
             for (double d : v) {
                 o->iv.push_back((int)d);
             }
@@ -810,7 +817,7 @@ struct Parser {
         int n = (int)(size / 4);
         auto o = std::make_shared<Yobj>();
         if (type == "float") {
-            o->cls = Cls::Float;
+            o->cls = Cls::FLOAT;
             o->f.resize(n);
             for (int i = 0; i < n; i++) {
                 uint32_t u = be32(d + 4 * i);
@@ -824,14 +831,14 @@ struct Parser {
             iv[i] = (int)be32(d + 4 * i);
         }
         if (type == "int") {
-            o->cls = Cls::Int;
+            o->cls = Cls::INT;
             o->iv = iv;
             o->count = n;
             return o;
         }
         if (type == "indices") {
             // npolys, the size of each, the indices
-            o->cls = Cls::Indices;
+            o->cls = Cls::INDICES;
             o->className = "indices";
             if (n < 1 || iv[0] < 0 || 1 + iv[0] > n) {
                 fail("bad binary indices");
@@ -925,7 +932,7 @@ struct Parser {
         }
         if (c == '"') {
             auto o = std::make_shared<Yobj>();
-            o->cls = Cls::String;
+            o->cls = Cls::STRING;
             long start = ++pos;
             while (pos < len && s[pos] != '"') {
                 pos++;
@@ -952,7 +959,7 @@ struct Parser {
                 return object(w, true);
             }
             auto o = std::make_shared<Yobj>();
-            o->cls = Cls::String;
+            o->cls = Cls::STRING;
             o->str = w;
             o->count = 1;
             return o;
@@ -1005,9 +1012,9 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         o->cls = cls;
         o->width = width;
         for (auto &a : args) {
-            if (a->cls == Cls::Float) {
+            if (a->cls == Cls::FLOAT) {
                 o->f.insert(o->f.end(), a->f.begin(), a->f.end());
-            } else if (a->cls == Cls::Int) {
+            } else if (a->cls == Cls::INT) {
                 for (int v : a->iv) {
                     o->f.push_back((float)v);
                 }
@@ -1035,34 +1042,34 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     };
     if (name == "group") {
-        return group(Cls::Group, nullptr);
+        return group(Cls::GROUP, nullptr);
     }
     if (name == "lines") {
-        return group(Cls::Lines, "vertices");
+        return group(Cls::LINES, "vertices");
     }
     if (name == "polygons") {
-        return group(Cls::Polygons, "vertices");
+        return group(Cls::POLYGONS, "vertices");
     }
     if (name == "vertices") {
-        return floats(Cls::Vertices, 3);
+        return floats(Cls::VERTICES, 3);
     }
     if (name == "normals") {
-        return floats(Cls::Normals, 3);
+        return floats(Cls::NORMALS, 3);
     }
     if (name == "colors") {
-        return floats(Cls::Colors, 3);
+        return floats(Cls::COLORS, 3);
     }
     if (name == "colors4f") {
-        return floats(Cls::Colors4f, 4);
+        return floats(Cls::COLORS4F, 4);
     }
     if (name == "translates") {
-        return floats(Cls::Translates, 3);
+        return floats(Cls::TRANSLATES, 3);
     }
     if (name == "scales") {
-        return floats(Cls::Scales, 3);
+        return floats(Cls::SCALES, 3);
     }
     if (name == "rotates") {
-        return floats(Cls::Rotates, 4);
+        return floats(Cls::ROTATES, 4);
     }
     if (name == "texcoords") {
         return floats(Cls::TexCoords, 2);
@@ -1071,15 +1078,15 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         if (args.size() != 2 || args[0]->className != "vertices" || args[1]->className != "indices") {
             return nullptr;
         }
-        o->cls = Cls::IndexPolygons;
+        o->cls = Cls::INDEX_POLYGONS;
         o->kids = args;
         o->count = args[1]->count;
         return o;
     }
     if (name == "indices") {
-        o->cls = Cls::Indices;
+        o->cls = Cls::INDICES;
         for (auto &a : args) {
-            if (a->cls != Cls::Int) {
+            if (a->cls != Cls::INT) {
                 return nullptr;
             }
             o->polys.push_back(a->iv);
@@ -1088,14 +1095,14 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     }
     if (name == "untransform" || name == "nofliplighting" || name == "subdivides") {
-        o->cls = name == "untransform" ? Cls::Untransform : name == "nofliplighting" ? Cls::NoFlipLighting : Cls::Subdivides;
+        o->cls = name == "untransform" ? Cls::UNTRANSFORM : name == "nofliplighting" ? Cls::NO_FLIP_LIGHTING : Cls::Subdivides;
         o->count = 1;
         return o;
     }
     if (name == "textures") {
         o->cls = Cls::Textures;
         for (auto &a : args) {
-            if (a->cls != Cls::String) {
+            if (a->cls != Cls::STRING) {
                 return nullptr;
             }
             o->iv.push_back(rec.loadTexture(a->str) + 1);
@@ -1110,26 +1117,26 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         size_t k = 0;
         while (k < args.size()) {
             Recorder::Contour c;
-            if (args[k]->cls != Cls::String) {
+            if (args[k]->cls != Cls::STRING) {
                 return nullptr;
             }
             const std::string &m = args[k++]->str;
-            c.mode = m == "contour" || m == "linear" ? 1 : m == "spheremap" ? 2 : m == "off" ? 0 : -1;
-            if (c.mode < 0 || k >= args.size() || args[k]->cls != Cls::String) {
+            c.mode = m == "contour" || m == "linear" ? CONTOUR_LINEAR : m == "spheremap" ? CONTOUR_SPHERE_MAP : m == "off" ? CONTOUR_OFF : CONTOUR_UNKNOWN;
+            if (c.mode == CONTOUR_UNKNOWN || k >= args.size() || args[k]->cls != Cls::STRING) {
                 return nullptr;
             }
             k++; // eye or object: the planes are taken in the object
-            if (c.mode == 1) {
+            if (c.mode == CONTOUR_LINEAR) {
                 if (k >= args.size()) {
                     return nullptr;
                 }
                 const Yobj &pl = *args[k++];
-                size_t n = pl.cls == Cls::Float ? pl.f.size() : pl.iv.size();
+                size_t n = pl.cls == Cls::FLOAT ? pl.f.size() : pl.iv.size();
                 if (n != 4) {
                     return nullptr;
                 }
                 for (int j = 0; j < 4; j++) {
-                    c.plane[j] = pl.cls == Cls::Float ? pl.f[j] : (float)pl.iv[j];
+                    c.plane[j] = pl.cls == Cls::FLOAT ? pl.f[j] : (float)pl.iv[j];
                 }
             }
             o->contours.push_back(c);
@@ -1138,7 +1145,7 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         return o;
     }
     if (name == "regularMesh") {
-        if (args.size() != 2 || args[0]->cls != Cls::Int || args[0]->iv.size() != 2 || args[1]->className != "vertices") {
+        if (args.size() != 2 || args[0]->cls != Cls::INT || args[0]->iv.size() != 2 || args[1]->className != "vertices") {
             return nullptr;
         }
         if (args[0]->iv[0] * args[0]->iv[1] != args[1]->count) {
@@ -1158,7 +1165,7 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         o->cls = Cls::Nurbs;
         auto doubles = [](const Yobj &l) {
             std::vector<double> d;
-            if (l.cls == Cls::Float) {
+            if (l.cls == Cls::FLOAT) {
                 d.assign(l.f.begin(), l.f.end());
             } else {
                 d.assign(l.iv.begin(), l.iv.end());
@@ -1167,7 +1174,7 @@ YobjP Parser::create(const std::string &name, std::vector<YobjP> &args) {
         };
         for (size_t k = 0; k < args.size(); k += 4) {
             Surface sf;
-            if (args[k + 2]->cls != Cls::Int || args[k + 2]->iv.size() != 2) {
+            if (args[k + 2]->cls != Cls::INT || args[k + 2]->iv.size() != 2) {
                 return nullptr;
             }
             sf.sknots = doubles(*args[k]);
@@ -1257,7 +1264,7 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
         if (it == materials.end()) {
             Material m;
             m.name = std::string(lit ? "lit" : "unlit") + (texture >= 0 ? " textured" : "");
-            m.shading = lit ? Shading::Phong : Shading::Unlit;
+            m.shading = lit ? Shading::PHONG : Shading::UNLIT;
             m.diffuse = {1, 1, 1, 1};
             m.ambient = {1, 1, 1};
             m.vertexColors = true;
@@ -1271,7 +1278,7 @@ std::shared_ptr<Model> loadYAODL(const std::string &path, std::string *error) {
         // transparent vertex colors
         for (const Vertex &v : mesh.vertices) {
             if ((v.color >> 24) < 255) {
-                model->materials[mesh.material].alpha = AlphaMode::Blend;
+                model->materials[mesh.material].alpha = AlphaMode::BLEND;
                 break;
             }
         }

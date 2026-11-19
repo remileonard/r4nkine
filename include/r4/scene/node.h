@@ -29,12 +29,12 @@ class Node;
 using NodePtr = std::shared_ptr<Node>;
 
 enum class NodeType {
-    Group,
-    Geode,
-    Switch,
+    GROUP,
+    GEODE,
+    SWITCH,
     LOD,
-    Billboard,
-    Instancer
+    BILLBOARD,
+    INSTANCER
 };
 
 // a mesh with its material, as the renderer draws them
@@ -45,7 +45,7 @@ struct Drawable {
 
 class Node : public std::enable_shared_from_this<Node> {
 public:
-    explicit Node(NodeType type = NodeType::Group) : type_(type) {
+    explicit Node(NodeType type = NodeType::GROUP) : type_(type) {
     }
     virtual ~Node() = default;
 
@@ -125,13 +125,13 @@ private:
 
 class Group : public Node {
 public:
-    Group() : Node(NodeType::Group) {
+    Group() : Node(NodeType::GROUP) {
     }
 };
 
 class Geode : public Node {
 public:
-    Geode() : Node(NodeType::Geode) {
+    Geode() : Node(NodeType::GEODE) {
     }
     explicit Geode(NodeType type) : Node(type) {
     }
@@ -159,7 +159,7 @@ class Switch : public Node {
 public:
     static constexpr int kAll = -1;
     static constexpr int kNone = -2;
-    Switch() : Node(NodeType::Switch) {
+    Switch() : Node(NodeType::SWITCH) {
     }
     int value() const {
         return value_;
@@ -214,7 +214,7 @@ public:
         Axis,
         Point
     };
-    Billboard() : Geode(NodeType::Billboard) {
+    Billboard() : Geode(NodeType::BILLBOARD) {
     }
     Mode mode() const {
         return mode_;
@@ -255,7 +255,7 @@ struct Placement {
 
 class Instancer : public Node {
 public:
-    Instancer() : Node(NodeType::Instancer) {
+    Instancer() : Node(NodeType::INSTANCER) {
     }
 
     struct Level {

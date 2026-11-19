@@ -166,7 +166,7 @@ r4::scene::NodePtr WorldScene::object(const std::string &name, float *radius) {
             auto entity = std::make_unique<RSEntity>();
             entity->InitFromRAM(e->data, e->size, name);
             // in libRealSpace's axes: the root of the world turns them all
-            auto model = r4bridge::toModel(entity.get(), *palette_.GetColorPalette(), palette_.ranges, lighting, r4bridge::Axes::RealSpace);
+            auto model = r4bridge::toModel(entity.get(), *palette_.GetColorPalette(), palette_.ranges, lighting, r4bridge::Axes::REAL_SPACE);
             if (model) {
                 node = renderer_.upload(*model);
                 node->setName(name);
@@ -315,15 +315,15 @@ void WorldScene::placeParts() {
         MISN_PART *part = data.parts[i];
         object(part->member_name, nullptr); // its entity, for its type
         if (part == player) {
-            if (AREA *a = areaOf(part->area_id); a && part->area_id != 255 && part->placement == 0) {
+            if (AREA *a = areaOf(part->area_id); a && part->area_id != r4bridge::AREA_NONE && part->placement == r4bridge::PLACEMENT_IN_AREA) {
                 part->position += a->position;
             }
             continue;
         }
-        if (part->area_id == 255 && part->placement == 0) {
+        if (part->area_id == r4bridge::AREA_NONE && part->placement == r4bridge::PLACEMENT_IN_AREA) {
             continue; // a place of the world, as it is
         }
-        if (part->placement != 0) {
+        if (part->placement != r4bridge::PLACEMENT_IN_AREA) {
             // instead of SCMission::placeRelativeToPlayer: the center of the scene's area
             int s = sceneOf[i];
             AREA *a = s >= 0 ? areaOf(data.scenes[s]->area_id) : areaOf(part->area_id);
@@ -486,8 +486,8 @@ void WorldScene::buildForests() {
         return;
     }
     // the 2 species, each detailed then simple
-    std::vector<r4::scene::InstancePart> parts[r4bridge::kTreeSpecies][2];
-    for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++) {
+    std::vector<r4::scene::InstancePart> parts[r4bridge::TREE_SPECIES_COUNT][2];
+    for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
         for (int level = 0; level < 2; level++) {
             auto model = r4bridge::treeModel(sp, level != 0, *palette_.GetColorPalette(), palette_.ranges, lighting);
             parts[sp][level] = r4::scene::collectParts(*renderer_.upload(*model));
@@ -504,9 +504,9 @@ void WorldScene::buildForests() {
         lod->setCenter(f.chunk.center);
         lod->setRanges({0, kTreeFar + f.chunk.radius});
         auto group = r4::scene::make<r4::scene::Group>();
-        for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++) {
+        for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
             f.trees[sp] = r4::scene::make<r4::scene::Instancer>();
-            f.trees[sp]->setName(std::string(sp % 2 == 0 ? "conifers" : "broadleaves") + (sp >= 2 ? " (jungle)" : ""));
+            f.trees[sp]->setName(std::string(r4bridge::isConifer(sp) ? "conifers" : "broadleaves") + (r4bridge::isJungleTree(sp) ? " (jungle)" : ""));
             f.trees[sp]->setUp({0, 1, 0}); // libRealSpace's axes
             f.trees[sp]->addLevel(parts[sp][0], kTreeNear);
             f.trees[sp]->addLevel(parts[sp][1], kTreeFar);
@@ -515,7 +515,7 @@ void WorldScene::buildForests() {
         // its trees, all planted at the load (about 2 million on TURKEY,
         // 140 MB of matrices)
         r4bridge::plantForest(area_.get(), forestSettings_, f.chunk);
-        for (int sp = 0; sp < r4bridge::kTreeSpecies; sp++) {
+        for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
             forestTrees += f.chunk.trees[sp].size();
             f.trees[sp]->setPlacements(std::move(f.chunk.trees[sp]));
             f.chunk.trees[sp].clear();

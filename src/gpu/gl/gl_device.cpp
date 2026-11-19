@@ -102,9 +102,9 @@ struct GLPipeline {
 
 GLenum attribType(AttribType t) {
     switch (t) {
-    case AttribType::UByte:
+    case AttribType::UBYTE:
         return UNSIGNED_BYTE;
-    case AttribType::Short:
+    case AttribType::SHORT:
         return SHORT;
     default:
         return FLOAT;
@@ -113,15 +113,15 @@ GLenum attribType(AttribType t) {
 
 GLenum compareOp(CompareOp c) {
     switch (c) {
-    case CompareOp::Never:
+    case CompareOp::NEVER:
         return NEVER;
-    case CompareOp::Less:
+    case CompareOp::LESS:
         return LESS;
-    case CompareOp::Equal:
+    case CompareOp::EQUAL:
         return EQUAL;
-    case CompareOp::Greater:
+    case CompareOp::GREATER:
         return GREATER;
-    case CompareOp::Always:
+    case CompareOp::ALWAYS:
         return ALWAYS;
     default:
         return LEQUAL;
@@ -130,11 +130,11 @@ GLenum compareOp(CompareOp c) {
 
 GLenum primitive(Primitive p) {
     switch (p) {
-    case Primitive::Lines:
+    case Primitive::LINES:
         return LINES;
-    case Primitive::Points:
+    case Primitive::POINTS:
         return POINTS;
-    case Primitive::TriangleStrip:
+    case Primitive::TRIANGLE_STRIP:
         return TRIANGLE_STRIP;
     default:
         return TRIANGLES;
@@ -143,9 +143,9 @@ GLenum primitive(Primitive p) {
 
 GLint wrapMode(Wrap w) {
     switch (w) {
-    case Wrap::Clamp:
+    case Wrap::CLAMP:
         return CLAMP_TO_EDGE;
-    case Wrap::Mirror:
+    case Wrap::MIRROR:
         return MIRRORED_REPEAT;
     default:
         return REPEAT;
@@ -229,7 +229,7 @@ public:
 
     BufferHandle createBuffer(BufferUsage usage, const void *data, size_t size, bool dynamic) override {
         GLBuffer b;
-        b.target = usage == BufferUsage::Index ? ELEMENT_ARRAY_BUFFER : usage == BufferUsage::Uniform ? UNIFORM_BUFFER : ARRAY_BUFFER;
+        b.target = usage == BufferUsage::INDEX ? ELEMENT_ARRAY_BUFFER : usage == BufferUsage::UNIFORM ? UNIFORM_BUFFER : ARRAY_BUFFER;
         b.size = size;
         gl.GenBuffers(1, &b.name);
         // the element buffer is VAO state: create it with no VAO bound
@@ -306,9 +306,9 @@ public:
         gl.PixelStorei(UNPACK_ALIGNMENT, (d.width * bpp) % 4 == 0 ? 4 : 1);
         gl.TexImage2D(TEXTURE_2D, 0, ifmt, d.width, d.height, 0, fmt, UNSIGNED_BYTE, pixels);
         gl.PixelStorei(UNPACK_ALIGNMENT, 4);
-        GLint minf = d.minFilter == Filter::Linear ? (d.mipmaps ? LINEAR_MIPMAP_LINEAR : LINEAR) : (d.mipmaps ? NEAREST_MIPMAP_NEAREST : NEAREST);
+        GLint minf = d.minFilter == Filter::LINEAR ? (d.mipmaps ? LINEAR_MIPMAP_LINEAR : LINEAR) : (d.mipmaps ? NEAREST_MIPMAP_NEAREST : NEAREST);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, minf);
-        gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, d.magFilter == Filter::Linear ? LINEAR : NEAREST);
+        gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, d.magFilter == Filter::LINEAR ? LINEAR : NEAREST);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, wrapMode(d.wrapS));
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_T, wrapMode(d.wrapT));
         if (d.anisotropy > 1 && lim.maxAnisotropy > 1) {
@@ -354,7 +354,7 @@ public:
         td.format = TextureFormat::RGBA8;
         td.minFilter = td.magFilter = d.filter;
         td.mipmaps = false;
-        td.wrapS = td.wrapT = Wrap::Clamp;
+        td.wrapS = td.wrapT = Wrap::CLAMP;
         r.texture = createTexture(td, nullptr).id;
         textures.get(r.texture)->owned = false;
         gl.GenFramebuffers(1, &r.fbo);
@@ -402,7 +402,7 @@ public:
         gl.BindTexture(TEXTURE_2D, t.name);
         textureBound[0] = 0;
         gl.TexImage2D(TEXTURE_2D, 0, DEPTH_COMPONENT24, r.desc.width, r.desc.height, 0, DEPTH_COMPONENT, UNSIGNED_INT, nullptr);
-        GLint f = r.desc.filter == Filter::Linear ? LINEAR : NEAREST;
+        GLint f = r.desc.filter == Filter::LINEAR ? LINEAR : NEAREST;
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MIN_FILTER, f);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_MAG_FILTER, f);
         gl.TexParameteri(TEXTURE_2D, TEXTURE_WRAP_S, CLAMP_TO_EDGE);
@@ -664,9 +664,9 @@ public:
             currentProgram = p->program;
         }
         bindVAO(p->vao);
-        setCap(CULL_FACE, d.cull != CullMode::None, cullEnabled);
-        if (d.cull != CullMode::None) {
-            GLenum mode = d.cull == CullMode::Back ? BACK : FRONT;
+        setCap(CULL_FACE, d.cull != CullMode::NONE, cullEnabled);
+        if (d.cull != CullMode::NONE) {
+            GLenum mode = d.cull == CullMode::BACK ? BACK : FRONT;
             if (cullMode != mode) {
                 gl.CullFace(mode);
                 cullMode = mode;
@@ -687,13 +687,13 @@ public:
             gl.DepthFunc(func);
             depthFunc = func;
         }
-        setCap(BLEND, d.blend != BlendMode::Opaque, blendEnabled);
-        if (d.blend != BlendMode::Opaque) {
+        setCap(BLEND, d.blend != BlendMode::NONE, blendEnabled);
+        if (d.blend != BlendMode::NONE) {
             GLenum s = SRC_ALPHA;
             GLenum t = ONE_MINUS_SRC_ALPHA;
-            if (d.blend == BlendMode::Additive) {
+            if (d.blend == BlendMode::ADDITIVE) {
                 t = ONE;
-            } else if (d.blend == BlendMode::Premultiplied) {
+            } else if (d.blend == BlendMode::PREMULTIPLIED) {
                 s = ONE;
             }
             if (blendSrc != s || blendDst != t) {
@@ -791,9 +791,9 @@ public:
     void countDraw(uint32_t count, uint32_t instances) {
         GLPipeline *p = pipelines.get(current);
         stats.drawCalls++;
-        if (p && p->desc.primitive == Primitive::Triangles) {
+        if (p && p->desc.primitive == Primitive::TRIANGLES) {
             stats.triangles += count / 3 * instances;
-        } else if (p && p->desc.primitive == Primitive::TriangleStrip && count > 2) {
+        } else if (p && p->desc.primitive == Primitive::TRIANGLE_STRIP && count > 2) {
             stats.triangles += (count - 2) * instances;
         }
     }

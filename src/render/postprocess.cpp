@@ -168,7 +168,7 @@ struct PostProcess::Impl {
     gpu::PipelineHandle pipeline(gpu::ShaderHandle s) {
         gpu::PipelineDesc pd;
         pd.shader = s;
-        pd.cull = gpu::CullMode::None;
+        pd.cull = gpu::CullMode::NONE;
         pd.depthTest = pd.depthWrite = false;
         return device.createPipeline(pd);
     }
@@ -202,9 +202,9 @@ struct PostProcess::Impl {
             td.width = 1024;
             td.height = 32;
             td.format = gpu::TextureFormat::RGBA8;
-            td.minFilter = td.magFilter = gpu::Filter::Nearest;
+            td.minFilter = td.magFilter = gpu::Filter::NEAREST;
             td.mipmaps = false;
-            td.wrapS = td.wrapT = gpu::Wrap::Clamp;
+            td.wrapS = td.wrapT = gpu::Wrap::CLAMP;
             lut = device.createTexture(td, px.data());
         } else {
             device.updateTexture(lut, 0, 0, 1024, 32, px.data());
@@ -232,7 +232,7 @@ PostProcess::PostProcess(gpu::Device &device) : d(new Impl(device)) {
     d->fxaaPipeline = d->pipeline(d->fxaaShader);
     d->finalPipeline = d->pipeline(d->finalShader);
     Block b{};
-    d->ubo = device.createBuffer(gpu::BufferUsage::Uniform, &b, sizeof b, true);
+    d->ubo = device.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, true);
 }
 
 PostProcess::~PostProcess() {

@@ -83,14 +83,14 @@ struct Font {
 };
 
 enum class Format {
-    Indexed8,
+    INDEXED8,
     RGBA8
 };
 
 class Surface {
 public:
     Surface() = default;
-    Surface(int width, int height, Format format = Format::Indexed8);
+    Surface(int width, int height, Format format = Format::INDEXED8);
 
     int width() const {
         return width_;
@@ -102,7 +102,7 @@ public:
         return format_;
     }
     int bytesPerPixel() const {
-        return format_ == Format::Indexed8 ? 1 : 4;
+        return format_ == Format::INDEXED8 ? 1 : 4;
     }
     size_t pitch() const {
         return (size_t)width_ * bytesPerPixel();
@@ -185,7 +185,7 @@ private:
 
     int width_ = 0;
     int height_ = 0;
-    Format format_ = Format::Indexed8;
+    Format format_ = Format::INDEXED8;
     std::vector<uint8_t> data_;
     int cx0_ = 0; // the clip, x1 and y1 excluded
     int cy0_ = 0;

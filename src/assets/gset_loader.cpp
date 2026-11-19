@@ -55,7 +55,7 @@ std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error) {
     model->source = path;
     Material m;
     m.name = "lines";
-    m.shading = Shading::Unlit;
+    m.shading = Shading::UNLIT;
     m.diffuse = {1, 1, 1, 1};
     m.vertexColors = true;
     model->materials.push_back(m);
@@ -63,7 +63,7 @@ std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error) {
     root.name = path;
     for (const G &g : gsets) {
         Mesh mesh;
-        mesh.primitive = Primitive::Lines;
+        mesh.primitive = Primitive::LINES;
         mesh.material = 0;
         auto b = [](float x) {
             return (uint32_t)(std::fmin(std::fmax(x, 0.0f), 1.0f) * 255 + 0.5f);
@@ -86,7 +86,7 @@ std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error) {
             continue;
         }
         if (color >> 24 < 255) {
-            model->materials[0].alpha = AlphaMode::Blend;
+            model->materials[0].alpha = AlphaMode::BLEND;
         }
         mesh.computeBounds();
         root.meshes.push_back((int)model->meshes.size());

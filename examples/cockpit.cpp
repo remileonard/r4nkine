@@ -28,28 +28,28 @@ namespace {
 
 // the indices of the VGA palette used by the cockpit
 enum : uint8_t {
-    kBlack = 0,
-    kBlue = 1,
-    kGreen = 2,
-    kCyan = 3,
-    kRed = 4,
-    kBrown = 6,
-    kLightGrey = 7,
-    kDarkGrey = 8,
-    kLightGreen = 10,
-    kYellow = 14,
-    kWhite = 15,
-    kGrey1 = 18,
-    kGrey2 = 21,
-    kGrey3 = 24,
-    kSky = 53,
-    kGround = 114,
-    kClear = 255,
+    BLACK = 0,
+    BLUE = 1,
+    GREEN = 2,
+    CYAN = 3,
+    RED = 4,
+    BROWN = 6,
+    LIGHT_GREY = 7,
+    DARK_GREY = 8,
+    LIGHT_GREEN = 10,
+    YELLOW = 14,
+    WHITE = 15,
+    GREY_1 = 18,
+    GREY_2 = 21,
+    GREY_3 = 24,
+    SKY = 53,
+    GROUND = 114,
+    CLEAR = 255,
 };
 
 // the cockpit at any size: its drawings are made for 320 x 200 and scaled
 void drawCockpit(Surface &s, const raster::Palette &palette, float heading, float pitch, float roll, float time, float speed) {
-    bool indexed = s.format() == raster::Format::Indexed8;
+    bool indexed = s.format() == raster::Format::INDEXED8;
     // a color: an index, or its true color
     auto C = [&](uint8_t i) {
         return indexed ? (uint32_t)i : palette.colors[i];
@@ -58,31 +58,31 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     auto X = [&](float v) {
         return (int)std::lround(v * k);
     };
-    s.clear(indexed ? (uint32_t)kClear : raster::rgba(0, 0, 0, 0));
+    s.clear(indexed ? (uint32_t)CLEAR : raster::rgba(0, 0, 0, 0));
     const raster::Font &font = raster::Font::builtin((int)std::lround(11 * k));
 
     // the frame of the canopy, and the dashboard
-    s.fillRect(0, X(140), s.width(), s.height() - X(140), C(kGrey1));
-    s.hline(0, s.width(), X(140), C(kGrey3));
-    s.fillTriangle(0, X(140), X(40), X(140), 0, X(40), C(kGrey1));
-    s.fillTriangle(s.width(), X(140), X(280), X(140), s.width(), X(40), C(kGrey1));
-    s.lineThick(X(40), X(140), 0, X(40), C(kGrey3), std::max(1, X(1)));
-    s.lineThick(X(280), X(140), s.width(), X(40), C(kGrey3), std::max(1, X(1)));
+    s.fillRect(0, X(140), s.width(), s.height() - X(140), C(GREY_1));
+    s.hline(0, s.width(), X(140), C(GREY_3));
+    s.fillTriangle(0, X(140), X(40), X(140), 0, X(40), C(GREY_1));
+    s.fillTriangle(s.width(), X(140), X(280), X(140), s.width(), X(40), C(GREY_1));
+    s.lineThick(X(40), X(140), 0, X(40), C(GREY_3), std::max(1, X(1)));
+    s.lineThick(X(280), X(140), s.width(), X(40), C(GREY_3), std::max(1, X(1)));
 
     // the radar: a sweep turning, dashed rings, blips
     int rx = X(48);
     int ry = X(172);
     int rr = X(24);
-    s.fillCircle(rx, ry, rr, C(kBlack));
-    s.circle(rx, ry, rr, C(kLightGreen));
-    s.circle(rx, ry, rr / 2, C(kGreen));
+    s.fillCircle(rx, ry, rr, C(BLACK));
+    s.circle(rx, ry, rr, C(LIGHT_GREEN));
+    s.circle(rx, ry, rr / 2, C(GREEN));
     float sweep = time * 2.5f;
-    s.line(rx, ry, rx + (int)(std::cos(sweep) * rr), ry + (int)(std::sin(sweep) * rr), C(kLightGreen));
-    s.lineDashed(rx - rr, ry, rx + rr, ry, C(kGreen), std::max(1, X(2)), std::max(1, X(2)));
+    s.line(rx, ry, rx + (int)(std::cos(sweep) * rr), ry + (int)(std::sin(sweep) * rr), C(LIGHT_GREEN));
+    s.lineDashed(rx - rr, ry, rx + rr, ry, C(GREEN), std::max(1, X(2)), std::max(1, X(2)));
     for (int i = 0; i < 4; i++) {
         float a = i * 1.7f + 0.3f;
         float d = 0.35f + 0.15f * i;
-        s.fillRect(rx + (int)(std::cos(a) * rr * d) - X(1), ry + (int)(std::sin(a) * rr * d) - X(1), X(2) + 1, X(2) + 1, C(kYellow));
+        s.fillRect(rx + (int)(std::cos(a) * rr * d) - X(1), ry + (int)(std::sin(a) * rr * d) - X(1), X(2) + 1, X(2) + 1, C(YELLOW));
     }
 
     // the horizon: a ball turned by the roll, moved by the pitch
@@ -91,7 +91,7 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     int hw = X(36);
     int hh = X(24);
     s.setClip(hx - hw, hy - hh, 2 * hw, 2 * hh);
-    s.fillRect(hx - hw, hy - hh, 2 * hw, 2 * hh, C(kSky));
+    s.fillRect(hx - hw, hy - hh, 2 * hw, 2 * hh, C(SKY));
     float r = radians(roll);
     float off = pitch / 45.0f * hh;
     float dx = std::cos(r);
@@ -100,40 +100,40 @@ void drawCockpit(Surface &s, const raster::Palette &palette, float heading, floa
     float cy = hy + dx * off;
     int L = 4 * hw;
     int ground[8] = {(int)(cx - dx * L), (int)(cy - dy * L), (int)(cx + dx * L), (int)(cy + dy * L), (int)(cx + dx * L - dy * L), (int)(cy + dy * L + dx * L), (int)(cx - dx * L - dy * L), (int)(cy - dy * L + dx * L)};
-    s.fillPolygon(ground, 4, C(kGround));
-    s.line((int)(cx - dx * L), (int)(cy - dy * L), (int)(cx + dx * L), (int)(cy + dy * L), C(kWhite));
+    s.fillPolygon(ground, 4, C(GROUND));
+    s.line((int)(cx - dx * L), (int)(cy - dy * L), (int)(cx + dx * L), (int)(cy + dy * L), C(WHITE));
     s.resetClip();
-    s.hline(hx - X(10), hx - X(3), hy, C(kYellow));
-    s.hline(hx + X(3), hx + X(10), hy, C(kYellow));
-    s.rect(hx - hw, hy - hh, 2 * hw, 2 * hh, C(kGrey3));
+    s.hline(hx - X(10), hx - X(3), hy, C(YELLOW));
+    s.hline(hx + X(3), hx + X(10), hy, C(YELLOW));
+    s.rect(hx - hw, hy - hh, 2 * hw, 2 * hh, C(GREY_3));
 
     // the compass tape: the ticks of the heading
     int tx = X(232);
     int ty = X(150);
     int tw = X(76);
     int th = X(14);
-    s.fillRect(tx, ty, tw, th, C(kBlack));
+    s.fillRect(tx, ty, tw, th, C(BLACK));
     s.setClip(tx, ty, tw, th);
     for (int deg = -60; deg <= 60; deg += 5) {
         float h = std::floor(heading / 5) * 5 + deg;
         int x = tx + tw / 2 + (int)((h - heading) * k);
         int major = ((int)h % 30 + 30) % 30 == 0;
-        s.vline(x, ty + th - (major ? X(6) : X(3)), ty + th, C(kLightGreen));
+        s.vline(x, ty + th - (major ? X(6) : X(3)), ty + th, C(LIGHT_GREEN));
         if (major) {
             int n = ((int)h % 360 + 360) % 360;
-            s.text(font, x, ty, std::to_string(n / 10), C(kLightGreen), Surface::Align::Center);
+            s.text(font, x, ty, std::to_string(n / 10), C(LIGHT_GREEN), Surface::Align::Center);
         }
     }
     s.resetClip();
-    s.vline(tx + tw / 2, ty, ty + th, C(kYellow));
+    s.vline(tx + tw / 2, ty, ty + th, C(YELLOW));
 
     // the readouts
     char buf[64];
     std::snprintf(buf, sizeof buf, "SPD %3.0f", speed);
-    s.text(font, X(232), X(170), buf, C(kLightGreen));
+    s.text(font, X(232), X(170), buf, C(LIGHT_GREEN));
     std::snprintf(buf, sizeof buf, "HDG %03.0f", std::fmod(heading + 360, 360.0f));
-    s.text(font, X(232), X(182), buf, C(kLightGreen));
-    s.text(font, X(110), X(144), "R4NKINE", C(kRed));
+    s.text(font, X(232), X(182), buf, C(LIGHT_GREEN));
+    s.text(font, X(110), X(144), "R4NKINE", C(RED));
 }
 
 // the HUD: true colors at the size of the window, blended over the scene
@@ -185,17 +185,17 @@ void drawHud(Surface &s, float pitch, float roll) {
 void drawRadar(Surface &s, float time) {
     int n = s.width();
     int c = n / 2;
-    s.clear(kBlack);
-    s.circle(c, c, c - 2, kLightGreen);
-    s.circle(c, c, c / 2, kGreen);
-    s.lineDashed(2, c, n - 2, c, kGreen, 2, 3);
-    s.lineDashed(c, 2, c, n - 2, kGreen, 2, 3);
+    s.clear(BLACK);
+    s.circle(c, c, c - 2, LIGHT_GREEN);
+    s.circle(c, c, c / 2, GREEN);
+    s.lineDashed(2, c, n - 2, c, GREEN, 2, 3);
+    s.lineDashed(c, 2, c, n - 2, GREEN, 2, 3);
     float sweep = time * 2.5f;
     for (int i = 0; i < 12; i++) {
         float a = sweep - i * 0.05f;
-        s.line(c, c, c + (int)(std::cos(a) * (c - 3)), c + (int)(std::sin(a) * (c - 3)), i < 2 ? kLightGreen : kGreen);
+        s.line(c, c, c + (int)(std::cos(a) * (c - 3)), c + (int)(std::sin(a) * (c - 3)), i < 2 ? LIGHT_GREEN : GREEN);
     }
-    s.text(raster::Font::builtin(11), 4, 2, "RADAR", kYellow);
+    s.text(raster::Font::builtin(11), 4, 2, "RADAR", YELLOW);
 }
 
 } // namespace
@@ -311,7 +311,7 @@ int main(int argc, char **argv) {
         // the cockpit at the size and in the format asked
         int cw = 320 << resolution;
         int ch = 200 << resolution;
-        raster::Format cf = format == 0 ? raster::Format::Indexed8 : raster::Format::RGBA8;
+        raster::Format cf = format == 0 ? raster::Format::INDEXED8 : raster::Format::RGBA8;
         if (cockpit.width() != cw || cockpit.format() != cf) {
             cockpit = Surface(cw, ch, cf);
         }
@@ -331,7 +331,7 @@ int main(int argc, char **argv) {
         gpu::TextureHandle t = radarOverlay.texture();
         if (t.id != screenTexture.id) {
             assets::Material m;
-            m.shading = assets::Shading::Unlit;
+            m.shading = assets::Shading::UNLIT;
             m.doubleSided = true;
             m.diffuse = {1, 1, 1, 1};
             screen->clearDrawables();

@@ -341,10 +341,10 @@ Image xbr2x(const Image &img) {
 
 int upscaleFactor(Upscale u) {
     switch (u) {
-    case Upscale::SaI2x:
-    case Upscale::Xbr2x:
+    case Upscale::SAI_2X:
+    case Upscale::XBR_2X:
         return 2;
-    case Upscale::Xbr4x:
+    case Upscale::XBR_4X:
         return 4;
     default:
         return 1;
@@ -353,11 +353,11 @@ int upscaleFactor(Upscale u) {
 
 const char *upscaleName(Upscale u) {
     switch (u) {
-    case Upscale::SaI2x:
+    case Upscale::SAI_2X:
         return "2xSaI";
-    case Upscale::Xbr2x:
+    case Upscale::XBR_2X:
         return "xBR 2x";
-    case Upscale::Xbr4x:
+    case Upscale::XBR_4X:
         return "xBR 4x";
     default:
         return "None";
@@ -369,11 +369,11 @@ Image upscale(const Image &image, Upscale u) {
         return image;
     }
     switch (u) {
-    case Upscale::SaI2x:
+    case Upscale::SAI_2X:
         return sai2x(image);
-    case Upscale::Xbr2x:
+    case Upscale::XBR_2X:
         return xbr2x(image);
-    case Upscale::Xbr4x:
+    case Upscale::XBR_4X:
         return xbr2x(xbr2x(image));
     default:
         return image;

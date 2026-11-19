@@ -292,13 +292,13 @@ int main(int argc, char **argv) {
         lf.node = node;
         for (const auto &m : model->meshes) {
             switch (m.primitive) {
-            case assets::Primitive::Triangles:
+            case assets::Primitive::TRIANGLES:
                 lf.triangles += m.indices.size() / 3;
                 break;
-            case assets::Primitive::Lines:
+            case assets::Primitive::LINES:
                 lf.lines += m.indices.size() / 2;
                 break;
-            case assets::Primitive::Points:
+            case assets::Primitive::POINTS:
                 lf.points += m.indices.size();
                 break;
             }

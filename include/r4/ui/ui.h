@@ -54,10 +54,10 @@ struct Rect {
 };
 
 enum class Font {
-    Regular,
-    Bold,
-    Small,
-    Title
+    REGULAR,
+    BOLD,
+    SMALL,
+    TITLE
 };
 
 // the state of the mouse for a frame
@@ -117,7 +117,7 @@ public:
     bool color(const char *label, Vec3 &color);
     // a header that folds the widgets after it (the caller skips them)
     bool section(const char *label, bool &open);
-    void label(const char *text, Font font = Font::Regular);
+    void label(const char *text, Font font = Font::REGULAR);
     // yellow text in a dark sunken box, one line or several ("\n")
     void message(const char *text);
     // name and value lines in a message box
@@ -157,8 +157,8 @@ public:
     Rect next(float height); // the rectangle of the next widget
     void fill(Rect r, Color c);
     void bevel(Rect r, bool sunken);
-    float text(float x, float y, const char *s, Color c, Font font = Font::Regular, float maxWidth = 1e9f);
-    float textWidth(const char *s, Font font = Font::Regular) const;
+    float text(float x, float y, const char *s, Color c, Font font = Font::REGULAR, float maxWidth = 1e9f);
+    float textWidth(const char *s, Font font = Font::REGULAR) const;
 
 private:
     struct Impl;

@@ -37,28 +37,28 @@ struct Image {
 
 // how a material is lit
 enum class Shading {
-    Unlit, // the color as is
-    Phong, // the per-pixel Blinn-Phong of the classic demos
+    UNLIT, // the color as is
+    PHONG, // the per-pixel Blinn-Phong of the classic demos
     // lit along the ramps of a fixed 256-color palette, as the 8-bit games:
     // the palette index in the red of the vertex colors, the table of the
     // shades (256 colors x 32 intensities, made by the loader) as the image
     // of the material; or, rampTextured, a texture times the intensity
-    PaletteRamp,
+    PALETTE_RAMP,
 };
 
 // Opaque; Mask: cut where alpha < alphaCutoff; Blend: mixed by alpha over
 // what is behind; Additive: added to what is behind (glows, the glass of the
 // 8-bit games). Blend and Additive are drawn after the opaque, far to near.
 enum class AlphaMode {
-    Opaque,
-    Mask,
-    Blend,
-    Additive
+    NONE,
+    MASK,
+    BLEND,
+    ADDITIVE
 };
 
 struct Material {
     std::string name;
-    Shading shading = Shading::Phong;
+    Shading shading = Shading::PHONG;
     Vec4 diffuse{0.8f, 0.8f, 0.8f, 1.0f};
     Vec3 ambient{0.2f, 0.2f, 0.2f};
     Vec3 specular{0, 0, 0};
@@ -66,7 +66,7 @@ struct Material {
     float shininess = 16;
     int diffuseImage = -1;  // an index in Model::images
     bool sphereMap = false; // the texture coordinates from the normals (environment map)
-    AlphaMode alpha = AlphaMode::Opaque;
+    AlphaMode alpha = AlphaMode::NONE;
     float alphaCutoff = 0.5f;
     bool doubleSided = false;
     bool vertexColors = false; // the vertex colors multiply the diffuse
@@ -100,9 +100,9 @@ struct Material {
 
 // how the indices of a mesh are read
 enum class Primitive {
-    Triangles,
-    Lines,
-    Points
+    TRIANGLES,
+    LINES,
+    POINTS
 };
 
 // the vertex of every mesh: the renderer uses one format, so that any mesh
@@ -118,7 +118,7 @@ struct Mesh {
     std::string name;
     std::vector<Vertex> vertices;
     std::vector<uint32_t> indices; // by 3 (triangles), 2 (lines) or 1 (points)
-    Primitive primitive = Primitive::Triangles;
+    Primitive primitive = Primitive::TRIANGLES;
     int material = -1; // an index in Model::materials, -1: the default
     Box bounds;
     void computeBounds();
@@ -130,15 +130,15 @@ struct Mesh {
 };
 
 enum class NodeKind {
-    Group,
-    Switch,
+    GROUP,
+    SWITCH,
     LOD,
-    Billboard
+    BILLBOARD
 };
 
 struct Node {
     std::string name;
-    NodeKind kind = NodeKind::Group;
+    NodeKind kind = NodeKind::GROUP;
     Mat4 local;                // relative to the parent
     std::vector<int> meshes;   // indices in Model::meshes (none on a Switch or LOD)
     std::vector<int> children; // indices in Model::nodes

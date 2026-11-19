@@ -135,19 +135,29 @@ void decryptIfNeeded(Image &img) {
     }
 }
 
+enum Units {
+    UNITS_METERS = 0,
+    UNITS_FEET = 1,
+    UNITS_INCHES = 2,
+    UNITS_CENTIMETERS = 3,
+    UNITS_NAUTICAL_MILES = 4,
+    UNITS_KILOMETERS = 5,
+    UNITS_MILES = 6
+};
+
 float unitsScale(int units) {
     switch (units) {
-    case 1:
+    case UNITS_FEET:
         return 0.3048f;
-    case 2:
+    case UNITS_INCHES:
         return 0.0254f;
-    case 3:
+    case UNITS_CENTIMETERS:
         return 0.01f;
-    case 4:
+    case UNITS_NAUTICAL_MILES:
         return 1852.0f;
-    case 5:
+    case UNITS_KILOMETERS:
         return 1000.0f;
-    case 6:
+    case UNITS_MILES:
         return 1609.344f;
     default:
         return 1.0f;
@@ -271,7 +281,7 @@ struct Loader {
             mat.diffuseImage = tex[t];
         }
         if (transp) {
-            mat.alpha = AlphaMode::Blend;
+            mat.alpha = AlphaMode::BLEND;
         }
         int index = (int)model.materials.size();
         model.materials.push_back(mat);
@@ -397,7 +407,7 @@ std::shared_ptr<Model> loadDWB(const std::string &path, std::string *error) {
             int n = L.newNode("group", lv.node);
             if (flags & kSequence) {
                 // an animation: its first frame
-                model->nodes[n].kind = NodeKind::Switch;
+                model->nodes[n].kind = NodeKind::SWITCH;
                 model->nodes[n].switchValue = 0;
             }
             lastNode = n;

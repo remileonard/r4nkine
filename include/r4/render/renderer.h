@@ -27,7 +27,7 @@ struct GpuMesh {
     gpu::BufferHandle vertices;
     gpu::BufferHandle indices;
     uint32_t indexCount = 0;
-    assets::Primitive primitive = assets::Primitive::Triangles;
+    assets::Primitive primitive = assets::Primitive::TRIANGLES;
     Sphere bounds;
     std::string name;
 };

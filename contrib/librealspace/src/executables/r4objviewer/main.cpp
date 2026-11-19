@@ -46,6 +46,7 @@
 //  Souris : bouton gauche tourner, molette zoom, bouton droit déplacer.
 //  Clavier : flèches haut et bas, objet précédent ou suivant ; Échap, quitter.
 //
+#include "../../r4bridge/R4Data.h"
 #include "engine/Config.hpp"
 #include "realspace/AssetManager.h"
 #include "realspace/RSEntity.h"
@@ -214,26 +215,26 @@ struct GraphView {
 
 const char *typeTag(r4::scene::NodeType t) {
     switch (t) {
-    case r4::scene::NodeType::Group:
+    case r4::scene::NodeType::GROUP:
         return "GRP";
-    case r4::scene::NodeType::Geode:
+    case r4::scene::NodeType::GEODE:
         return "GEO";
-    case r4::scene::NodeType::Switch:
+    case r4::scene::NodeType::SWITCH:
         return "SW";
     case r4::scene::NodeType::LOD:
         return "LOD";
-    case r4::scene::NodeType::Billboard:
+    case r4::scene::NodeType::BILLBOARD:
         return "BB";
-    case r4::scene::NodeType::Instancer:
+    case r4::scene::NodeType::INSTANCER:
         return "INST";
     }
     return "?";
 }
 r4::ui::Color typeColor(r4::scene::NodeType t) {
     switch (t) {
-    case r4::scene::NodeType::Geode:
+    case r4::scene::NodeType::GEODE:
         return r4::ui::Color::rgb(0.55f, 0.85f, 0.55f);
-    case r4::scene::NodeType::Switch:
+    case r4::scene::NodeType::SWITCH:
         return r4::ui::Color::rgb(0.95f, 0.75f, 0.4f);
     case r4::scene::NodeType::LOD:
         return r4::ui::Color::rgb(0.6f, 0.75f, 1.0f);
@@ -596,7 +597,7 @@ int main(int argc, char **argv) {
                         d[0] = c.r;
                         d[1] = c.g;
                         d[2] = c.b;
-                        d[3] = img->data[p] == 255 ? 0 : 255;
+                        d[3] = img->data[p] == r4bridge::PALETTE_CLEAR ? 0 : 255;
                     }
                     thumbs.push_back({img->name, im.width, im.height, img->nbframes, renderer.uploadImage(im, false)});
                 }
@@ -1011,7 +1012,7 @@ int main(int argc, char **argv) {
                                 select(i);
                             }
                         }
-                        gui.label(fmt("%d-%d of %d, wheel to scroll", first + 1, std::min((int)objects.size(), first + listRows), (int)objects.size()).c_str(), r4::ui::Font::Small);
+                        gui.label(fmt("%d-%d of %d, wheel to scroll", first + 1, std::min((int)objects.size(), first + listRows), (int)objects.size()).c_str(), r4::ui::Font::SMALL);
                     }
                     gui.endPanel();
                 }
@@ -1131,7 +1132,7 @@ int main(int argc, char **argv) {
                         if (dynamicTerrainLight && gui.menu("Relief of the Light", reliefChoice, {"x1 (as it is)", "x2", "x4", "x8", "x16"})) {
                             world.setTerrainLight(true, reliefOf());
                         }
-                        gui.label(dynamicTerrainLight ? "terrain: its ramps lit by the sun" : "terrain: the light of the data (RSArea)", r4::ui::Font::Small);
+                        gui.label(dynamicTerrainLight ? "terrain: its ramps lit by the sun" : "terrain: the light of the data (RSArea)", r4::ui::Font::SMALL);
                     }
                     gui.toggle("Cast Shadows", shadows);
                     if (shadows) {
@@ -1258,7 +1259,7 @@ int main(int argc, char **argv) {
                 if (mode == 0 && gui.section(fmt("Textures (%zu)", thumbs.size()).c_str(), openTextures)) {
                     for (const Thumb &t : thumbs) {
                         std::string frames = t.frames > 1 ? fmt(", %d frames", t.frames) : "";
-                        gui.label(fmt("%s  %dx%d%s", t.name.c_str(), t.width, t.height, frames.c_str()).c_str(), r4::ui::Font::Small);
+                        gui.label(fmt("%s  %dx%d%s", t.name.c_str(), t.width, t.height, frames.c_str()).c_str(), r4::ui::Font::SMALL);
                         gui.image(t.texture, (float)t.width / t.height, 80);
                     }
                 }

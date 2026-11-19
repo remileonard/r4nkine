@@ -22,6 +22,23 @@
 namespace r4::assets {
 namespace {
 
+// the draw type of a face
+enum DrawType {
+    DRAW_SOLID_CULLED = 0,
+    DRAW_SOLID = 1,
+    DRAW_WIRE_CLOSED = 2,
+    DRAW_WIRE = 3,
+    DRAW_LIGHT_POINTS = 8
+};
+
+// the light mode of a face (version 13 and later)
+enum LightMode {
+    LIGHT_FLAT = 0,
+    LIGHT_GOURAUD = 1,
+    LIGHT_LIT = 2,
+    LIGHT_LIT_GOURAUD = 3
+};
+
 enum {
     OP_HEADER = 1,
     OP_GROUP = 2,
@@ -239,19 +256,19 @@ struct File {
     }
 
     void addFace(int owner, Face &fc) {
-        int need = fc.drawtype >= 8 ? 1 : fc.drawtype >= 2 ? 2 : 3;
+        int need = fc.drawtype >= DRAW_LIGHT_POINTS ? 1 : fc.drawtype >= DRAW_WIRE_CLOSED ? 2 : 3;
         int n = (int)fc.v.size();
         if (n < need) {
             return;
         }
         const FMaterial *m = fc.material >= 0 && fc.material < nmaterials ? &materials[fc.material] : nullptr;
-        bool points = fc.drawtype >= 8;
-        bool lines = !points && (fc.drawtype == 2 || fc.drawtype == 3 || n < 3);
+        bool points = fc.drawtype >= DRAW_LIGHT_POINTS;
+        bool lines = !points && (fc.drawtype == DRAW_WIRE_CLOSED || fc.drawtype == DRAW_WIRE || n < 3);
         bool alpha = fc.texture >= 0 && alphatex.count(fc.texture) && alphatex[fc.texture];
         bool transp = fc.color.w < 1 || fc.templ == 1 || fc.templ == 2 || fc.templ == 4 || (m && m->alpha < 1);
         bool billboard = fc.templ == 2 || fc.templ == 4;
         bool decal = fc.subface > 0;
-        int drawtype = points ? 8 : lines ? 2 : fc.drawtype;
+        int drawtype = points ? DRAW_LIGHT_POINTS : lines ? DRAW_WIRE_CLOSED : fc.drawtype;
         // the normal of the face (Newell) and its center
         Vec3 fn;
         double center[3] = {0, 0, 0};
@@ -267,7 +284,7 @@ struct File {
         }
         fn = normalize(fn);
         // a lit face with vertex colors uses them as its diffuse color
-        bool vcolors = m && (fc.lightmode == 1 || fc.lightmode == 3) && fc.v[0].hasColor;
+        bool vcolors = m && (fc.lightmode == LIGHT_GOURAUD || fc.lightmode == LIGHT_LIT_GOURAUD) && fc.v[0].hasColor;
         Batch local{fc.texture, m ? fc.material : -1, drawtype, transp, decal, alpha, vcolors, fc.color, Mesh()};
         Batch *b = nullptr;
         if (billboard) {
@@ -285,7 +302,7 @@ struct File {
             }
         }
         Mesh &mesh = b->mesh;
-        mesh.primitive = points ? Primitive::Points : lines ? Primitive::Lines : Primitive::Triangles;
+        mesh.primitive = points ? Primitive::POINTS : lines ? Primitive::LINES : Primitive::TRIANGLES;
         double off[3] = {0, 0, 0};
         if (billboard) {
             for (int k = 0; k < 3; k++) {
@@ -303,7 +320,7 @@ struct File {
         };
         if (lines) {
             for (int i = 0; i < n; i++) {
-                if (fc.drawtype == 3 && i == n - 1) {
+                if (fc.drawtype == DRAW_WIRE && i == n - 1) {
                     break;
                 }
                 vertex(fc.v[i], fn, fc.color);
@@ -314,8 +331,8 @@ struct File {
             for (int t = 0; t < nt; t++) {
                 int vi = points ? t : t % 3 == 0 ? 0 : t / 3 + t % 3;
                 const FVertex &v = fc.v[vi];
-                Vec3 nrm = (fc.lightmode >= 2 || version < 13) && v.hasNrm ? v.nrm : fn;
-                Vec4 col = (fc.lightmode == 1 || fc.lightmode == 3) && v.hasColor ? v.color : fc.color;
+                Vec3 nrm = (fc.lightmode >= LIGHT_LIT || version < 13) && v.hasNrm ? v.nrm : fn;
+                Vec4 col = (fc.lightmode == LIGHT_GOURAUD || fc.lightmode == LIGHT_LIT_GOURAUD) && v.hasColor ? v.color : fc.color;
                 if (vcolors) {
                     col = {col.x * m->dif.x, col.y * m->dif.y, col.z * m->dif.z, col.w};
                 }
@@ -332,7 +349,7 @@ struct File {
         const FMaterial *m = b.material >= 0 ? &materials[b.material] : nullptr;
         if (m) {
             mat.name = "material " + std::to_string(b.material);
-            mat.shading = Shading::Phong;
+            mat.shading = Shading::PHONG;
             if (b.vcolors) {
                 // the vertex colors are the ambient and diffuse colors
                 mat.ambient = {1, 1, 1};
@@ -347,7 +364,7 @@ struct File {
             mat.shininess = m->shininess;
         } else {
             mat.name = "unlit";
-            mat.shading = Shading::Unlit;
+            mat.shading = Shading::UNLIT;
             mat.diffuse = {1, 1, 1, 1};
             mat.vertexColors = true;
         }
@@ -355,14 +372,14 @@ struct File {
         if (t != textures.end()) {
             mat.diffuseImage = t->second;
         }
-        mat.doubleSided = !(b.drawtype == 0 && !b.decal);
+        mat.doubleSided = !(b.drawtype == DRAW_SOLID_CULLED && !b.decal);
         mat.decal = b.decal;
         if (b.alphatex) {
-            mat.alpha = AlphaMode::Mask;
+            mat.alpha = AlphaMode::MASK;
             mat.alphaCutoff = 0.5f;
         }
         if (b.transp) {
-            mat.alpha = AlphaMode::Blend;
+            mat.alpha = AlphaMode::BLEND;
         }
         int index = (int)model.materials.size();
         model.materials.push_back(mat);
@@ -373,7 +390,7 @@ struct File {
     void build() {
         std::map<std::tuple<int, int, int, bool, bool, bool, bool, float, float, float, float>, int> mats;
         auto materialOf = [&](const Batch &b) {
-            auto key = std::make_tuple(b.texture, b.material, b.drawtype == 0 ? 0 : b.drawtype, b.transp, b.decal, b.alphatex, b.vcolors, b.color.x, b.color.y, b.color.z, b.color.w);
+            auto key = std::make_tuple(b.texture, b.material, b.drawtype, b.transp, b.decal, b.alphatex, b.vcolors, b.color.x, b.color.y, b.color.z, b.color.w);
             auto it = mats.find(key);
             if (it != mats.end()) {
                 return it->second;
@@ -399,7 +416,7 @@ struct File {
                 b.mesh.computeBounds();
                 Node n;
                 n.name = "billboard";
-                n.kind = NodeKind::Billboard;
+                n.kind = NodeKind::BILLBOARD;
                 n.billboardPoint = point;
                 n.local = translate(center);
                 n.meshes.push_back((int)model.meshes.size());

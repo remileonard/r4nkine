@@ -103,7 +103,7 @@ static void testLoaders(const std::string &dir) {
     CHECK(model->materials.size() == 1);
     const assets::Material &red = model->materials[0];
     CHECK(near(red.diffuse.x, 1) && near(red.diffuse.y, 0) && near(red.diffuse.w, 0.5f));
-    CHECK(red.alpha == assets::AlphaMode::Blend);
+    CHECK(red.alpha == assets::AlphaMode::BLEND);
     CHECK(near(red.shininess, 32));
     // the cube: 6 quads in 12 triangles; no normals in the file: made, sharp
     // at its edges of 90 degrees (beyond the crease angle), so each of the 8
@@ -184,9 +184,9 @@ static void testLegacyFormats(const std::string &dir) {
         CHECK(near(translationOf(d->nodes[2].local), {0, 1, 0}));
         CHECK(d->defaultState == 0xff03);
         const assets::Material &lit = d->materials[d->meshes[0].material];
-        CHECK(lit.shading == assets::Shading::Phong && near(lit.diffuse.x, 0.7f) && !lit.doubleSided);
+        CHECK(lit.shading == assets::Shading::PHONG && near(lit.diffuse.x, 0.7f) && !lit.doubleSided);
         const assets::Mesh &shadow = d->meshes[1];
-        CHECK(d->materials[shadow.material].shading == assets::Shading::Unlit);
+        CHECK(d->materials[shadow.material].shading == assets::Shading::UNLIT);
         CHECK((shadow.vertices[0].color & 0xffffff) == 0x0000ff); // red, cpack 0xBBGGRR
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
@@ -245,7 +245,7 @@ static void testLegacyFormats(const std::string &dir) {
     if (f) {
         CHECK(f->meshes.size() == 1 && f->meshes[0].indices.size() == 3);
         CHECK((f->meshes[0].vertices[0].color & 0xffffff) == 0xff0000); // blue
-        CHECK(f->materials[f->meshes[0].material].shading == assets::Shading::Unlit);
+        CHECK(f->materials[f->meshes[0].material].shading == assets::Shading::UNLIT);
         bool named = false;
         for (const auto &n : f->nodes) {
             named = named || n.name == "g1";
@@ -257,7 +257,7 @@ static void testLegacyFormats(const std::string &dir) {
 
     // gset: one line strip of 3 points: 2 segments
     auto g = assets::loadModel(dir + "/lines.gset", &err);
-    CHECK(g && g->meshes.size() == 1 && g->meshes[0].primitive == assets::Primitive::Lines && g->meshes[0].indices.size() == 4);
+    CHECK(g && g->meshes.size() == 1 && g->meshes[0].primitive == assets::Primitive::LINES && g->meshes[0].indices.size() == 4);
 }
 
 // step 2: billboards, instancers, PNG, glTF
@@ -456,7 +456,7 @@ static void testUpscale() {
     Image flat = make(8, 6, [](int, int) {
         return 0xff3366ccu;
     });
-    for (Upscale u : {Upscale::SaI2x, Upscale::Xbr2x, Upscale::Xbr4x}) {
+    for (Upscale u : {Upscale::SAI_2X, Upscale::XBR_2X, Upscale::XBR_4X}) {
         Image big = upscale(flat, u);
         int k = upscaleFactor(u);
         CHECK(big.width == 8 * k && big.height == 6 * k && big.channels == 4);
@@ -474,14 +474,14 @@ static void testUpscale() {
         return x < 4 ? 0xffffffffu : 0x00000000u;
     });
     edge.clampS = edge.clampT = true;
-    Image sharp = upscale(edge, Upscale::Xbr2x);
+    Image sharp = upscale(edge, Upscale::XBR_2X);
     CHECK(at(sharp, 7, 5) == 0xffffffffu && at(sharp, 8, 5) == 0x00000000u);
     // a diagonal staircase: xBR blends the steps (some texels between the 2 colors)
     Image stairs = make(8, 8, [](int x, int y) {
         return x > y ? 0xff000000u : 0xffffffffu;
     });
     stairs.clampS = stairs.clampT = true;
-    Image big = upscale(stairs, Upscale::Xbr2x);
+    Image big = upscale(stairs, Upscale::XBR_2X);
     int between = 0;
     for (int y = 0; y < big.height; y++) {
         for (int x = 0; x < big.width; x++) {
@@ -490,7 +490,7 @@ static void testUpscale() {
         }
     }
     CHECK(between > 0);
-    CHECK(std::string(upscaleName(Upscale::Xbr4x)) == "xBR 4x");
+    CHECK(std::string(upscaleName(Upscale::XBR_4X)) == "xBR 4x");
 }
 
 // the compact instances: their matrix about the up axis, their bounds

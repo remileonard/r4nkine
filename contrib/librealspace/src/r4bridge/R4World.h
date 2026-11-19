@@ -7,12 +7,13 @@
 //  (MISN_PART), as SCRenderer draws them.
 //
 //  All of it stays in libRealSpace's axes (Y up): the models of the objects
-//  are made with Axes::RealSpace, and the whole world is turned once, at its
+//  are made with Axes::REAL_SPACE, and the whole world is turned once, at its
 //  root, by realSpaceToR4(). That matrix is the only place where the two
 //  conventions meet.
 //
 #pragma once
 
+#include "R4Data.h"
 #include "R4Bridge.h"
 
 #include "r4/assets/model.h"
@@ -84,12 +85,12 @@ std::shared_ptr<r4::assets::Model> overlayModel(RSArea *area, const VGAPalette &
 // where the trees come from: the green types of the terrain and a noise
 // (Noise), or the woods painted in the textures of the game (Textures)
 enum class ForestMode {
-    Noise,
-    Textures
+    NOISE,
+    TEXTURES
 };
 
 struct ForestSettings {
-    ForestMode mode = ForestMode::Noise;
+    ForestMode mode = ForestMode::NOISE;
     float density = 1; // multiplies all the densities
     // on the green: perKm2 x 25 at the heart of the woods (a noise of a few km),
     // perKm2 x 0.1 between them
@@ -98,15 +99,15 @@ struct ForestSettings {
     // the jungle (type 4) is most of its map: its woods larger, less dense
     float jungleDensity = 0.4f;
     // per km2 under these textures: the woods of TURKEY, the jungle of NICARAGA
-    std::map<int, float> images{{217, 250}, {216, 120}, {218, 300}, {219, 300}};
+    std::map<int, float> images{{TEXTURE_WOOD, 250}, {TEXTURE_MEADOW_WOOD, 120}, {TEXTURE_JUNGLE_A, 300}, {TEXTURE_JUNGLE_B, 300}};
     // no tree under these: the city, the harbor
-    std::set<int> bare{224, 225, 229, 231};
+    std::set<int> bare{TEXTURE_HARBOR_B, TEXTURE_HARBOR_C, TEXTURE_DOWNTOWN_A, TEXTURE_HOUSES};
     // Textures: a tree on the texels of trees of the textures (dark green, and
     // not a flat fill: their neighbors vary), one by areaPerTree (the crowns
     // touching), on the textures with minTreeShare of trees at least, but
     // these (the dark green rows of the crops)
     const VGAPalette *palette = nullptr; // to read the textures
-    std::set<int> notWoods{232, 233};
+    std::set<int> notWoods{TEXTURE_FIELDS, TEXTURE_FARM};
     float minTreeShare = 0.08f;
     float areaPerTree = 400;
     // the texels of trees by image, found once
@@ -118,8 +119,20 @@ struct ForestSettings {
     uint32_t seed = 1;
 };
 // the species of treeModel: a conifer and a broadleaf in the green of the
-// meadows (the ramp from 64), the same two in the green of the jungle (from 128)
-constexpr int kTreeSpecies = 4;
+// meadows, the same two in the green of the jungle
+enum TreeSpecies {
+    TREE_CONIFER = 0,
+    TREE_BROADLEAF = 1,
+    TREE_JUNGLE_CONIFER = 2,
+    TREE_JUNGLE_BROADLEAF = 3,
+    TREE_SPECIES_COUNT = 4
+};
+inline bool isConifer(int species) {
+    return species == TREE_CONIFER || species == TREE_JUNGLE_CONIFER;
+}
+inline bool isJungleTree(int species) {
+    return species == TREE_JUNGLE_CONIFER || species == TREE_JUNGLE_BROADLEAF;
+}
 
 // The chunks of the map with some green, without their trees: the trees of a
 // chunk are planted when it is needed (plantForest), the same at each time.
@@ -128,7 +141,7 @@ struct ForestChunk {
     int cz = 0;
     r4::Vec3 center; // its bounds, the trees included
     float radius = 0;
-    std::vector<r4::scene::Placement> trees[kTreeSpecies]; // by species, about Y (libRealSpace's up)
+    std::vector<r4::scene::Placement> trees[TREE_SPECIES_COUNT]; // by species, about Y (libRealSpace's up)
 };
 std::vector<ForestChunk> forestChunks(RSArea *area, const ForestSettings &settings = {});
 void plantForest(RSArea *area, const ForestSettings &settings, ForestChunk &chunk);

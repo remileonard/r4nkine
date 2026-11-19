@@ -187,13 +187,13 @@ static void collect(Node &n, const Mat4 &m, uint32_t state, std::vector<Instance
     }
     state &= n.stateFilter();
     Mat4 here = m * n.matrix();
-    if (n.type() == NodeType::Geode || n.type() == NodeType::Billboard) {
+    if (n.type() == NodeType::GEODE || n.type() == NodeType::BILLBOARD) {
         for (const Drawable &d : static_cast<Geode &>(n).drawables()) {
             out.push_back({d, here});
         }
     }
     const auto &kids = n.children();
-    if (n.type() == NodeType::Switch) {
+    if (n.type() == NodeType::SWITCH) {
         auto &sw = static_cast<Switch &>(n);
         for (size_t i = 0; i < kids.size(); i++) {
             if (sw.isActive((int)i)) {

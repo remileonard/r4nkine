@@ -56,9 +56,9 @@ struct PipelineHandle {
 };
 
 enum class BufferUsage {
-    Vertex,
-    Index,
-    Uniform
+    VERTEX,
+    INDEX,
+    UNIFORM
 };
 enum class IndexType {
     U16,
@@ -72,39 +72,39 @@ enum class TextureFormat {
     RGBA8
 };
 enum class Filter {
-    Nearest,
-    Linear
+    NEAREST,
+    LINEAR
 };
 enum class Wrap {
-    Repeat,
-    Clamp,
-    Mirror
+    REPEAT,
+    CLAMP,
+    MIRROR
 };
 
 struct TextureDesc {
     int width = 0;
     int height = 0;
     TextureFormat format = TextureFormat::RGBA8;
-    Filter minFilter = Filter::Linear;
-    Filter magFilter = Filter::Linear;
+    Filter minFilter = Filter::LINEAR;
+    Filter magFilter = Filter::LINEAR;
     bool mipmaps = true;
-    Wrap wrapS = Wrap::Repeat;
-    Wrap wrapT = Wrap::Repeat;
+    Wrap wrapS = Wrap::REPEAT;
+    Wrap wrapT = Wrap::REPEAT;
     // anisotropic filtering: up to this many samples along the slope (1: off),
     // limited by Limits::maxAnisotropy
     float anisotropy = 1;
 };
 
 enum class AttribType {
-    Float,
-    UByte,
-    Short
+    FLOAT,
+    UBYTE,
+    SHORT
 };
 
 struct VertexAttrib {
     uint32_t location = 0;   // the shader input
     uint32_t components = 3; // 1 to 4
-    AttribType type = AttribType::Float;
+    AttribType type = AttribType::FLOAT;
     bool normalized = false;
     uint32_t offset = 0;
 };
@@ -121,29 +121,29 @@ struct VertexLayout {
 };
 
 enum class Primitive {
-    Triangles,
-    Lines,
-    Points,
-    TriangleStrip
+    TRIANGLES,
+    LINES,
+    POINTS,
+    TRIANGLE_STRIP
 };
 enum class CullMode {
-    None,
-    Back,
-    Front
+    NONE,
+    BACK,
+    FRONT
 };
 enum class BlendMode {
-    Opaque,
-    Alpha,
-    Additive,
-    Premultiplied
+    NONE,
+    ALPHA,
+    ADDITIVE,
+    PREMULTIPLIED
 };
 enum class CompareOp {
-    Never,
-    Less,
-    LessEqual,
-    Equal,
-    Greater,
-    Always
+    NEVER,
+    LESS,
+    LESS_EQUAL,
+    EQUAL,
+    GREATER,
+    ALWAYS
 };
 
 // the sources of a shader program. The GL backend takes GLSL 330; the other
@@ -161,13 +161,13 @@ struct ShaderDesc {
 struct PipelineDesc {
     ShaderHandle shader;
     VertexLayout layout;
-    Primitive primitive = Primitive::Triangles;
-    CullMode cull = CullMode::Back;
+    Primitive primitive = Primitive::TRIANGLES;
+    CullMode cull = CullMode::BACK;
     bool frontCCW = true;
-    BlendMode blend = BlendMode::Opaque;
+    BlendMode blend = BlendMode::NONE;
     bool depthTest = true;
     bool depthWrite = true;
-    CompareOp depthCompare = CompareOp::LessEqual;
+    CompareOp depthCompare = CompareOp::LESS_EQUAL;
     bool wireframe = false;
     float polygonOffsetFactor = 0; // decals, outlines
     float polygonOffsetUnits = 0;
@@ -178,7 +178,7 @@ struct RenderTargetDesc {
     int height = 0;
     int samples = 1;                // > 1: multisampled (MSAA), resolved into the texture
     bool depth = true;              // a depth (and stencil) buffer
-    Filter filter = Filter::Linear; // how its texture is sampled
+    Filter filter = Filter::LINEAR; // how its texture is sampled
     // a shadow map: depth only (no color, no samples), its texture the depth,
     // sampled compared (sampler2DShadow, linear filter: 2 x 2 PCF)
     bool shadow = false;
