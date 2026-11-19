@@ -486,7 +486,7 @@ int main(int argc, char **argv) {
         int mode = 0;          // 0 objets, 1 missions
         int currentWorld = -1; // dans worlds
         int terrainLod = 0;
-        bool showTerrain = true, showMapObjects = true, showParts = true, showOverlays = true, showForests = true;
+        bool showTerrain = true, showMapObjects = true, showParts = true, showOverlays = true, showForests = true, showBuildings = true;
         // les forêts : leur densité (r4bridge::forestOf), avant le chargement d'un monde
         int forests = forestsAtStart;
         const float kForestDensity[] = {0, 0.4f, 1, 2.5f};
@@ -523,6 +523,7 @@ int main(int argc, char **argv) {
             world.showParts(showParts);
             world.showOverlays(showOverlays);
             world.showForests(showForests);
+            world.showBuildings(showBuildings);
             if (world.hasLight)
                 sunFrom(world.lightTowards); // la lumière du monde
             if (world.terrainLightDynamic() != dynamicTerrainLight || world.terrainRelief() != reliefOf())
@@ -978,6 +979,8 @@ int main(int argc, char **argv) {
                         world.showParts(showParts);
                     if (gui.toggle("Forests", showForests))
                         world.showForests(showForests);
+                    if (gui.toggle("Buildings", showBuildings))
+                        world.showBuildings(showBuildings);
                     gui.columns(1);
                     if (gui.menu("Forest Density", forests, {"None", "Sparse", "Normal", "Dense"}))
                         world.setForestDensity(kForestDensity[forests]);
@@ -993,6 +996,7 @@ int main(int argc, char **argv) {
                                {"Terrain triangles (fine + skirts)", fmt("%zu", world.terrainTriangles)},
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
                                {"Runway triangles", fmt("%zu", world.overlayTriangles)},
+                               {"Buildings", fmt("%zu", world.buildings)},
                                {"Trees (chunks of 5 km)", fmt("%zu (%zu)", world.forestTrees, world.forestChunks)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},
                                {"Mission parts", fmt("%zu", world.parts().size())},

@@ -205,6 +205,11 @@ Le terrain (`WorldScene` et `R4World`) :
     Chacune a une version détaillée jusqu'à 1 500 et une version simple (pyramide, octaèdre) jusqu'à 6 000.
   - **Le graphe** : la carte est découpée en carrés de 5 km, chacun un nœud `LOD` coupé au-delà de 6 000 avec un `Instancer` par essence. Le renderer cule chaque arbre et choisit son niveau ; les arbres projettent leur ombre.
   - **Tout au chargement** : environ 2,1 millions d'arbres sur TURKEY, soit environ 140 Mo de matrices, plantés en environ 1 s. Pendant le vol, les carrés hors du champ ou au-delà de 6 km sont écartés d'un bloc par leur nœud `LOD`.
+- **Les villes** (`cityModel` dans R4World ; couche **Buildings** du viewer). Une texture de ville du jeu couvre une cellule entière, et des immeubles y sont posés sur ce qu'elle montre :
+  - **229**, le centre-ville de NICARAGA : 14 immeubles relevés à la main sur l'image (des rectangles en texels), de 25 à 200 de haut ;
+  - **231**, les maisons : chaque tache de texels gris clair (un toit) devient une maison de 11 à 16 de haut, soit environ 200 par cellule. Les maisons seulement dessinées en contour ne sont pas reconnues et restent à plat.
+
+  Leur toit est l'image elle-même : vue de haut, la ville reste la texture. Leurs murs sont une façade faite par le pont, avec des fenêtres, sur des étages de 8. Ils sont éclairés par le soleil comme les objets et projettent leur ombre. Un nœud par cellule (« city x,y »). Le port (224, 225) n'a pas encore de bâtiments.
 - **Pas encore fait** : le ciel, les nuages et le brouillard.
 
 Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spawnCast` :

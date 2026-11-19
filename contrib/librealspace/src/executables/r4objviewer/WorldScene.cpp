@@ -109,9 +109,12 @@ WorldScene::WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Ren
     overlays_->setName("overlays (runways)");
     forests_ = r4::scene::make<r4::scene::Switch>();
     forests_->setName("forests");
+    buildings_ = r4::scene::make<r4::scene::Switch>();
+    buildings_->setName("buildings");
     root_->addChild(terrain_);
     root_->addChild(overlays_);
     root_->addChild(forests_);
+    root_->addChild(buildings_);
     root_->addChild(mapLayer_);
     root_->addChild(partsLayer_);
 }
@@ -124,6 +127,8 @@ void WorldScene::clear() {
     forests_->removeAllChildren();
     forestNodes_.clear();
     forestTrees = forestChunks = 0;
+    buildings_->removeAllChildren();
+    buildings = 0;
     mapLayer_->removeAllChildren();
     partsLayer_->removeAllChildren();
     sceneLayers_.clear();
@@ -206,6 +211,9 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
     buildTerrain();
+    // the buildings of the cities, on their textures
+    if (auto city = r4bridge::cityModel(area_.get(), *palette_.GetColorPalette(), lighting, &buildings))
+        buildings_->addChild(renderer_.upload(*city));
     // the runways and their ground, over the terrain
     if (auto overlays = r4bridge::overlayModel(area_.get(), *palette_.GetColorPalette())) {
         for (const r4::assets::Mesh &m : overlays->meshes)
@@ -467,6 +475,10 @@ void WorldScene::setForestDensity(float density) {
     forestDensity_ = density;
     if (area_)
         buildForests();
+}
+
+void WorldScene::showBuildings(bool on) {
+    buildings_->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone);
 }
 
 void WorldScene::showForests(bool on) { forests_->setValue(on ? r4::scene::Switch::kAll : r4::scene::Switch::kNone); }

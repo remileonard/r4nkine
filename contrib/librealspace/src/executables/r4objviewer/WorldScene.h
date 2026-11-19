@@ -64,6 +64,8 @@ public:
     void showParts(bool on);
     void showOverlays(bool on);
     void showForests(bool on);
+    void showBuildings(bool on);
+    size_t buildings = 0; // in the cities
     // the forests on the green of the terrain (r4bridge::forestOf), made again
     // at this density (0: none)
     void setForestDensity(float density);
@@ -123,7 +125,7 @@ private:
     std::map<std::string, std::unique_ptr<RSEntity>> entities_;
     std::map<std::string, r4::scene::NodePtr> objects_;
     std::shared_ptr<r4::scene::Group> root_;
-    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_, forests_;
+    std::shared_ptr<r4::scene::Switch> terrain_, overlays_, mapLayer_, partsLayer_, forests_, buildings_;
     std::vector<std::shared_ptr<r4::scene::Switch>> sceneLayers_; // the scenes, then "no scene"
     std::vector<Scene> scenes_;
     std::vector<Item> parts_, mapObjects_, areas_;

@@ -776,4 +776,245 @@ std::shared_ptr<r4::assets::Model> treeModel(int species, bool simple, const VGA
     return model;
 }
 
+// --- the cities -------------------------------------------------------------------------
+
+namespace {
+
+// a building: its rectangle of texels in the image of the city (from its
+// top left, x1 and y1 included) and its height
+struct Footprint {
+    int x0, y0, x1, y1;
+    float height;
+};
+
+// the downtown (229): its buildings, read on the image; the dark ones higher
+const std::vector<Footprint> kDowntown{
+    {5, 4, 24, 27, 140},   {25, 3, 41, 12, 30},   {43, 3, 57, 29, 70},   {67, 3, 93, 23, 60},
+    {5, 37, 26, 57, 160},  {26, 37, 46, 57, 90},  {46, 37, 58, 57, 120}, {67, 34, 88, 58, 200},
+    {98, 35, 117, 58, 80}, {8, 67, 55, 91, 35},   {100, 68, 122, 92, 150}, {68, 82, 100, 90, 25},
+    {35, 102, 53, 119, 60}, {76, 99, 119, 121, 50},
+};
+constexpr int kDowntownImage = 229, kHousesImage = 231;
+
+// the houses: the components of light grey texels (their roofs), 2 x 2 at
+// least; the rings of the outlined houses fall apart and are dropped
+std::vector<Footprint> housesOf(const RSImage *img, const VGAPalette &palette) {
+    std::vector<Footprint> houses;
+    const int w = (int)img->width, h = (int)img->height;
+    std::vector<uint8_t> light((size_t)w * h);
+    for (size_t i = 0; i < light.size(); i++) {
+        uint8_t k = img->data[i];
+        const Texel &t = palette.colors[k];
+        int lo = std::min({t.r, t.g, t.b}), hi = std::max({t.r, t.g, t.b});
+        light[i] = k != 255 && hi - lo <= 12 && (t.r + t.g + t.b) / 3 >= 0x8c;
+    }
+    std::vector<int> stack;
+    for (int start = 0; start < w * h; start++) {
+        if (!light[start])
+            continue;
+        int x0 = w, y0 = h, x1 = -1, y1 = -1, n = 0;
+        stack.push_back(start);
+        light[start] = 0;
+        while (!stack.empty()) {
+            int j = stack.back();
+            stack.pop_back();
+            int x = j % w, y = j / w;
+            x0 = std::min(x0, x), x1 = std::max(x1, x), y0 = std::min(y0, y), y1 = std::max(y1, y);
+            n++;
+            const int nx[4] = {x + 1, x - 1, x, x}, ny[4] = {y, y, y + 1, y - 1};
+            for (int k = 0; k < 4; k++)
+                if (nx[k] >= 0 && ny[k] >= 0 && nx[k] < w && ny[k] < h && light[(size_t)ny[k] * w + nx[k]]) {
+                    light[(size_t)ny[k] * w + nx[k]] = 0;
+                    stack.push_back(ny[k] * w + nx[k]);
+                }
+        }
+        if (n >= 4 && x1 - x0 >= 1 && y1 - y0 >= 1)
+            houses.push_back({x0, y0, x1, y1, 11 + hash01((uint32_t)x0, (uint32_t)y0, 3) * 5});
+    }
+    return houses;
+}
+
+// a facade: a wall color with rows of windows (offices) or one window by
+// floor (houses), a floor of 8 high and 8 wide by repeat of the image
+r4::assets::Image facadeImage(bool office) {
+    r4::assets::Image img;
+    img.name = office ? "facade, offices" : "facade, houses";
+    img.width = img.height = 16;
+    img.channels = 4;
+    img.pixels.resize(16 * 16 * 4);
+    for (int y = 0; y < 16; y++)
+        for (int x = 0; x < 16; x++) {
+            // R4nkine's images from the bottom row: y 0 is the bottom of the floor
+            bool window = office ? (y >= 5 && y <= 12 && (x % 8) >= 1 && (x % 8) <= 6)
+                                 : (y >= 6 && y <= 11 && x >= 5 && x <= 10);
+            uint8_t *d = &img.pixels[((size_t)y * 16 + x) * 4];
+            if (window) {
+                d[0] = 46, d[1] = 58, d[2] = 72;
+            } else if (office) {
+                d[0] = 150, d[1] = 150, d[2] = 146;
+            } else {
+                d[0] = 196, d[1] = 186, d[2] = 160;
+            }
+            d[3] = 255;
+        }
+    img.mipmaps = true;
+    return img;
+}
+
+} // namespace
+
+std::shared_ptr<r4::assets::Model> cityModel(RSArea *area, const VGAPalette &palette, Lighting lighting,
+                                            size_t *buildings) {
+    using namespace r4::assets;
+    if (buildings)
+        *buildings = 0;
+    if (!area)
+        return nullptr;
+    auto model = std::make_shared<Model>();
+    model->source = "cities";
+    Node root;
+    root.name = "cities";
+    model->nodes.push_back(root);
+    // the materials: lit by the sun as the objects, the texture times the intensity
+    auto material = [&](const std::string &name, int image) {
+        Material m;
+        m.name = name;
+        m.shading = Shading::PaletteRamp;
+        m.rampTextured = true;
+        m.rampAmbient = lighting.ambient;
+        m.rampLight = lighting.light;
+        m.diffuseImage = image;
+        model->materials.push_back(m);
+        return (int)model->materials.size() - 1;
+    };
+    model->images.push_back(facadeImage(true));
+    model->images.push_back(facadeImage(false));
+    const int officeWalls = material("facade, offices", 0), houseWalls = material("facade, houses", 1);
+    // by image of a city: its roofs (the image itself) and its buildings
+    struct City {
+        int roofs = -1;
+        std::vector<Footprint> footprints;
+        float w = 0, h = 0;
+        bool houses = false;
+    };
+    std::map<int, City> cities;
+    auto cityOf = [&](int id) -> City * {
+        if (id != kDowntownImage && id != kHousesImage)
+            return nullptr;
+        auto it = cities.find(id);
+        if (it != cities.end())
+            return &it->second;
+        City &c = cities[id];
+        RSImage *src = area->GetImageByID(id);
+        if (!src || !src->data || !src->width || !src->height)
+            return &c;
+        Image img;
+        img.name = std::string("city ") + std::to_string(id);
+        img.width = (int)src->width;
+        img.height = (int)src->height;
+        img.channels = 4;
+        img.pixels.resize((size_t)img.width * img.height * 4);
+        for (int y = 0; y < img.height; y++)
+            for (int x = 0; x < img.width; x++) {
+                const Texel &t = palette.colors[src->data[(size_t)y * img.width + x]];
+                uint8_t *d = &img.pixels[((size_t)(img.height - 1 - y) * img.width + x) * 4];
+                d[0] = t.r, d[1] = t.g, d[2] = t.b, d[3] = 255;
+            }
+        finishTexture(img);
+        model->images.push_back(std::move(img));
+        c.roofs = material("roofs " + std::to_string(id), (int)model->images.size() - 1);
+        c.w = (float)src->width;
+        c.h = (float)src->height;
+        c.houses = id == kHousesImage;
+        c.footprints = c.houses ? housesOf(src, palette) : kDowntown;
+        return &c;
+    };
+
+    for (int y = 0; y + 1 < kMapSide; y++)
+        for (int x = 0; x + 1 < kMapSide; x++) {
+            const MapVertex *cur = mapVertex(area, x, y);
+            if (!cur)
+                continue;
+            City *city = cityOf(cur->lowerImageID);
+            if (!city)
+                city = cityOf(cur->upperImageID);
+            if (!city || city->roofs < 0)
+                continue;
+            // the image over the cell: its texel (u, v) at the corner + (u, v) / size * cell
+            const float x0 = cur->v.x, z0 = cur->v.z;
+            auto world = [&](float u, float v) { return r4::Vec2{x0 + u / city->w * kCell, z0 + v / city->h * kCell}; };
+            auto ground = [&](r4::Vec2 p) { return area->getY(p.x, p.y) - 5; }; // getY is 5 above
+            Mesh roofs, walls;
+            roofs.material = city->roofs;
+            walls.material = city->houses ? houseWalls : officeWalls;
+            auto quad = [](Mesh &m, const r4::Vec3 (&p)[4], const r4::Vec2 (&uv)[4], r4::Vec3 n) {
+                // turned to face n
+                bool flip = r4::dot(r4::cross(p[1] - p[0], p[2] - p[0]), n) < 0;
+                uint32_t base = (uint32_t)m.vertices.size();
+                for (int k = 0; k < 4; k++) {
+                    Vertex v;
+                    v.position = p[k];
+                    v.normal = n;
+                    v.uv = uv[k];
+                    v.color = 0xffffffffu;
+                    m.vertices.push_back(v);
+                }
+                const uint32_t order[2][6] = {{0, 1, 2, 0, 2, 3}, {0, 2, 1, 0, 3, 2}};
+                for (uint32_t i : order[flip ? 1 : 0])
+                    m.indices.push_back(base + i);
+            };
+            for (const Footprint &f : city->footprints) {
+                const float u[4] = {(float)f.x0, (float)f.x1 + 1, (float)f.x1 + 1, (float)f.x0};
+                const float v[4] = {(float)f.y0, (float)f.y0, (float)f.y1 + 1, (float)f.y1 + 1};
+                r4::Vec2 c[4];
+                float low = 1e30f, high = -1e30f;
+                for (int k = 0; k < 4; k++) {
+                    c[k] = world(u[k], v[k]);
+                    float g = ground(c[k]);
+                    low = std::min(low, g), high = std::max(high, g);
+                }
+                // standing on the highest corner, its foot under the lowest
+                float bottom = low - 10, top = high + f.height;
+                r4::Vec3 roof[4], foot[4];
+                r4::Vec2 roofUV[4];
+                for (int k = 0; k < 4; k++) {
+                    roof[k] = {c[k].x, top, c[k].y};
+                    foot[k] = {c[k].x, bottom, c[k].y};
+                    roofUV[k] = {u[k] / city->w, 1 - v[k] / city->h};
+                }
+                quad(roofs, roof, roofUV, {0, 1, 0});
+                r4::Vec2 mid = (c[0] + c[1] + c[2] + c[3]) * 0.25f;
+                for (int k = 0; k < 4; k++) {
+                    int j = (k + 1) % 4;
+                    r4::Vec2 e = c[j] - c[k];
+                    r4::Vec2 out{e.y, -e.x}; // a normal of the edge, turned outward
+                    if (r4::dot(out, (c[k] + c[j]) * 0.5f - mid) < 0)
+                        out = -out;
+                    r4::Vec3 n = r4::normalize(r4::Vec3{out.x, 0, out.y});
+                    const r4::Vec3 p[4] = {foot[k], foot[j], roof[j], roof[k]};
+                    // a floor of 8: the facade repeated along and up, from the roof down
+                    float len = r4::length(e) / 8, up = (top - bottom) / 8;
+                    const r4::Vec2 uv[4] = {{0, -up}, {len, -up}, {len, 0}, {0, 0}};
+                    quad(walls, p, uv, n);
+                }
+                if (buildings)
+                    ++*buildings;
+            }
+            Node node;
+            node.name = "city " + std::to_string(x) + "," + std::to_string(y);
+            for (Mesh *m : {&roofs, &walls}) {
+                if (m->indices.empty())
+                    continue;
+                m->name = node.name + (m == &roofs ? " roofs" : " walls");
+                model->meshes.push_back(std::move(*m));
+                node.meshes.push_back((int)model->meshes.size() - 1);
+            }
+            model->nodes.push_back(node);
+            model->nodes[0].children.push_back((int)model->nodes.size() - 1);
+        }
+    if (model->nodes[0].children.empty())
+        return nullptr;
+    return model;
+}
+
 } // namespace r4bridge
