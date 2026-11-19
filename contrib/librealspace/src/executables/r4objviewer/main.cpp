@@ -16,7 +16,10 @@
 //    r4objviewer [-data DIR] [-tre FICHIER.TRE ...] [-object NOM] [-mission NOM] [-frames N] [-shot F.bmp]
 //
 //  -data     le dossier des TRE et des terrains .PAK (par défaut le dossier courant)
-//  -tre      les TRE à ouvrir (par défaut TOBIGTRE.TRE, ou OBJECTS.TRE + MISC.TRE)
+//  -tre      les TRE à ouvrir (par défaut, chaque jeu présent seul : BIGTRE.TRE
+//            Strike Commander, TOBIGTRE.TRE Tactical Operations ; sinon
+//            OBJECTS.TRE + MISC.TRE)
+//  -game G   le jeu au départ : sc ou to (par défaut, celui de -mission)
 //  -object   l'objet montré au départ (F-16DES, A-10...)
 //  -mission  la mission ou le monde montré au départ (MISN-A1, TURKEY...)
 //  -focus    avec -mission : la caméra sur le premier objet de ce nom (ZSU-23...)
@@ -76,6 +79,11 @@
 
 namespace {
 
+std::string upperOf(std::string s) {
+    std::transform(s.begin(), s.end(), s.begin(), ::toupper);
+    return s;
+}
+
 // --- la fenêtre : SDL2 + un contexte OpenGL core (3.3, 4.1 sur macOS) -----------------
 struct Window {
     SDL_Window *window = nullptr;
@@ -124,10 +132,11 @@ struct ObjectEntry {
 };
 
 // les objets 3D des TRE ouverts : les entrées ...\OBJECTS\*.IFF
-std::vector<ObjectEntry> listObjects(AssetManager &assets) {
+// (of the first `own` TRE, those of a game; the next ones only complete it)
+std::vector<ObjectEntry> listObjects(AssetManager &assets, size_t own) {
     std::vector<ObjectEntry> list;
-    for (TreArchive *tre : assets.tres)
-        for (TreEntry *e : tre->entries) {
+    for (size_t t = 0; t < assets.tres.size() && t < own; t++)
+        for (TreEntry *e : assets.tres[t]->entries) {
             std::string name = e->name;
             std::string upper = name;
             std::transform(upper.begin(), upper.end(), upper.begin(), ::toupper);
@@ -273,6 +282,7 @@ int main(int argc, char **argv) {
     bool hasStartAt = false;
     bool flatAtStart = false, gouraudAtStart = false, litTerrainAtStart = false, shadowsAtStart = false;
     int forestsAtStart = 2;
+    std::string gameAtStart;
     int upscaleAtStart = 0;
     bool mipmapsAtStart = false;
     float anisoAtStart = 1;
@@ -319,6 +329,8 @@ int main(int argc, char **argv) {
             mipmapsAtStart = true;
         else if (a == "-aniso" && i + 1 < argc)
             anisoAtStart = std::max(1.0f, (float)std::atof(argv[++i]));
+        else if (a == "-game" && i + 1 < argc) // sc, to : le jeu au départ
+            gameAtStart = argv[++i];
         else if (a == "-forests" && i + 1 < argc) // 0..3 : aucune .. denses
             forestsAtStart = std::clamp(std::atoi(argv[++i]), 0, 3);
         else if (a == "-diag" && i + 1 < argc) // les types et les textures du terrain
@@ -351,40 +363,51 @@ int main(int argc, char **argv) {
         config.setBool("Game", "object_gouraud", false);
         config.setBool("Game", "terrain_flat", true);
     }
-    if (tres.empty()) {
-        SDL_RWops *big = SDL_RWFromFile((dataDir + "TOBIGTRE.TRE").c_str(), "rb");
-        if (big) {
-            SDL_RWclose(big);
-            tres = {"TOBIGTRE.TRE"};
-        } else {
-            tres = {"OBJECTS.TRE", "MISC.TRE"};
+    // les jeux, chacun ses TRE ouverts seuls : Strike Commander et Tactical
+    // Operations ont les mêmes noms pour des fichiers différents (301 objets,
+    // la palette, les polices) ; -tre : un jeu fait de ces TRE
+    struct Game {
+        std::string name;
+        std::vector<std::string> tres;
+        size_t own = 1000; // the TRE listed (its objects, its missions); the next ones only complete it
+    };
+    std::vector<Game> games;
+    auto exists = [&](const std::string &file) {
+        SDL_RWops *f = SDL_RWFromFile((dataDir + file).c_str(), "rb");
+        if (f)
+            SDL_RWclose(f);
+        return f != nullptr;
+    };
+    if (!tres.empty()) {
+        games.push_back({"Custom", tres});
+    } else {
+        // Strike Commander : ses textures du terrain (TXMPACK, ACCPACK) sont
+        // dans TEXTURES.TRE ; sans lui, celles de Tactical Operations (le
+        // premier TRE ouvert l'emporte : seuls les fichiers absents de
+        // BIGTRE.TRE viennent du second)
+        if (exists("BIGTRE.TRE")) {
+            Game sc{"Strike Commander", {"BIGTRE.TRE"}};
+            if (exists("TEXTURES.TRE"))
+                sc.tres.push_back("TEXTURES.TRE");
+            else if (exists("TOBIGTRE.TRE"))
+                sc.tres.push_back("TOBIGTRE.TRE");
+            sc.own = 1;
+            games.push_back(sc);
         }
+        if (exists("TOBIGTRE.TRE"))
+            games.push_back({"Tactical Operations", {"TOBIGTRE.TRE"}});
+        if (games.empty())
+            games.push_back({"Strike Commander", {"OBJECTS.TRE", "MISC.TRE"}});
     }
-    assets.init(tres);
+    int game = 0;
+    for (size_t i = 0; i < games.size(); i++)
+        if (!gameAtStart.empty() && (upperOf(games[i].name).find(upperOf(gameAtStart)) != std::string::npos ||
+                                     (gameAtStart == "sc" && games[i].name == "Strike Commander") ||
+                                     (gameAtStart == "to" && games[i].name == "Tactical Operations")))
+            game = (int)i;
+    bool lookForMission = !startMission.empty() && gameAtStart.empty(); // le jeu qui a cette mission
 
-    TreEntry *paletteEntry = assets.GetEntryByName("..\\..\\DATA\\PALETTE\\PALETTE.IFF");
-    if (!paletteEntry) {
-        std::fprintf(stderr, "r4objviewer: pas de PALETTE.IFF dans les TRE de %s\n", dataDir.c_str());
-        return 1;
-    }
-    RSPalette palette;
-    palette.initFromFileRam(paletteEntry->data, paletteEntry->size);
-    std::vector<ObjectEntry> objects = listObjects(assets);
-    if (objects.empty()) {
-        std::fprintf(stderr, "r4objviewer: aucun objet (OBJECTS\\*.IFF) dans les TRE\n");
-        return 1;
-    }
-    std::printf("r4objviewer: %zu objets\n", objects.size());
-    // les chemins des missions, des objets et des textures du terrain, comme le jeu
-    assets.mission_root_path = "..\\..\\DATA\\MISSIONS\\";
-    assets.object_root_path = "..\\..\\DATA\\OBJECTS\\";
-    assets.texture_root_path = "..\\..\\DATA\\TXM\\";
-    assets.txm_filename = assets.texture_root_path + "TXMPACK.PAK";
-    assets.acc_filename = assets.texture_root_path + "ACCPACK.PAK";
-    std::vector<WorldEntry> worlds = listWorlds(assets, dataDir);
-    std::printf("r4objviewer: %zu missions ou mondes avec leur terrain\n", worlds.size());
-
-    // --- 2. R4nkine : la fenêtre, le device, le renderer, la GUI ----------------------------
+    // --- R4nkine : la fenêtre et le device, une fois pour tous les jeux --------------------
     Window win;
     if (!win.open("r4objviewer - libRealSpace + R4nkine", 1400, 860)) {
         std::fprintf(stderr, "r4objviewer: %s\n", SDL_GetError());
@@ -398,6 +421,46 @@ int main(int argc, char **argv) {
         return 1;
     }
     std::printf("r4objviewer: %s\n", device->name());
+
+    // --- un jeu : ses TRE, sa palette, ses objets, ses missions ; le menu Game
+    // en change (tout est refait, la fenêtre reste)
+    for (int tried = 0;;) {
+    assets.init(games[game].tres);
+    std::printf("r4objviewer: %s (%s)\n", games[game].name.c_str(), games[game].tres[0].c_str());
+
+    TreEntry *paletteEntry = assets.GetEntryByName("..\\..\\DATA\\PALETTE\\PALETTE.IFF");
+    if (!paletteEntry) {
+        std::fprintf(stderr, "r4objviewer: pas de PALETTE.IFF dans les TRE de %s\n", dataDir.c_str());
+        return 1;
+    }
+    RSPalette palette;
+    palette.initFromFileRam(paletteEntry->data, paletteEntry->size);
+    std::vector<ObjectEntry> objects = listObjects(assets, games[game].own);
+    if (objects.empty()) {
+        std::fprintf(stderr, "r4objviewer: aucun objet (OBJECTS\\*.IFF) dans les TRE\n");
+        return 1;
+    }
+    std::printf("r4objviewer: %zu objets\n", objects.size());
+    // les chemins des missions, des objets et des textures du terrain, comme le jeu
+    assets.mission_root_path = "..\\..\\DATA\\MISSIONS\\";
+    assets.object_root_path = "..\\..\\DATA\\OBJECTS\\";
+    assets.texture_root_path = "..\\..\\DATA\\TXM\\";
+    assets.txm_filename = assets.texture_root_path + "TXMPACK.PAK";
+    assets.acc_filename = assets.texture_root_path + "ACCPACK.PAK";
+    std::vector<WorldEntry> worlds = listWorlds(assets, dataDir, games[game].own);
+    std::printf("r4objviewer: %zu missions ou mondes avec leur terrain\n", worlds.size());
+    if (lookForMission) {
+        bool found = false;
+        for (const WorldEntry &w : worlds)
+            found |= w.label == startMission || w.label == startMission + " (world)";
+        if (!found && ++tried < (int)games.size()) {
+            game = (game + 1) % (int)games.size();
+            continue;
+        }
+        lookForMission = false;
+    }
+    int switchTo = -1; // le jeu choisi dans le menu Game
+
     {
         r4::render::Renderer renderer(*device);
         renderer.options().anisotropy = anisoAtStart;
@@ -770,6 +833,16 @@ int main(int argc, char **argv) {
                            win.pointWidth > 0 ? (float)win.width / win.pointWidth : 1);
 
             gui.beginPanel("objects", {0, 0, leftWidth, (float)win.pointHeight}, "r4objviewer");
+            if (games.size() > 1) {
+                std::vector<std::string> names;
+                for (const Game &g : games)
+                    names.push_back(g.name);
+                int chosen = game;
+                if (gui.menu("Game", chosen, names) && chosen != game) {
+                    switchTo = chosen;
+                    quit = true;
+                }
+            }
             if (gui.radio("Mode", mode, {"Objects", "Missions"}) && mode == 1 && currentWorld < 0 && !worlds.empty())
                 selectWorld(0);
             if (mode == 1) {
@@ -997,7 +1070,7 @@ int main(int argc, char **argv) {
                                {"Terrain textures", fmt("%zu", world.terrainTextures)},
                                {"Runway triangles", fmt("%zu", world.overlayTriangles)},
                                {"Buildings", fmt("%zu", world.buildings)},
-                               {"Trees (chunks of 5 km)", fmt("%zu (%zu)", world.forestTrees, world.forestChunks)},
+                               {"Trees (chunks of 2 km)", fmt("%zu (%zu)", world.forestTrees, world.forestChunks)},
                                {"Map objects", fmt("%zu", world.mapObjects().size())},
                                {"Mission parts", fmt("%zu", world.parts().size())},
                                {"Objects not in the TRE", fmt("%zu", missing)},
@@ -1110,6 +1183,15 @@ int main(int argc, char **argv) {
         }
         for (Thumb &t : thumbs)
             device->destroyTexture(t.texture);
+    }
+    if (switchTo < 0)
+        break;
+    // l'autre jeu, de zéro : ni mission ni objet de départ
+    game = switchTo;
+    startMission.clear();
+    focus.clear();
+    hasStartAt = false;
+    frames = -1;
     }
     device.reset();
     return 0;

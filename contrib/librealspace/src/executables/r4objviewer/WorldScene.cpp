@@ -51,10 +51,10 @@ std::unique_ptr<RSWorld> loadWorld(AssetManager &assets, const std::string &worl
 
 } // namespace
 
-std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &dataDir) {
+std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &dataDir, size_t own) {
     std::vector<WorldEntry> missions, worlds;
-    for (TreArchive *tre : assets.tres)
-        for (TreEntry *e : tre->entries) {
+    for (size_t t = 0; t < assets.tres.size() && t < own; t++)
+        for (TreEntry *e : assets.tres[t]->entries) {
             std::string file = e->name;
             std::string name = upper(file);
             size_t at = name.find("\\MISSIONS\\");
@@ -207,7 +207,12 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
             lightTowards = r4::normalize(d);
     }
 
-    // the terrain (RSArea reads the PAK in the data folder)
+    // the terrain (RSArea reads the PAK in the data folder, and the textures
+    // of the game in the TRE: it cannot do without them)
+    if (!assets_.GetEntryByName(assets_.txm_filename) || !assets_.GetEntryByName(assets_.acc_filename)) {
+        error = "no " + assets_.txm_filename + " or " + assets_.acc_filename + " in the TRE (TEXTURES.TRE)";
+        return false;
+    }
     area_ = std::make_unique<RSArea>();
     area_->InitFromPAKFileName(entry.terrain.c_str());
     buildTerrain();
@@ -447,6 +452,7 @@ void WorldScene::buildForests() {
             parts[sp][level] = r4::scene::collectParts(*renderer_.upload(*model));
         }
     forestNodes_.resize(chunks.size());
+    std::map<std::pair<int, int>, std::shared_ptr<r4::scene::Group>> blocks;
     for (size_t i = 0; i < chunks.size(); i++) {
         ForestNode &f = forestNodes_[i];
         f.chunk = std::move(chunks[i]);
@@ -473,7 +479,17 @@ void WorldScene::buildForests() {
             f.chunk.trees[sp].clear();
         }
         lod->addChild(group);
-        forests_->addChild(lod);
+        // the chunks by block of the terrain (20 km): a few nodes tested
+        // against the view, then the chunks of the blocks in it
+        int bx = (int)(f.chunk.cx * forestSettings_.chunk / BLOCK_WIDTH),
+            bz = (int)(f.chunk.cz * forestSettings_.chunk / BLOCK_WIDTH);
+        auto &block = blocks[{bx, bz}];
+        if (!block) {
+            block = r4::scene::make<r4::scene::Group>();
+            block->setName("trees of block " + std::to_string(bx) + "," + std::to_string(bz));
+            forests_->addChild(block);
+        }
+        block->addChild(lod);
     }
     forestChunks = forestNodes_.size();
 }

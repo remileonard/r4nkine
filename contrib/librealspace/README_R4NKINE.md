@@ -67,7 +67,12 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
    r4objviewer -data /chemin/vers/les/TRE [-object F-16DES] [-tre TOBIGTRE.TRE] [-textures]
    r4objviewer -data /chemin/vers/les/TRE -mission MISN-A1 [-focus TOWB24] [-distance 2500] [-graph]
    ```
-   - Sans `-tre`, le viewer ouvre `TOBIGTRE.TRE` s'il existe, sinon `OBJECTS.TRE` et `MISC.TRE`.
+   - **Les jeux** : sans `-tre`, le viewer ouvre chaque jeu présent **seul**, car les deux ont des fichiers différents sous les mêmes noms (301 objets, la palette, les polices) :
+     - `BIGTRE.TRE` pour Strike Commander. Ses textures du terrain (TXMPACK, ACCPACK) sont dans `TEXTURES.TRE`. Sans ce fichier, celles de `TOBIGTRE.TRE` les remplacent : il est ouvert en second et ne fournit que les fichiers absents de BIGTRE. Ses objets et ses missions ne sont pas listés.
+     - `TOBIGTRE.TRE` pour Tactical Operations.
+     - Sans aucun des deux, `OBJECTS.TRE` et `MISC.TRE`.
+
+     Le menu **Game** en haut à gauche passe d'un jeu à l'autre et refait tout (palette, objets, missions). La fenêtre reste ouverte. `-game sc|to` choisit le jeu au départ ; avec `-mission`, c'est le jeu qui a cette mission qui est ouvert. Sans les textures du terrain, une mission est refusée avec un message au lieu de planter RSArea.
    - En haut à gauche, **Mode** : *Objects* (un objet à la fois) ou *Missions*.
    - Mode **Missions** :
      - la liste ne montre que les missions et les mondes dont le terrain (`<tera>.PAK`) est dans le dossier `-data` ;
@@ -247,6 +252,11 @@ Le placement des parts reprend `SCMission::loadMission` et `SCMissionScene::spaw
   - les objets sont posés sur le terrain.
 
   Aucune mission de TOBIGTRE.TRE n'utilise la Turquie.
+- Avec `BIGTRE.TRE` (Strike Commander, textures du terrain prises dans TOBIGTRE.TRE), `MAURITAN.PAK` et `TURKEY.PAK`, on obtient 11 missions et mondes : MISN-1A à 2A, 12A/B, 14A/B, MAURITAN, TURKEY et TURKEY2.
+  - MISN-1A : 31 objets de carte et 9 parts.
+  - Nouakchott, avec son centre-ville, ses maisons et son port, et 28 fermes autour ; 3 074 bâtiments en tout.
+  - 2,5 millions d'arbres, plantés en environ 1,4 s.
+  - Les forêts sont en carrés de 2 km groupés par bloc : la culture passe de 23 à 5 ms sur cette carte.
 - Avec `SYRIA.PAK`, MISN-A1 (la première mission de Tactical Operations) montre :
   - les deux pistes (236 triangles d'overlay) ;
   - les 41 parts réparties dans 10 scènes, plus 8 sans scène ;

@@ -95,7 +95,9 @@ struct ForestSettings {
     std::map<int, float> images{{217, 250}, {216, 120}, {218, 300}, {219, 300}};
     // no tree under these: the city, the harbor
     std::set<int> bare{224, 225, 229, 231};
-    float chunk = 5000;
+    // the side of a chunk (a whole number of cells): small, so that the
+    // chunks out of the view are left whole, few trees tested one by one
+    float chunk = 2000;
     std::vector<r4::Vec3> keepOut;                         // x, z, radius (libRealSpace)
     uint32_t seed = 1;
 };

@@ -36,7 +36,8 @@ struct WorldEntry {
 };
 
 // the missions and worlds whose terrain (<tera>.PAK) is in the data folder
-std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &dataDir);
+// (in the first `own` TRE: those of a game, the next ones only complete it)
+std::vector<WorldEntry> listWorlds(AssetManager &assets, const std::string &dataDir, size_t own = 1000);
 
 class WorldScene {
 public:
