@@ -147,6 +147,7 @@ void WorldScene::clear() {
     objects_.clear();
     parts_.clear();
     mapObjects_.clear();
+    placed_.clear();
     mission_.reset();
     area_.reset();
     world_.reset();
@@ -228,13 +229,15 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
         std::string name(o.name, strnlen(o.name, sizeof o.name));
         r4::scene::NodePtr node = object(name, &radius);
         o.entity = entities_.count(name) ? entities_[name].get() : nullptr;
-        r4::Mat4 m = r4bridge::mapObjectMatrix(o);
+        Placed placed{nullptr, o.entity, r4bridge::mapObjectMatrix(o)};
+        r4::Mat4 m = placedMatrix(placed);
         if (node) {
-            auto place = r4::scene::make<r4::scene::Group>();
-            place->setName(name);
-            place->setMatrix(m);
-            place->addChild(node);
-            mapLayer_->addChild(place);
+            placed.node = r4::scene::make<r4::scene::Group>();
+            placed.node->setName(name);
+            placed.node->setMatrix(m);
+            placed.node->addChild(node);
+            mapLayer_->addChild(placed.node);
+            placed_.push_back(placed);
         }
         mapObjects_.push_back({name, r4::transformPoint(r4bridge::realSpaceToR4(), r4::translationOf(m)), radius, node != nullptr});
     }
@@ -358,13 +361,15 @@ void WorldScene::placeParts() {
         } else {
             scenes_[s].parts++;
         }
-        r4::Mat4 m = r4bridge::missionPartMatrix(*part);
+        Placed placed{nullptr, part->entity, r4bridge::missionPartMatrix(*part)};
+        r4::Mat4 m = placedMatrix(placed);
         if (node) {
-            auto place = r4::scene::make<r4::scene::Group>();
-            place->setName(part->member_name);
-            place->setMatrix(m);
-            place->addChild(node);
-            sceneLayers_[s < 0 ? data.scenes.size() : (size_t)s]->addChild(place);
+            placed.node = r4::scene::make<r4::scene::Group>();
+            placed.node->setName(part->member_name);
+            placed.node->setMatrix(m);
+            placed.node->addChild(node);
+            sceneLayers_[s < 0 ? data.scenes.size() : (size_t)s]->addChild(placed.node);
+            placed_.push_back(placed);
         }
         r4::Vec3 at = r4::transformPoint(r4bridge::realSpaceToR4(), r4::translationOf(m));
         std::string label = part->member_name + (part == player ? " (player)" : "");
@@ -372,6 +377,17 @@ void WorldScene::placeParts() {
         if (part == player) {
             start = at;
         }
+    }
+}
+
+r4::Mat4 WorldScene::placedMatrix(const Placed &p) const {
+    return aboveGround_ ? r4bridge::aboveGround(area_.get(), p.entity, p.matrix) : p.matrix;
+}
+
+void WorldScene::setAboveGround(bool on) {
+    aboveGround_ = on;
+    for (const Placed &p : placed_) {
+        p.node->setMatrix(placedMatrix(p));
     }
 }
 

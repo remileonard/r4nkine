@@ -15,6 +15,7 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
+//  -nolift   les objets de la carte et de la mission laissés sous le terrain, là où les données les mettent
 //  -nofog    sans le brouillard, qui commence 120 km et finit 450 km au-delà de la cible
 //  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
 //  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
@@ -292,6 +293,7 @@ int main(int argc, char **argv) {
     bool litTerrainAtStart = false;
     bool shadowsAtStart = false;
     bool fogAtStart = true;
+    bool aboveGroundAtStart = true;
     int forestsAtStart = 2;
     std::string gameAtStart;
     int woodsAtStart = 0;
@@ -335,6 +337,8 @@ int main(int argc, char **argv) {
             shadowsAtStart = true;
         } else if (a == "-nofog") {
             fogAtStart = false;
+        } else if (a == "-nolift") {
+            aboveGroundAtStart = false;
         } else if (a == "-at" && i + 1 < argc) {
             hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
         } else if (a == "-upscale" && i + 1 < argc) {
@@ -573,6 +577,7 @@ int main(int argc, char **argv) {
             bool showMapObjects = true;
             bool showParts = true;
             bool showOverlays = true;
+            bool aboveGround = aboveGroundAtStart;
             bool showForests = true;
             bool showBuildings = true;
             int forests = forestsAtStart;
@@ -613,6 +618,7 @@ int main(int argc, char **argv) {
                 world.showMapObjects(showMapObjects);
                 world.showParts(showParts);
                 world.showOverlays(showOverlays);
+                world.setAboveGround(aboveGround);
                 world.showForests(showForests);
                 world.showBuildings(showBuildings);
                 if (world.hasLight) {
@@ -951,8 +957,7 @@ int main(int argc, char **argv) {
                 }
 
                 gui.beginPanel("view", {(float)win.pointWidth - rightWidth, 0, rightWidth, (float)win.pointHeight}, "r4objviewer");
-                gui.toggle("Scene Graph", showGraph);
-                if (showGraph) {
+                if (gui.section("Scene Graph", showGraph)) {
                     r4::scene::Node &shown = mode == 1 && currentWorld >= 0 ? *world.root() : *root;
                     r4::Vec3 center;
                     float radius = 0;
@@ -1115,6 +1120,9 @@ int main(int argc, char **argv) {
                         if (gui.toggle("Buildings", showBuildings)) {
                             world.showBuildings(showBuildings);
                         }
+                        if (gui.toggle("Above Ground", aboveGround)) {
+                            world.setAboveGround(aboveGround);
+                        }
                         gui.columns(1);
                         if (gui.menu("Forest Source", woods, {"Green Terrain + Noise", "Woods of the Textures"})) {
                             world.setForestMode((r4bridge::ForestMode)woods);
@@ -1221,6 +1229,7 @@ int main(int argc, char **argv) {
                 renderer.setWireframe(wireframe);
                 r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
                 renderer.setTarget(rt);
+                env.time = SDL_GetTicks() / 1000.0f;
                 renderer.render(showWorld ? *world.root() : *root, camera, vx, 0, vw, win.height);
                 renderer.setTarget({});
                 post.end(0, 0, win.width, win.height, win.width, win.height);

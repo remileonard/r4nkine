@@ -77,6 +77,9 @@ struct Material {
     // indexImage as a grid of equal cells, columns x rows; the cell of a vertex is the green + 256 x blue of its color, the log2 of the width and height of its image in that cell the low and high nibbles of its alpha
     int indexAtlasColumns = 0;
     int indexAtlasRows = 0;
+    // diffuseImage as frames stacked from top to bottom, shown in turn
+    int frames = 1;
+    float framesPerSecond = 0;
 };
 
 enum class Primitive {

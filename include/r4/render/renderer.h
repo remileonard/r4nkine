@@ -58,6 +58,7 @@ struct Environment {
     Vec3 fogColor{0.6f, 0.65f, 0.75f};
     float fogStart = 100;
     float fogEnd = 1000;
+    float time = 0; // seconds, for the animated textures
 };
 
 struct RenderOptions {

@@ -23,6 +23,9 @@ namespace r4bridge {
 
 namespace {
 
+// SCRenderer::drawModel shows the next frame every 10 draws of the object: 6 a second at 60 Hz
+constexpr float kAnimationFramesPerSecond = 6;
+
 // a palette color as R4nkine's RGBA (R in the low byte)
 uint32_t rgba(const Texel &t, uint8_t alpha = 255) {
     return (uint32_t)t.r | (uint32_t)t.g << 8 | (uint32_t)t.b << 16 | (uint32_t)alpha << 24;
@@ -252,7 +255,7 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         Image img;
         img.name = src->name;
         img.width = (int)src->width;
-        img.height = (int)src->height;
+        img.height = (int)src->height * std::max<int>(1, src->nbframes);
         img.channels = 4;
         img.pixels.resize((size_t)img.width * img.height * 4);
         for (int y = 0; y < img.height; y++) {
@@ -270,6 +273,8 @@ std::shared_ptr<r4::assets::Model> toModel(RSEntity *e, const VGAPalette &palett
         Material m;
         m.name = std::string(e->images[texture]->name) + (replaces ? "" : " (decal)") + (twoSided ? ", two-sided" : "");
         m.diffuseImage = textureImage[texture];
+        m.frames = std::max<int>(1, e->images[texture]->nbframes);
+        m.framesPerSecond = kAnimationFramesPerSecond;
         m.rampTextured = true;
         m.alpha = AlphaMode::BLEND;
         m.alphaTest = 0.1f;

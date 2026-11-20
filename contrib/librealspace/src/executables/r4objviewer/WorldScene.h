@@ -64,6 +64,11 @@ public:
     void showMapObjects(bool on);
     void showParts(bool on);
     void showOverlays(bool on);
+    // the map objects and mission parts raised over the terrain where they would stand under it (r4bridge::aboveGround)
+    void setAboveGround(bool on);
+    bool aboveGround() const {
+        return aboveGround_;
+    }
     void showForests(bool on);
     void showBuildings(bool on);
     size_t buildings = 0; // in the cities
@@ -137,6 +142,14 @@ private:
     std::unique_ptr<RSMission> mission_;
     std::unique_ptr<RSWorld> world_;
     std::unique_ptr<RSArea> area_;
+    struct Placed {
+        std::shared_ptr<r4::scene::Group> node;
+        const RSEntity *entity;
+        r4::Mat4 matrix;
+    };
+    std::vector<Placed> placed_;
+    bool aboveGround_ = true;
+    r4::Mat4 placedMatrix(const Placed &p) const;
     std::map<std::string, std::unique_ptr<RSEntity>> entities_;
     std::map<std::string, r4::scene::NodePtr> objects_;
     std::shared_ptr<r4::scene::Group> root_;

@@ -8,6 +8,7 @@
 #include "R4World.h"
 
 #include "../realspace/RSArea.h"
+#include "../realspace/RSEntity.h"
 #include "../realspace/RSImage.h"
 #include "../realspace/RSMission.h"
 #include "../engine/Texture.h"
@@ -1036,6 +1037,31 @@ r4::Mat4 mapObjectMatrix(const MapObject &object) {
 
 r4::Mat4 missionPartMatrix(const MISN_PART &part) {
     return r4::translate({part.position.x, part.position.y, part.position.z}) * r4::rotate(r4::radians(360.0f - (float)part.azymuth + 90.0f), {0, 1, 0}) * r4::rotate(r4::radians((float)part.pitch), {0, 0, 1}) * r4::rotate(r4::radians(-(float)part.roll), {1, 0, 0});
+}
+
+r4::Mat4 aboveGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix) {
+    const float x = matrix[3].x;
+    const float z = matrix[3].z;
+    const bool onMap = std::abs(x) < kMapHalf && std::abs(z) < kMapHalf;
+    if (!area || !entity || entity->vertices.empty() || !onMap) {
+        return matrix;
+    }
+    float lowest = 0;
+    bool first = true;
+    for (const Point3D &v : entity->vertices) {
+        float y = (matrix * r4::Vec4(v.x, v.y, v.z, 1)).y;
+        if (first || y < lowest) {
+            lowest = y;
+            first = false;
+        }
+    }
+    const float ground = area->getY(x, z);
+    if (lowest >= ground) {
+        return matrix;
+    }
+    r4::Mat4 lifted = matrix;
+    lifted[3].y += ground - lowest;
+    return lifted;
 }
 
 namespace {

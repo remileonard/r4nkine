@@ -19,6 +19,7 @@
 #include <vector>
 
 class RSArea;
+class RSEntity;
 struct MapObject;
 struct MISN_PART;
 struct VGAPalette;
@@ -111,5 +112,8 @@ r4::Mat4 mapObjectMatrix(const MapObject &object);
 
 // as SCRenderer::renderMissionObjects
 r4::Mat4 missionPartMatrix(const MISN_PART &part);
+
+// the matrix raised so that the lowest vertex of the entity, turned by it, is not under the ground of the area at its origin
+r4::Mat4 aboveGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix);
 
 } // namespace r4bridge

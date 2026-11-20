@@ -29,6 +29,7 @@ struct FrameBlock {
     float lightViewProj[16]; // world to the shadow map
     float shadowParams[4];   // enabled, normal offset (world), depth bias, strength of the unlit
     float shadowParams2[4];  // a texel of the map (uv)
+    float time[4];           // seconds
 };
 
 struct MaterialBlock {
@@ -40,6 +41,7 @@ struct MaterialBlock {
     float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
     float flags3[4]; // receives the shadows, drawn over the face of the same depth, index atlas columns and rows
     float textureMean[4];
+    float animation[4]; // frames, frames per second
 };
 
 const char *kVertexShader = R"(#version 330
@@ -56,6 +58,7 @@ layout(std140) uniform Frame {
     mat4 lightViewProj;
     vec4 shadowParams;
     vec4 shadowParams2;
+    vec4 time;
 };
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -74,6 +77,7 @@ layout(std140) uniform Material {
     vec4 flags2;
     vec4 flags3;
     vec4 textureMean;
+    vec4 animation;
 };
 out vec3 vNormal;
 out vec3 vPosition;
@@ -121,6 +125,7 @@ layout(std140) uniform Frame {
     mat4 lightViewProj;
     vec4 shadowParams;
     vec4 shadowParams2;
+    vec4 time;
 };
 layout(std140) uniform Material {
     vec4 diffuse;
@@ -131,6 +136,7 @@ layout(std140) uniform Material {
     vec4 flags2;
     vec4 flags3;
     vec4 textureMean;
+    vec4 animation;
 };
 uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
@@ -229,6 +235,12 @@ void main() {
         float m = 2.0 * sqrt(r.x * r.x + r.y * r.y + (r.z + 1.0) * (r.z + 1.0));
         uv = r.xy / m + 0.5;
     }
+    if (animation.x > 1.5) {
+        float frame = mod(floor(time.x * animation.y), animation.x);
+        float halfTexel = 0.5 / float(textureSize(diffuseMap, 0).y);
+        float bottom = (animation.x - 1.0 - frame) / animation.x;
+        uv.y = clamp(bottom + clamp(uv.y, 0.0, 1.0) / animation.x, bottom + halfTexel, bottom + 1.0 / animation.x - halfTexel);
+    }
     bool lit = options.y > 0.5 && dot(vNormal, vNormal) > 1e-12;
     if (flags2.y > 2.5) {
         if (options.x < 0.5) {
@@ -317,6 +329,7 @@ layout(std140) uniform Frame {
     mat4 lightViewProj;
     vec4 shadowParams;
     vec4 shadowParams2;
+    vec4 time;
 };
 layout(location = 0) in vec3 inPosition;
 layout(location = 4) in vec4 inModel0;
@@ -575,6 +588,8 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
         mean = it->second;
     }
     copyVec(b.textureMean, Vec3{mean.x, mean.y, mean.z}, mean.w);
+    b.animation[0] = (float)std::max(1, p.frames);
+    b.animation[1] = p.framesPerSecond;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -854,6 +869,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.fogParams[0] = env_.fogStart;
     fb.fogParams[1] = env_.fogEnd;
     fb.fogParams[2] = env_.fog ? 1.0f : 0.0f;
+    fb.time[0] = env_.time;
     fb.options[0] = options_.textures && !wireframe_ ? 1.0f : 0.0f;
     fb.options[1] = options_.lighting ? 1.0f : 0.0f;
     fb.options[2] = options_.flatShading ? 1.0f : 0.0f;

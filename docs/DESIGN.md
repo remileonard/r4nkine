@@ -239,6 +239,9 @@ behaviors are kept, translated into the neutral format:
   equal cells: the green and blue of the vertex colors give the cell, its
   alpha the log2 of the width and height of the image in it, and the filter
   stays inside that image.
+- **Animated textures**: `frames` > 1 makes `diffuseImage` a strip of frames
+  from top to bottom, shown in turn at `framesPerSecond` by the time of the
+  environment (`Environment::time`, set by the application).
 - **Without textures** (the textures option off, and always in wireframe), a
   texture is replaced by the mean color of its opaque texels, so the lines
   keep the color of their faces; the layers drawn over a face of the same
