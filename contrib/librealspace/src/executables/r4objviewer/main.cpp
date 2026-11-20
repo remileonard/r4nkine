@@ -15,7 +15,7 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
-//  -nolift   les objets de la carte et de la mission laissés sous le terrain, là où les données les mettent
+//  -nolift   les objets de la carte et de la mission laissés à la hauteur des données, au lieu d'être posés sur le terrain
 //  -nofog    sans le brouillard, qui commence 120 km et finit 450 km au-delà de la cible
 //  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
 //  -upscale N les textures agrandies une fois : 0 non, 1 2xSaI, 2 xBR 2x, 3 xBR 4x
@@ -293,7 +293,7 @@ int main(int argc, char **argv) {
     bool litTerrainAtStart = false;
     bool shadowsAtStart = false;
     bool fogAtStart = true;
-    bool aboveGroundAtStart = true;
+    bool onGroundAtStart = true;
     int forestsAtStart = 2;
     std::string gameAtStart;
     int woodsAtStart = 0;
@@ -338,7 +338,7 @@ int main(int argc, char **argv) {
         } else if (a == "-nofog") {
             fogAtStart = false;
         } else if (a == "-nolift") {
-            aboveGroundAtStart = false;
+            onGroundAtStart = false;
         } else if (a == "-at" && i + 1 < argc) {
             hasStartAt = std::sscanf(argv[++i], "%f,%f", &startAt[0], &startAt[1]) == 2;
         } else if (a == "-upscale" && i + 1 < argc) {
@@ -577,7 +577,7 @@ int main(int argc, char **argv) {
             bool showMapObjects = true;
             bool showParts = true;
             bool showOverlays = true;
-            bool aboveGround = aboveGroundAtStart;
+            bool onGround = onGroundAtStart;
             bool showForests = true;
             bool showBuildings = true;
             int forests = forestsAtStart;
@@ -618,7 +618,7 @@ int main(int argc, char **argv) {
                 world.showMapObjects(showMapObjects);
                 world.showParts(showParts);
                 world.showOverlays(showOverlays);
-                world.setAboveGround(aboveGround);
+                world.setOnGround(onGround);
                 world.showForests(showForests);
                 world.showBuildings(showBuildings);
                 if (world.hasLight) {
@@ -1120,8 +1120,8 @@ int main(int argc, char **argv) {
                         if (gui.toggle("Buildings", showBuildings)) {
                             world.showBuildings(showBuildings);
                         }
-                        if (gui.toggle("Above Ground", aboveGround)) {
-                            world.setAboveGround(aboveGround);
+                        if (gui.toggle("On Ground", onGround)) {
+                            world.setOnGround(onGround);
                         }
                         gui.columns(1);
                         if (gui.menu("Forest Source", woods, {"Green Terrain + Noise", "Woods of the Textures"})) {

@@ -229,7 +229,7 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
         std::string name(o.name, strnlen(o.name, sizeof o.name));
         r4::scene::NodePtr node = object(name, &radius);
         o.entity = entities_.count(name) ? entities_[name].get() : nullptr;
-        Placed placed{nullptr, o.entity, r4bridge::mapObjectMatrix(o)};
+        Placed placed{nullptr, o.entity, r4bridge::mapObjectMatrix(o), false};
         r4::Mat4 m = placedMatrix(placed);
         if (node) {
             placed.node = r4::scene::make<r4::scene::Group>();
@@ -361,7 +361,8 @@ void WorldScene::placeParts() {
         } else {
             scenes_[s].parts++;
         }
-        Placed placed{nullptr, part->entity, r4bridge::missionPartMatrix(*part)};
+        const bool flies = isAircraft(part) && part->position.y > area_->getY(part->position.x, part->position.z) + 10;
+        Placed placed{nullptr, part->entity, r4bridge::missionPartMatrix(*part), flies};
         r4::Mat4 m = placedMatrix(placed);
         if (node) {
             placed.node = r4::scene::make<r4::scene::Group>();
@@ -381,11 +382,11 @@ void WorldScene::placeParts() {
 }
 
 r4::Mat4 WorldScene::placedMatrix(const Placed &p) const {
-    return aboveGround_ ? r4bridge::aboveGround(area_.get(), p.entity, p.matrix) : p.matrix;
+    return onGround_ ? r4bridge::onGround(area_.get(), p.entity, p.matrix, p.flies) : p.matrix;
 }
 
-void WorldScene::setAboveGround(bool on) {
-    aboveGround_ = on;
+void WorldScene::setOnGround(bool on) {
+    onGround_ = on;
     for (const Placed &p : placed_) {
         p.node->setMatrix(placedMatrix(p));
     }

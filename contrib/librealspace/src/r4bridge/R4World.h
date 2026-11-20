@@ -113,7 +113,10 @@ r4::Mat4 mapObjectMatrix(const MapObject &object);
 // as SCRenderer::renderMissionObjects
 r4::Mat4 missionPartMatrix(const MISN_PART &part);
 
-// the matrix raised so that the lowest vertex of the entity, turned by it, is not under the ground of the area at its origin
-r4::Mat4 aboveGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix);
+// the height of the ground of the area under a point, on the LVL0 triangles as terrainModel draws them; false out of the map
+bool groundHeight(RSArea *area, float x, float z, float &height);
+
+// the matrix moved so that the lowest vertex of the entity, turned by it, is on the ground of the area at its origin; a flying object is only raised
+r4::Mat4 onGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix, bool flies);
 
 } // namespace r4bridge

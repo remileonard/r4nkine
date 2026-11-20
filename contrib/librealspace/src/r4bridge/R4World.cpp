@@ -1039,11 +1039,40 @@ r4::Mat4 missionPartMatrix(const MISN_PART &part) {
     return r4::translate({part.position.x, part.position.y, part.position.z}) * r4::rotate(r4::radians(360.0f - (float)part.azymuth + 90.0f), {0, 1, 0}) * r4::rotate(r4::radians((float)part.pitch), {0, 0, 1}) * r4::rotate(r4::radians(-(float)part.roll), {1, 0, 0});
 }
 
-r4::Mat4 aboveGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix) {
-    const float x = matrix[3].x;
-    const float z = matrix[3].z;
-    const bool onMap = std::abs(x) < kMapHalf && std::abs(z) < kMapHalf;
-    if (!area || !entity || entity->vertices.empty() || !onMap) {
+bool groundHeight(RSArea *area, float x, float z, float &height) {
+    if (!area || std::abs(x) >= kMapHalf || std::abs(z) >= kMapHalf) {
+        return false;
+    }
+    const int side = BLOCK_PER_MAP_SIDE * BLOCK_SIDE_LVL0;
+    const float cell = BLOCK_WIDTH / (float)BLOCK_SIDE_LVL0;
+    auto vertexAt = [&](int gx, int gz) -> const MapVertex * {
+        AreaBlock *b = area->GetAreaBlockByID(0, (gz / BLOCK_SIDE_LVL0) * BLOCK_PER_MAP_SIDE + gx / BLOCK_SIDE_LVL0);
+        return b ? b->GetVertice(gx % BLOCK_SIDE_LVL0, gz % BLOCK_SIDE_LVL0) : nullptr;
+    };
+    const float u = (x + kMapHalf) / cell;
+    const float v = (z + kMapHalf) / cell;
+    const int gx = std::clamp((int)std::floor(u), 0, side - 2);
+    const int gz = std::clamp((int)std::floor(v), 0, side - 2);
+    const MapVertex *current = vertexAt(gx, gz);
+    const MapVertex *right = vertexAt(gx + 1, gz);
+    const MapVertex *bottomRight = vertexAt(gx + 1, gz + 1);
+    const MapVertex *bottom = vertexAt(gx, gz + 1);
+    if (!current || !right || !bottomRight || !bottom) {
+        return false;
+    }
+    const float fx = std::clamp(u - gx, 0.0f, 1.0f);
+    const float fz = std::clamp(v - gz, 0.0f, 1.0f);
+    if (fx >= fz) {
+        height = current->v.y + fx * (right->v.y - current->v.y) + fz * (bottomRight->v.y - right->v.y);
+    } else {
+        height = current->v.y + fz * (bottom->v.y - current->v.y) + fx * (bottomRight->v.y - bottom->v.y);
+    }
+    return true;
+}
+
+r4::Mat4 onGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matrix, bool flies) {
+    float ground = 0;
+    if (!entity || entity->vertices.empty() || !groundHeight(area, matrix[3].x, matrix[3].z, ground)) {
         return matrix;
     }
     float lowest = 0;
@@ -1055,13 +1084,12 @@ r4::Mat4 aboveGround(RSArea *area, const RSEntity *entity, const r4::Mat4 &matri
             first = false;
         }
     }
-    const float ground = area->getY(x, z);
-    if (lowest >= ground) {
+    if (flies && lowest >= ground) {
         return matrix;
     }
-    r4::Mat4 lifted = matrix;
-    lifted[3].y += ground - lowest;
-    return lifted;
+    r4::Mat4 placed = matrix;
+    placed[3].y += ground - lowest;
+    return placed;
 }
 
 namespace {
