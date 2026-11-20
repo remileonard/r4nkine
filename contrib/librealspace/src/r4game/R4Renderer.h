@@ -34,6 +34,17 @@ struct R4Settings {
     r4::assets::Upscale upscale = r4::assets::Upscale::NONE;
     bool mipmaps = false;
     float anisotropy = 1;
+    // the terrain lit by the sun along its ramps, its normals from the relief times terrainRelief, rather than by the light of the data
+    bool sunTerrain = false;
+    float terrainRelief = 4;
+    // the part of their color that the unlit (the terrain of the data, the runways) lose in the shadow
+    float shadowStrength = 0.5f;
+    // the sun of the settings rather than the light of the objects of the game; degrees, the heading from the north towards the east
+    bool sunOverride = false;
+    float sunHeading = 0;
+    float sunElevation = 45;
+    // where the light comes from, in libRealSpace's axes
+    Vector3D sunTowards(const Vector3D &game) const;
     // reads config.ini
     void load();
 };

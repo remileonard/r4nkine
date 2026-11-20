@@ -216,10 +216,20 @@ texture_upscale = none
 texture_mipmaps = false
 ; filtre anisotrope, de 1 à 16
 anisotropy = 1
+; le terrain éclairé par le soleil le long de ses rampes, comme les objets, plutôt que par la lumière des données (-lit de r4objviewer)
+sun_terrain = false
+; multiplie le relief pour les normales seulement, de 1 à 16 (-relief)
+terrain_relief = 4
+; la part de leur couleur que perd dans l'ombre ce qui n'est pas éclairé : terrain des données, pistes (Shadow on Unlit)
+shadow_strength = 0.5
+; le soleil, en degrés : cap depuis le nord vers l'est, hauteur (-sun C E) ; sans ces clés, la lumière des objets du jeu
+; sun_heading = 120
+; sun_elevation = 30
 ```
 
 - Les forêts et les bâtiments viennent de `r4bridge` (`forestChunks`, `plantForest`, `treeModel`, `cityModel`), comme dans r4objviewer. Ils sont faits une fois par zone. Il n'y en a pas sur les pistes, sur les objets de la carte, ni sur les objets de la mission (`R4Strike` donne leur place et leur taille).
 - Les forêts sont des blocs de 2 km : un LOD par bloc, un instancer par espèce, l'arbre complet jusqu'à 1,5 km et l'arbre simple jusqu'à 6 km.
+- Le soleil (`sun_heading`, `sun_elevation`) éclaire les objets et le terrain (`sun_terrain`) et donne la direction des ombres. Sans ces clés, c'est la lumière des objets du jeu (`setObjectLight`), presque verticale : les ombres sont courtes.
 - Les ombres ne sont pas faites dans la vue de la caméra de cible. Sans `tree_shadows`, les forêts (masque `R4Renderer::kForestMask`) sont hors de la passe d'ombre.
 - Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
 - Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.

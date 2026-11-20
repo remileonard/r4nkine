@@ -113,6 +113,22 @@ void R4Settings::load() {
     upscale = it != upscales.end() ? it->second : r4::assets::Upscale::NONE;
     mipmaps = config.getBool("R4nkine", "texture_mipmaps", mipmaps);
     anisotropy = std::clamp(number("anisotropy", anisotropy), 1.0f, 16.0f);
+    sunTerrain = config.getBool("R4nkine", "sun_terrain", sunTerrain);
+    terrainRelief = std::clamp(number("terrain_relief", terrainRelief), 1.0f, 16.0f);
+    shadowStrength = std::clamp(number("shadow_strength", shadowStrength), 0.0f, 1.0f);
+    sunOverride = !config.getString("R4nkine", "sun_heading", "").empty() || !config.getString("R4nkine", "sun_elevation", "").empty();
+    sunHeading = number("sun_heading", sunHeading);
+    sunElevation = std::clamp(number("sun_elevation", sunElevation), -90.0f, 90.0f);
+}
+
+// as the sun of r4objviewer: libRealSpace's -Z is the north, +X the east
+Vector3D R4Settings::sunTowards(const Vector3D &game) const {
+    if (!sunOverride) {
+        return game;
+    }
+    const float h = r4::radians(sunHeading);
+    const float e = r4::radians(sunElevation);
+    return {std::sin(h) * std::cos(e), std::sin(e), -std::cos(h) * std::cos(e)};
 }
 
 bool R4Renderer::BatchKey::operator<(const BatchKey &o) const {
@@ -370,6 +386,8 @@ void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
         r4bridge::TerrainLight light;
         light.ranges = &terrain_ranges;
         light.lighting = lighting;
+        light.dynamic = settings_.sunTerrain;
+        light.relief = settings_.terrainRelief;
         terrain = r4bridge::terrainModel(area, palette, {0, 40000, 100000, 1e30f}, light);
         overlay = r4bridge::overlayModel(area, palette);
     }
@@ -1066,7 +1084,8 @@ void R4Renderer::flush() {
     env.fogStart = this->max_view_distance * 0.40f;
     env.fogEnd = this->max_view_distance * 0.93f;
     env.fogColor = {kFogColor[0], kFogColor[1], kFogColor[2]};
-    r4::Vec3 towards{object_light_direction.x, object_light_direction.y, object_light_direction.z};
+    const Vector3D sun = settings_.sunTowards(object_light_direction);
+    r4::Vec3 towards{sun.x, sun.y, sun.z};
     env.lightDirection = -r4::normalize(towards);
     env.time = (float)SDL_GetTicks() / 1000.0f;
     r4::render::RenderOptions &options = renderer_->options();
@@ -1078,6 +1097,7 @@ void R4Renderer::flush() {
     options.shadowDistance = settings_.shadowDistance;
     options.shadowCasterReach = 8000;
     options.shadowMask = settings_.treeShadows ? 0xffffffffu : ~kForestMask;
+    options.shadowStrength = settings_.shadowStrength;
     renderer_->setTarget(view_.toTexture ? targetView_ : screen->frameTarget());
     renderer_->render(*root_, cam, view_.viewport[0], view_.viewport[1], view_.viewport[2], view_.viewport[3]);
     root_->removeAllChildren();
