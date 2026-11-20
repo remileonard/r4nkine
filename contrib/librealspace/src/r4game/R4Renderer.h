@@ -45,8 +45,34 @@ struct R4Settings {
     float sunElevation = 45;
     // where the light comes from, in libRealSpace's axes
     Vector3D sunTowards(const Vector3D &game) const;
+    // the light of the objects: ambient + direct x max(N.L, 0); without the keys, the one of the game (setObjectLight)
+    bool lightOverride = false;
+    float ambient = 0.375f;
+    float direct = 0.625f;
+    // the fog in km, from the eye; without the keys, the one of the game (0.40 and 0.93 x max_view_distance)
+    bool fogOverride = false;
+    float fogStartKm = 64;
+    float fogEndKm = 149;
+    bool wireframe = false;
+    bool flatShading = false;
+    // multiplies the distances of the LODs of the terrain, of the objects and of the trees
+    float lodScale = 1;
+    // the levels of the terrain: by distance, or one level everywhere
+    enum class TerrainLod {
+        BY_DISTANCE,
+        FINE,
+        MEDIUM,
+        COARSE
+    };
+    TerrainLod terrainLod = TerrainLod::BY_DISTANCE;
+    bool vsync = true;
     // reads config.ini
     void load();
+    // a key of [R4nkine], fallback when it is not there
+    static bool has(const char *key);
+    static float number(const char *key, float fallback);
+    static bool flag(const char *key, bool fallback);
+    static r4::Vec3 color(const char *key, r4::Vec3 fallback);
 };
 
 class R4Renderer : public SCRenderer {
@@ -211,6 +237,8 @@ private:
     r4::scene::NodePtr sky();
     void clearFrame(bool color, bool depth);
     r4::scene::NodePtr makeForests(RSArea *area, size_t &trees);
+    r4bridge::Lighting objectLighting() const;
+    void applyTerrainLod();
 
     std::unique_ptr<r4::render::Renderer> renderer_;
     std::unordered_map<RSEntity *, r4::scene::NodePtr> models_;

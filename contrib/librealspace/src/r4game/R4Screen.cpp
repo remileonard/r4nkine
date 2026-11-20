@@ -8,7 +8,10 @@
 #include "engine/Config.hpp"
 #include "engine/GLExtensions.h"
 
+#include "r4/ui/controls.h"
+
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -34,6 +37,17 @@ r4::raster::Palette cpcPalette() {
         }
     }
     return p;
+}
+
+// "VGA 256" -> "vga256": the names of the palettes in config.ini
+std::string paletteKey(const std::string &name) {
+    std::string key;
+    for (char c : name) {
+        if (c != ' ') {
+            key += (char)std::tolower((unsigned char)c);
+        }
+    }
+    return key;
 }
 
 void *glProc(const char *name) {
@@ -113,7 +127,7 @@ void R4Screen::init(int width, int height, bool fullscreen) {
     if (!initGLExtensions()) {
         std::printf("[R4Screen] the OpenGL extensions of the game are missing\n");
     }
-    SDL_GL_SetSwapInterval(1);
+    SDL_GL_SetSwapInterval(R4Settings::flag("vsync", true) ? 1 : 0);
     std::string error;
     device_ = r4::gpu::createGLDevice(glProc, &error);
     if (!device_) {
@@ -165,6 +179,40 @@ void R4Screen::initPostProcess() {
         s.paletteSize = 27;
         s.dither = false;
     }
+    // the post process of r4objviewer: each key of [R4nkine] replaces the setting of the game
+    s.msaa = std::clamp((int)R4Settings::number("msaa", (float)s.msaa), 1, 8);
+    s.fxaa = R4Settings::flag("fxaa", s.fxaa);
+    s.pixelate = std::clamp((int)R4Settings::number("pixelate", (float)s.pixelate), 1, 16);
+    s.brightness = std::clamp(R4Settings::number("brightness", s.brightness), -1.0f, 1.0f);
+    s.contrast = std::clamp(R4Settings::number("contrast", s.contrast), 0.0f, 4.0f);
+    s.saturation = std::clamp(R4Settings::number("saturation", s.saturation), 0.0f, 4.0f);
+    s.gamma = std::clamp(R4Settings::number("gamma", s.gamma), 0.1f, 4.0f);
+    s.tint = R4Settings::color("tint", s.tint);
+    s.fade = std::clamp(R4Settings::number("fade", s.fade), 0.0f, 1.0f);
+    s.fadeColor = R4Settings::color("fade_color", s.fadeColor);
+    std::string palette = config.getString("R4nkine", "palette", "");
+    if (palette == "none") {
+        s.quantize = false;
+    } else if (palette == "cpc27") {
+        s.quantize = true;
+        s.palette = cpcPalette();
+        s.paletteSize = 27;
+    } else if (!palette.empty()) {
+        for (const r4::ui::NamedPalette &preset : r4::ui::palettePresets()) {
+            if (paletteKey(preset.name) == palette) {
+                s.quantize = true;
+                s.palette = preset.palette;
+                s.paletteSize = preset.size;
+            }
+        }
+    }
+    s.dither = R4Settings::flag("dither", s.dither);
+    s.scanlines = R4Settings::flag("scanlines", s.scanlines);
+    s.scanlineStrength = std::clamp(R4Settings::number("scanline_strength", s.scanlineStrength), 0.0f, 1.0f);
+    s.scanlineSize = std::clamp(R4Settings::number("scanline_size", s.scanlineSize), 1.0f, 8.0f);
+    s.curvature = std::clamp(R4Settings::number("curvature", s.curvature), 0.0f, 0.3f);
+    s.aberration = std::clamp(R4Settings::number("aberration", s.aberration), 0.0f, 4.0f);
+    s.vignette = std::clamp(R4Settings::number("vignette", s.vignette), 0.0f, 1.0f);
 }
 
 void R4Screen::beginFrame() {

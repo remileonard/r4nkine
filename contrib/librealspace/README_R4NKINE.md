@@ -225,15 +225,52 @@ shadow_strength = 0.5
 ; le soleil, en degrés : cap depuis le nord vers l'est, hauteur (-sun C E) ; sans ces clés, la lumière des objets du jeu
 ; sun_heading = 120
 ; sun_elevation = 30
+; la lumière des objets (ambiante + directe x N.L) ; sans ces clés, celle du jeu (Ambient, Light)
+; light_ambient = 0.375
+; light_direct = 0.625
+; le brouillard en km depuis l'œil ; sans ces clés, celui du jeu (0,40 et 0,93 x max_view_distance) ; show_fog de [Game] l'active
+; fog_start = 64
+; fog_end = 149
+; Wireframe, Flat Shading
+wireframe = false
+flat_shading = false
+; multiplie les distances des LOD du terrain, des objets et des arbres (LOD Scale, 0,05 à 4)
+lod_scale = 1
+; distance (par la distance), fine, medium ou coarse (Terrain Detail)
+terrain_lod = distance
+vsync = true
+
+; le post-process de r4objviewer ; chaque clé présente remplace le réglage du jeu (fx_* de [video], msaa de [Video])
+; msaa = 1               ; 1, 2, 4 ou 8
+; fxaa = false
+; pixelate = 1           ; l'image dessinée comme si elle était N fois moins large
+; brightness = 0         ; -1 à 1
+; contrast = 1
+; saturation = 1         ; 0 : gris
+; gamma = 1
+; tint = 1, 1, 1         ; r, g, b de 0 à 1, multipliés
+; fade = 0               ; 0 à 1 vers fade_color
+; fade_color = 0, 0, 0
+; palette = none         ; none, vga256, ega16, cga4, handheld4, amber8, grey16 ou cpc27 (Reduce to a Palette)
+; dither = true          ; Bayer 4 x 4 avec la palette
+; scanlines = false
+; scanline_strength = 0.35
+; scanline_size = 3      ; pixels par ligne
+; curvature = 0          ; 0 à 0,3
+; aberration = 0         ; pixels, aux bords
+; vignette = 0           ; 0 à 1
 ```
+
+Les réglages de r4objviewer qui ne sont pas ici : **Textures** et **Gouraud by Vertex** sont `show_texture` et `object_gouraud` de `[Game]`, **Fog** est `show_fog` de `[Game]`. Le mode, la caméra, la navigation, les couches (terrain, pistes, objets, parties), Follow the Ground, On Ground et `-nolift` sont propres au viewer : dans le jeu, c'est lui qui place sa caméra et ses objets.
 
 - Les forêts et les bâtiments viennent de `r4bridge` (`forestChunks`, `plantForest`, `treeModel`, `cityModel`), comme dans r4objviewer. Ils sont faits une fois par zone. Il n'y en a pas sur les pistes, sur les objets de la carte, ni sur les objets de la mission (`R4Strike` donne leur place et leur taille).
 - Les forêts sont des blocs de 2 km : un LOD par bloc, un instancer par espèce, l'arbre complet jusqu'à 1,5 km et l'arbre simple jusqu'à 6 km.
 - Le soleil (`sun_heading`, `sun_elevation`) éclaire les objets et le terrain (`sun_terrain`) et donne la direction des ombres. Sans ces clés, c'est la lumière des objets du jeu (`setObjectLight`), presque verticale : les ombres sont courtes.
+- En fil de fer, le dôme du ciel et les nuages sont aussi en lignes : ce sont des maillages, alors que le ciel de r4objviewer est la couleur du fond.
 - Les ombres ne sont pas faites dans la vue de la caméra de cible. Sans `tree_shadows`, les forêts (masque `R4Renderer::kForestMask`) sont hors de la passe d'ombre.
 - Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
 - Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.
-- Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, et une vue proche où le F-16 et le char projettent leur ombre sur le terrain.
+- Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, une vue proche où le F-16 et le char projettent leur ombre sur le terrain, puis le post-process (MSAA 4x, FXAA, palette EGA tramée, scanlines, courbure, vignette, aberration ; luminosité, contraste, saturation, gamma, fondu), le fil de fer, le rendu plat avec une autre lumière, le terrain grossier avec `lod_scale` 0,2 et un brouillard de 0,2 à 1,5 km.
 ## Ce qu'il faut regarder pour apprendre R4nkine
 
 Le viewer suit les étapes d'un programme R4nkine, numérotées dans `main.cpp`.

@@ -93,12 +93,31 @@ r4::Vec3 skyColor(float t) {
 
 } // namespace
 
+bool R4Settings::has(const char *key) {
+    return !Config::getInstance().getString("R4nkine", key, "").empty();
+}
+
+float R4Settings::number(const char *key, float fallback) {
+    std::string v = Config::getInstance().getString("R4nkine", key, "");
+    return v.empty() ? fallback : (float)std::atof(v.c_str());
+}
+
+bool R4Settings::flag(const char *key, bool fallback) {
+    return Config::getInstance().getBool("R4nkine", key, fallback);
+}
+
+// r, g, b from 0 to 1, separated by commas
+r4::Vec3 R4Settings::color(const char *key, r4::Vec3 fallback) {
+    std::string v = Config::getInstance().getString("R4nkine", key, "");
+    r4::Vec3 c = fallback;
+    if (std::sscanf(v.c_str(), "%f , %f , %f", &c.x, &c.y, &c.z) != 3) {
+        return fallback;
+    }
+    return c;
+}
+
 void R4Settings::load() {
     Config &config = Config::getInstance();
-    auto number = [&](const char *key, float fallback) {
-        std::string v = config.getString("R4nkine", key, "");
-        return v.empty() ? fallback : (float)std::atof(v.c_str());
-    };
     shadows = config.getBool("R4nkine", "shadows", shadows);
     shadowMapSize = std::clamp(config.getInt("R4nkine", "shadow_map_size", shadowMapSize), 256, 8192);
     shadowDistance = std::max(100.0f, number("shadow_distance", shadowDistance));
@@ -119,6 +138,19 @@ void R4Settings::load() {
     sunOverride = !config.getString("R4nkine", "sun_heading", "").empty() || !config.getString("R4nkine", "sun_elevation", "").empty();
     sunHeading = number("sun_heading", sunHeading);
     sunElevation = std::clamp(number("sun_elevation", sunElevation), -90.0f, 90.0f);
+    lightOverride = has("light_ambient") || has("light_direct");
+    ambient = std::clamp(number("light_ambient", ambient), 0.0f, 1.0f);
+    direct = std::clamp(number("light_direct", direct), 0.0f, 1.0f);
+    fogOverride = has("fog_start") || has("fog_end");
+    fogStartKm = std::max(0.0f, number("fog_start", fogStartKm));
+    fogEndKm = std::max(fogStartKm + 1, number("fog_end", fogEndKm));
+    wireframe = flag("wireframe", wireframe);
+    flatShading = flag("flat_shading", flatShading);
+    lodScale = std::clamp(number("lod_scale", lodScale), 0.05f, 4.0f);
+    const std::map<std::string, TerrainLod> lods{{"distance", TerrainLod::BY_DISTANCE}, {"fine", TerrainLod::FINE}, {"medium", TerrainLod::MEDIUM}, {"coarse", TerrainLod::COARSE}};
+    auto lod = lods.find(config.getString("R4nkine", "terrain_lod", "distance"));
+    terrainLod = lod != lods.end() ? lod->second : TerrainLod::BY_DISTANCE;
+    vsync = flag("vsync", vsync);
 }
 
 // as the sun of r4objviewer: libRealSpace's -Z is the north, +X the east
@@ -334,15 +366,50 @@ void R4Renderer::setObjectLight(int ambient_weight, int light_weight, int c0, in
     }
 }
 
+r4bridge::Lighting R4Renderer::objectLighting() const {
+    r4bridge::Lighting lighting;
+    lighting.ambient = settings_.lightOverride ? settings_.ambient : object_light_ambient;
+    lighting.light = settings_.lightOverride ? settings_.direct : object_light_share;
+    return lighting;
+}
+
+// as the Terrain Detail of r4objviewer: the blocks are the LODs of 3 or 4 levels, the quadtree the LODs of 2 children
+void R4Renderer::applyTerrainLod() {
+    if (!terrain_ || settings_.terrainLod == R4Settings::TerrainLod::BY_DISTANCE) {
+        return;
+    }
+    const int level = (int)settings_.terrainLod - 1;
+    std::vector<r4::scene::Node *> stack{terrain_.get()};
+    while (!stack.empty()) {
+        r4::scene::Node *n = stack.back();
+        stack.pop_back();
+        if (n->type() == r4::scene::NodeType::LOD) {
+            auto *lod = static_cast<r4::scene::LOD *>(n);
+            if (lod->children().size() == 2) {
+                // the merged mesh of the far groups only with the coarse level
+                const bool coarse = settings_.terrainLod == R4Settings::TerrainLod::COARSE;
+                lod->setRanges({0, coarse ? 0.0f : 1e30f, 1e30f});
+            } else {
+                std::vector<float> ranges = lod->ranges();
+                for (size_t i = 0; i < ranges.size(); i++) {
+                    ranges[i] = (int)i <= level ? 0.0f : 1e30f;
+                }
+                lod->setRanges(ranges);
+            }
+        }
+        for (const auto &c : n->children()) {
+            stack.push_back(c.get());
+        }
+    }
+}
+
 r4::scene::NodePtr R4Renderer::modelOf(RSEntity *object) {
     auto it = models_.find(object);
     if (it != models_.end()) {
         return it->second;
     }
     r4::scene::NodePtr node;
-    r4bridge::Lighting lighting;
-    lighting.ambient = object_light_ambient;
-    lighting.light = object_light_share;
+    r4bridge::Lighting lighting = objectLighting();
     auto model = renderer_ ? r4bridge::toModel(object, palette, terrain_ranges, lighting, r4bridge::Axes::REAL_SPACE) : nullptr;
     if (model) {
         R4Screen *screen = R4Screen::current();
@@ -377,9 +444,7 @@ void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
     if (!area) {
         return;
     }
-    r4bridge::Lighting lighting;
-    lighting.ambient = object_light_ambient;
-    lighting.light = object_light_share;
+    r4bridge::Lighting lighting = objectLighting();
     std::shared_ptr<r4::assets::Model> terrain;
     std::shared_ptr<r4::assets::Model> overlay;
     if (newArea) {
@@ -401,6 +466,7 @@ void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
     screen->device().beginHostInterop();
     if (terrain) {
         terrain_ = renderer_->upload(*terrain);
+        applyTerrainLod();
     }
     if (overlay) {
         overlay_ = renderer_->upload(*overlay);
@@ -433,9 +499,7 @@ r4::scene::NodePtr R4Renderer::makeForests(RSArea *area, size_t &trees) {
     if (chunks.empty() || fs.density <= 0) {
         return nullptr;
     }
-    r4bridge::Lighting lighting;
-    lighting.ambient = object_light_ambient;
-    lighting.light = object_light_share;
+    r4bridge::Lighting lighting = objectLighting();
     R4Screen *screen = R4Screen::current();
     std::vector<r4::scene::InstancePart> parts[r4bridge::TREE_SPECIES_COUNT][2];
     screen->device().beginHostInterop();
@@ -1081,8 +1145,8 @@ void R4Renderer::flush() {
     cam.zfar = (float)this->max_view_distance * 1.2f;
     r4::render::Environment &env = renderer_->environment();
     env.fog = show_fog;
-    env.fogStart = this->max_view_distance * 0.40f;
-    env.fogEnd = this->max_view_distance * 0.93f;
+    env.fogStart = settings_.fogOverride ? settings_.fogStartKm * 1000.0f : this->max_view_distance * 0.40f;
+    env.fogEnd = settings_.fogOverride ? settings_.fogEndKm * 1000.0f : this->max_view_distance * 0.93f;
     env.fogColor = {kFogColor[0], kFogColor[1], kFogColor[2]};
     const Vector3D sun = settings_.sunTowards(object_light_direction);
     r4::Vec3 towards{sun.x, sun.y, sun.z};
@@ -1092,6 +1156,9 @@ void R4Renderer::flush() {
     options.clear = false;
     options.textures = show_textured;
     options.rampGouraud = object_gouraud;
+    options.flatShading = settings_.flatShading;
+    options.lodScale = settings_.lodScale;
+    renderer_->setWireframe(settings_.wireframe);
     options.shadows = settings_.shadows && !view_.toTexture;
     options.shadowMapSize = settings_.shadowMapSize;
     options.shadowDistance = settings_.shadowDistance;
