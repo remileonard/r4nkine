@@ -24,17 +24,19 @@ The name comes from the Rankine scale. The Rankine scale is the absolute version
 apps      r4fly (the viewer, after perfly), demos
 ui        the panels of Performer: buttons, switches, sliders, menus, trees
 raster    2D on the CPU: indexed or true-color surfaces, primitives, fonts
-render    cull → draw list → sort → batch/instance → passes; materials;
-          overlays (raster surfaces), post process (MSAA, FXAA, CRT, palette)
+render    cull → shadow pass → draw list → sort → batch/instance → passes;
+          materials; fog; overlays (raster surfaces), post process (MSAA,
+          FXAA, CRT, palette)
 scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
-terrain   (not done) blocks, LOD, seams, placement rules
 assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
           YAODL, flip .bin, pfb, dwb, OpenFlight, gset, glTF 2.0; SGI,
-          PPM, 5551E, PNG/JPEG/BMP/TGA/GIF (not done: RealSpace IFF)
+          PPM, 5551E, PNG/JPEG/BMP/TGA/GIF; pixel art scalers (2xSaI, xBR)
 gpu       Device: buffers, textures, shaders, pipelines, draws
           backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (not done)
 core      math: glm (Vec3, Mat4, column-major), Box, Sphere, Frustum
 ```
+
+The RealSpace data (Strike Commander, Tactical Operations) is not in these layers. libRealSpace reads it. `contrib/librealspace` converts it into R4nkine models (r4bridge) and shows it (r4objviewer). Refer to "RealSpace (`contrib/librealspace`)".
 
 ## Dependencies
 
@@ -89,14 +91,27 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
    - When a node is outside, the renderer ignores the node and its subtree.
    - A Switch goes into its active children. A LOD goes into the child for the distance to the eye.
    - The renderer ignores a node when its mask has no bit of the camera mask.
-2. **Draw list**: each visible drawable becomes an item. The item contains the mesh, the material, the world matrix, the depth and the pipeline.
-3. **Sort**: the renderer sorts the opaque items by pipeline, then by material, then by mesh. This decreases the number of state changes. It sorts the transparent items from back to front.
-4. **Upload**: the model matrices of all the items go into one vertex buffer. The renderer uploads this buffer one time for each frame. The shader reads the matrices as a per-instance stream (locations 4 to 7). The shader calculates the normal matrix.
-5. **Draw**: consecutive items with the same mesh, material and pipeline become one instanced draw. The draw starts at their offset in the matrix buffer. The device does not bind again a binding that did not change.
+2. **Shadow pass** (when `RenderOptions::shadows` is on):
+   - The renderer makes one shadow map: an orthographic view from the light. It covers the view up to `shadowDistance`, and the casters up to `shadowCasterReach` in the direction of the light.
+   - The view moves by complete texels of the map. Thus, the shadows do not shimmer when the camera moves.
+   - The renderer culls the graph again from the light, with the camera mask and `shadowMask`.
+   - The casters are the opaque items of the materials with `castShadows`.
+   - The receivers compare their depth with a 3 x 3 PCF filter. A normal offset and a bias prevent shadow acne. The shadow fades at the end of `shadowDistance`.
+   - The lit materials lose the direct light in the shadow. The unlit materials lose `shadowStrength` of their color.
+3. **Draw list**: each visible drawable becomes an item. The item contains the mesh, the material, the world matrix, the depth and the pipeline.
+4. **Sort**: the renderer sorts the opaque items by pipeline, then by material, then by mesh. This decreases the number of state changes. It sorts the transparent items from back to front.
+5. **Upload**: the model matrices of all the items go into one vertex buffer. The renderer uploads this buffer one time for each frame. The shader reads the matrices as a per-instance stream (locations 4 to 7). The shader calculates the normal matrix.
+6. **Draw**: consecutive items with the same mesh, material and pipeline become one instanced draw. The draw starts at their offset in the matrix buffer. The device does not bind again a binding that did not change.
 
 **Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
 
-**Instancers**: an instancer has levels and a list of instance matrices. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
+**Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
+
+An instance is a matrix or a `Placement`. A `Placement` is a position, a heading, a scale and a vertical scale: 24 bytes instead of 64. The forests use placements. `Instancer::setUp` sets the up axis of the placements.
+
+**Fog**: `Environment` has a linear fog (`fogStart`, `fogEnd`, `fogColor`). It applies to all the materials. The application can set the far plane just after `fogEnd`. Thus, the depth buffer keeps its precision.
+
+**Time**: `Environment::time` gives the time in seconds. The application sets it. The animated textures use it.
 
 **Bounds**: the renderer calculates the bounds only when it needs them. A change to a node (matrix, children, drawables) sets a flag on the node and on its ancestors. The next call to `bounds()` calculates only the nodes with the flag. Thus, you can add or remove nodes at run time without full updates.
 
@@ -112,6 +127,12 @@ The GUI looks like the GUI of IRIS Performer (libpfutil), as the perfly port in 
 The model is immediate. Each frame, the program calls the widgets with its own variables. The widgets tell the changes.
 
 The CPU builds a frame into one vertex buffer. The buffer contains rectangles, triangles and glyphs. They all use one texture: the font atlas and a white texel. The GPU draws the frame with one pipeline and a small number of draws. The scissor clips the draws to the panels. When the widgets of a panel are taller than the panel, the wheel scrolls the panel.
+
+## Texture quality
+
+- **Scalers**: `r4/assets/upscale.h` enlarges an image one time when it loads: 2xSaI, xBR 2x, xBR 4x. The alpha counts as a color. Thus, the clear holes keep sharp edges.
+- **Mipmaps**: `Image::mipmaps` selects them for each image.
+- **Anisotropic filter**: `RenderOptions::anisotropy` applies to the textures that load after the change. `Limits::maxAnisotropy` gives the maximum of the GPU.
 
 ## 2D layers and post process
 
@@ -139,7 +160,10 @@ The device has **render targets**. A render target has a color texture, a depth 
 - merge of equal items into instanced draws,
 - textures,
 - lighting,
-- a scale on the distances of the LODs and the instancers.
+- flat shading and Gouraud shading of the palette ramps,
+- a scale on the distances of the LODs and the instancers,
+- shadows and their parameters,
+- anisotropic filter.
 
 **Freeze culling** keeps the frustum and the eye of that moment. Then you can move the camera out and look at the culled nodes. `stats()` gives the counters of the frame and the CPU time of each stage (cull, sort, upload, draw).
 
@@ -180,14 +204,35 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | 1 | the base: math, `r4::gpu` and the GL 3.3 backend, Model, OBJ/MTL, SGI and PPM loaders, scene graph with culling and LOD/Switch, Phong renderer, r4fly, tests | **done** |
 | 2 | instancing in the renderer (one draw for equal mesh and material), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG with stb_image, glTF 2.0 | **done** |
 | 3 | the old formats, ports from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
-| 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
-| 5 | libRealSpace integration: a renderer from `SCRenderer` that sends the work to R4nkine, with host interop | |
-| 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |
 | 3b | `r4::ui`, the GUI of perfly drawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performance; render options in the renderer (culling, freeze, sort, instancing, textures, lighting, LOD scale) and CPU times | **done** |
-| later | culling in threads (APP/CULL/DRAW as in Performer) | |
-| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | |
+| 4 | RealSpace in `contrib/librealspace`: RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
+| 4b | renderer: shadow map, fog, texture scalers, anisotropic filter, mipmaps, palette index textures, animated textures, shadow mask, compact placements | **done** |
+| 5 | libRealSpace integration: a renderer from `SCRenderer` that sends the work to R4nkine, with host interop | not done |
+| 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | not done |
+| later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
+| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | not done |
 
-## Integration in libRealSpace
+## RealSpace (`contrib/librealspace`)
+
+libRealSpace reads the data of the game. The code in `contrib/librealspace` goes into the source tree of libRealSpace. It does not change the code of libRealSpace.
+
+**r4bridge** converts the data of libRealSpace into R4nkine models:
+
+- `toModel`: an `RSEntity` becomes a model, as `SCRenderer::drawModel` draws it. The LODs become a LOD node. The faces have a color pass, a texture pass and a transparent pass. Animated textures keep all their frames.
+- `terrainModel`: the terrain of an `RSArea`.
+  - Each block is a LOD node over the three levels of `RSArea`, with its seams.
+  - A quadtree groups the blocks. Far groups show one merged mesh of their LVL2 blocks.
+  - One atlas of palette indices contains all the textures of the terrain. The textures use the palette ramps, as the vertices do.
+  - Outside the map, a collar and two rings of tiles continue the border to the edge of the world (4 times the map).
+- `overlayModel`: the runways.
+- `forestChunks`, `plantForest`, `treeModel`: the forests, from the green terrain or from the woods painted in the textures.
+- `cityModel`: the buildings on the textures of cities, harbors, villages and farms.
+- `groundHeight`: the height of the ground on the LVL0 triangles as `terrainModel` draws them. `RSArea::getY` gives incorrect heights.
+- `onGround`: it puts an object on the ground. It only raises a flying object.
+
+**r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `contrib/librealspace/README_R4NKINE.md`.
+
+## Integration in libRealSpace (plan, step 5)
 
 `SCRenderer` has virtual methods and a `setInstance()` hook. Thus, a `R4Renderer : public SCRenderer` can replace it. The game does not change.
 
