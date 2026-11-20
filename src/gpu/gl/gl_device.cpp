@@ -535,7 +535,12 @@ public:
                     gl.Uniform1i(loc, (GLint)slot);
                 }
             }
-            gl.UseProgram(currentProgram);
+            // after a host interop the bound program is unknown: p stays bound and known
+            if (currentProgram == (GLuint)-1) {
+                currentProgram = p;
+            } else {
+                gl.UseProgram(currentProgram);
+            }
         }
         return {shaders.add({p})};
     }

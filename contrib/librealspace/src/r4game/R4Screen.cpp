@@ -78,9 +78,11 @@ void R4Screen::init(int width, int height, bool fullscreen) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
 #else
+    // the game draws everything through R4nkine: a core context; the compatibility one is for SCRenderer, to compare
+    const bool compatibility = Config::getInstance().getBool("Video", "gl_compatibility", false);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, compatibility ? SDL_GL_CONTEXT_PROFILE_COMPATIBILITY : SDL_GL_CONTEXT_PROFILE_CORE);
 #endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
@@ -132,10 +134,6 @@ void R4Screen::init(int width, int height, bool fullscreen) {
     beginFrame();
 }
 
-void R4Screen::letterbox(int &x, int &y, int &w, int &h) const {
-    r4::render::Overlay::fit(4.0f / 3.0f, this->width, this->height, x, y, w, h);
-}
-
 void R4Screen::openScreen(void) {
     if (!device_) {
         return;
@@ -145,12 +143,6 @@ void R4Screen::openScreen(void) {
     device_->beginPass(r4::gpu::RenderTargetHandle{}, 0, 0, this->width, this->height, clear);
     device_->endPass();
     device_->endHostInterop();
-    int x = 0;
-    int y = 0;
-    int w = 0;
-    int h = 0;
-    letterbox(x, y, w, h);
-    glViewport(x, this->height - y - h, w, h);
 }
 
 void R4Screen::initPostProcess() {

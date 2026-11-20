@@ -4,7 +4,7 @@
 //
 //  The flight on the scene graph of R4nkine. The graph lives as long as the flight: the terrain of the area, a node for each actor
 //  and for each simulated object. The APP step sets their matrices from the state of the game once a frame; one pass draws the graph.
-//  The effects (smoke, explosions, tracers) and the cockpit stay drawn by the game after the graph.
+//  The effects (smoke, explosions, tracers) and the cockpit of the game go in the same pass as the graph.
 //
 #pragma once
 
@@ -37,7 +37,6 @@ public:
 
 protected:
     void afterCameraPlaced() override;
-    void renderScene(int32_t viewportW, int32_t viewportH, float projVerticalOffset, bool forceVirtualCockpit) override;
     void renderWorld() override;
     void renderPlayerPlane() override;
 
@@ -83,7 +82,4 @@ private:
     // what the APP step put in the graph this frame, for the effects that the game draws after it
     std::vector<SCMissionActors *> actorsShown_;
     std::vector<SCSimulatedObject *> shotsShown_;
-    int viewportW_ = 0;
-    int viewportH_ = 0;
-    float verticalShift_ = 0;
 };

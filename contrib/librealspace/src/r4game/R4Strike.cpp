@@ -13,7 +13,6 @@ namespace {
 
 // SCStrike's RENDER_DISTANCE: the actors farther from the player are not drawn
 constexpr float kRenderDistance = 40000.0f;
-constexpr float kNear = 1.5f;
 
 r4::Mat4 toMat4(Matrix &m) {
     return glm::make_mat4(&m.v[0][0]);
@@ -339,32 +338,15 @@ void R4Strike::afterCameraPlaced() {
     app();
 }
 
-void R4Strike::renderScene(int32_t viewportW, int32_t viewportH, float projVerticalOffset, bool forceVirtualCockpit) {
-    viewportW_ = viewportW;
-    viewportH_ = viewportH;
-    verticalShift_ = projVerticalOffset;
-    SCStrike::renderScene(viewportW, viewportH, projVerticalOffset, forceVirtualCockpit);
-}
-
 void R4Strike::renderWorld() {
     R4Renderer *r = activeRenderer();
     if (!r || this->show_bbox) {
         SCStrike::renderWorld();
         return;
     }
-    r4::render::Camera cam;
-    cam.view = glm::make_mat4(camera->getViewMatrix()->ToGL());
-    cam.projection = r4::translate({0, verticalShift_, 0}) * glm::make_mat4(camera->getProjectionMatrix()->ToGL());
-    Point3D eye = camera->getPosition();
-    cam.position = {eye.x, eye.y, eye.z};
-    cam.znear = kNear;
-    cam.zfar = (float)r->max_view_distance * 1.2f;
-
-    r->drawSky(this->area);
-    r->drawGraph(*world_, cam, 0, 0, viewportW_, viewportH_);
-    glDisable(GL_BLEND);
-    glDisable(GL_ALPHA_TEST);
-    glFrontFace(GL_CCW);
+    // the sky, the graph of the flight and the effects of the game go in the same pass of the renderer
+    r->beginWorld(this->area);
+    r->addScene(world_);
 
     // the effects, in the order of SCStrike::renderWorld, on the depth of the graph
     for (SCMissionActors *actor : actorsShown_) {

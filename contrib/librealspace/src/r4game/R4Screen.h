@@ -45,7 +45,6 @@ public:
 
 private:
     void beginFrame();
-    void letterbox(int &x, int &y, int &w, int &h) const;
 
     std::unique_ptr<r4::gpu::Device> device_;
     std::unique_ptr<r4::render::PostProcess> post_;

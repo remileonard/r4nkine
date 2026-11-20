@@ -120,6 +120,78 @@ index 6a9c0b1..64ab770 100644
      void setPalette(VGAPalette* newPalette);
      VGAPalette* getPalette(void);
      void vSync(void);
+diff --git a/src/engine/SCRenderer.cpp b/src/engine/SCRenderer.cpp
+index c1e8e03..bf4153c 100644
+--- a/src/engine/SCRenderer.cpp
++++ b/src/engine/SCRenderer.cpp
+@@ -2316,3 +2316,33 @@ void SCRenderer::drawTriangles(const EffectVertex *vertices, size_t count, unsig
+     glEnd();
+     glPopAttrib();
+ }
++
++void SCRenderer::pushMatrix() {
++    glPushMatrix();
++}
++
++void SCRenderer::popMatrix() {
++    glPopMatrix();
++}
++
++void SCRenderer::translateMatrix(float x, float y, float z) {
++    glTranslatef(x, y, z);
++}
++
++void SCRenderer::rotateMatrix(float degrees, float x, float y, float z) {
++    glRotatef(degrees, x, y, z);
++}
++
++void SCRenderer::scaleMatrix(float x, float y, float z) {
++    glScalef(x, y, z);
++}
++
++void SCRenderer::clearDepth() {
++    glClear(GL_DEPTH_BUFFER_BIT);
++}
++
++void SCRenderer::readRenderToTexture(std::vector<uint8_t> &rgba) {
++    glBindTexture(GL_TEXTURE_2D, this->texture);
++    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba.data());
++    glBindTexture(GL_TEXTURE_2D, 0);
++}
+diff --git a/src/engine/SCRenderer.h b/src/engine/SCRenderer.h
+index 6c2253e..acaa672 100644
+--- a/src/engine/SCRenderer.h
++++ b/src/engine/SCRenderer.h
+@@ -204,4 +204,14 @@ public:
+     virtual void bindCameraProjectionAndViewViewport(int32_t viewportW, int32_t viewportH, float verticalOffset);
+     virtual float objectIntensity(Vector3D normal);
+     virtual Vector3D shadeAlongRamp(int colour, float intensity);
++    // the model matrix of the next draws, as glPushMatrix, glPopMatrix, glTranslatef, glRotatef (degrees) and glScalef
++    virtual void pushMatrix();
++    virtual void popMatrix();
++    virtual void translateMatrix(float x, float y, float z);
++    virtual void rotateMatrix(float degrees, float x, float y, float z);
++    virtual void scaleMatrix(float x, float y, float z);
++    // clears the depth of the frame, as glClear(GL_DEPTH_BUFFER_BIT)
++    virtual void clearDepth();
++    // the RGBA pixels of the view of the target camera (renderWorldToTexture), from the bottom row
++    virtual void readRenderToTexture(std::vector<uint8_t> &rgba);
+ };
+diff --git a/src/strike_commander/SCCockpit.cpp b/src/strike_commander/SCCockpit.cpp
+index e4ee280..851bd2c 100644
+--- a/src/strike_commander/SCCockpit.cpp
++++ b/src/strike_commander/SCCockpit.cpp
+@@ -2072,9 +2072,7 @@ void SCCockpit::RenderMFDSCamera(Point2D pmfd_left, FrameBuffer *fb) {
+     // Lire les pixels RGBA depuis la texture OpenGL
+     std::vector<uint8_t> rgbaPixels(texWidth * texHeight * 4);
+     
+-    glBindTexture(GL_TEXTURE_2D, renderer.texture);
+-    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaPixels.data());
+-    glBindTexture(GL_TEXTURE_2D, 0);
++    renderer.readRenderToTexture(rgbaPixels);
+ 
+ 
+     // Construire la LUT si la palette a changé
 diff --git a/src/strike_commander/SCGameFlow.cpp b/src/strike_commander/SCGameFlow.cpp
 index e1c0716..f2fe920 100644
 --- a/src/strike_commander/SCGameFlow.cpp
@@ -133,6 +205,62 @@ index e1c0716..f2fe920 100644
      fly->init();
      fly->player_loadout = this->player_loadout_pending;
      this->player_loadout_pending = false;
+diff --git a/src/strike_commander/SCObjectViewer.cpp b/src/strike_commander/SCObjectViewer.cpp
+index 7c5d91d..16ff78f 100644
+--- a/src/strike_commander/SCObjectViewer.cpp
++++ b/src/strike_commander/SCObjectViewer.cpp
+@@ -257,7 +257,7 @@ void SCObjectViewer::runFrame(void) {
+ 
+     /**/
+     // Ok now time to draw the model
+-    glClear(GL_DEPTH_BUFFER_BIT);
++    Renderer.clearDepth();
+ 
+     uint32_t currentTime = SDL_GetTicks();
+     uint32_t totalTime = currentTime - startTime;
+@@ -278,19 +278,17 @@ void SCObjectViewer::runFrame(void) {
+     light.z = 4 * sinf(-1 * totalTime / 20000.0f);
+     Renderer.setLight(&light);
+ 
+-    glMatrixMode(GL_PROJECTION);
+-    Matrix *projection = Renderer.getCamera()->getProjectionMatrix();
+-    glLoadMatrixf(projection->ToGL());
+-
+-    glMatrixMode(GL_MODELVIEW);
+-    Matrix *view = Renderer.getCamera()->getViewMatrix();
+-    glLoadMatrixf(view->ToGL());
+-    glPushMatrix();
+-    glRotatef(this->rotateLeftRightAngle, 1, 0, 0);
+-    glPushMatrix();
+-    glRotatef(this->rotateUpDownAngle, 0, 0, 1);
+-
+-    glScalef(1 / this->zoomFactor, 1 / this->zoomFactor, 1 / this->zoomFactor);
++    // the camera matrices without the vertical offset of the flight
++    float verticalOffset = Renderer.verticalOffset;
++    Renderer.verticalOffset = 0.0f;
++    Renderer.initRenderCameraView();
++    Renderer.verticalOffset = verticalOffset;
++    Renderer.pushMatrix();
++    Renderer.rotateMatrix(this->rotateLeftRightAngle, 1, 0, 0);
++    Renderer.pushMatrix();
++    Renderer.rotateMatrix(this->rotateUpDownAngle, 0, 0, 1);
++
++    Renderer.scaleMatrix(1 / this->zoomFactor, 1 / this->zoomFactor, 1 / this->zoomFactor);
+     if (objs.showCases[currentObject].entity->triangles.size() > 0) {
+         Renderer.drawModel(objs.showCases[currentObject].entity, Renderer.lodLevel);    
+     } else if (objs.showCases[currentObject].entity->animations.size() > 0) {
+@@ -308,9 +306,8 @@ void SCObjectViewer::runFrame(void) {
+         printf("No model to draw for %s\n", objs.showCases[currentObject].displayName.c_str());
+     }
+     
+-    glPopMatrix();
+-    glPopMatrix();
+-    glDisable(GL_DEPTH_TEST);
++    Renderer.popMatrix();
++    Renderer.popMatrix();
+ 
+     VGA.activate();
+     VGA.getFrameBuffer()->clear();
 diff --git a/src/strike_commander/SCPlane.h b/src/strike_commander/SCPlane.h
 index 8eb15c3..d9e2d70 100644
 --- a/src/strike_commander/SCPlane.h
@@ -639,3 +767,28 @@ index 26cccc6..56694ca 100644
      strike->init();
      strike->player_loadout = this->player_loadout_pending;
      strike->setMission("TEMPLATE.IFF");
+diff --git a/src/strike_commander/SCVirtualCockpit.cpp b/src/strike_commander/SCVirtualCockpit.cpp
+index 9ed5233..292278a 100644
+--- a/src/strike_commander/SCVirtualCockpit.cpp
++++ b/src/strike_commander/SCVirtualCockpit.cpp
+@@ -36,9 +36,8 @@ void SCVirtualCockpit::render(const VirtualCockpitContext &ctx) {
+         ctx.camera->getPosition().y,
+         ctx.camera->getPosition().z
+     };
+-    glMatrixMode(GL_MODELVIEW);
+-    glPushMatrix();
+-    glTranslatef(camPos.x, camPos.y, camPos.z);
++    Renderer.pushMatrix();
++    Renderer.translateMatrix(camPos.x, camPos.y, camPos.z);
+ 
+     this->cockpit_pos = {0.0f, 0.0f, 0.0f};
+     this->cockpit_rot = {(ctx.plane->azimuthf + 900) / 10.0f,
+@@ -55,7 +54,7 @@ void SCVirtualCockpit::render(const VirtualCockpitContext &ctx) {
+         this->drawPanel(panel, ctx);
+     }
+ 
+-    glPopMatrix();
++    Renderer.popMatrix();
+ }
+ 
+ void SCVirtualCockpit::drawModel(const VirtualCockpitContext &ctx) {

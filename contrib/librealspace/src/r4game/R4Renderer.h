@@ -2,8 +2,10 @@
 //  R4Renderer.h
 //  libRealSpace
 //
-//  The 3D of the game on R4nkine: the terrain and the objects. The game keeps its matrices, its cameras and its GL calls for the rest.
-//  The models are kept in eye space (the GL modelview of each call) and drawn in one pass of the renderer before the next GL draw of the game.
+//  The renderer of the game on R4nkine, without any GL call. The calls of the game are kept: the models with the model matrix of
+//  the renderer, the effects as triangles, lines and points batched by state, the sky, the graphs of the scenes. A pass of the
+//  renderer draws them with the camera of the game before anything that needs the frame: a change of view, the 320 x 200 screen,
+//  the end of the frame.
 //
 #pragma once
 
@@ -12,6 +14,7 @@
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 
+#include <map>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -24,12 +27,18 @@ public:
     // SCRenderer::instance() when the renderer of the game is a R4Renderer, else null
     static R4Renderer *current();
 
-    // draws the terrain and the models kept since the last flush
+    bool active() const {
+        return renderer_ != nullptr;
+    }
+    // draws what was kept since the last flush
     void flush();
-    // the sky of the game in GL, the color and depth cleared, fog set as renderWorldSolid
-    void drawSky(RSArea *area);
-    // a graph in world space (libRealSpace axes) with a camera of the game, in the frame of the screen
-    void drawGraph(r4::scene::Node &root, const r4::render::Camera &camera, int x, int y, int width, int height);
+    // frees the GPU objects, before the device of the screen goes
+    void release();
+
+    // a graph drawn by the next pass, in world space (libRealSpace axes)
+    void addScene(const r4::scene::NodePtr &root);
+    // the frame cleared, then the sky and the clouds of the area in the next pass, as the start of renderWorldSolid
+    void beginWorld(RSArea *area);
     // the node of an entity, made at its first use
     r4::scene::NodePtr modelOf(RSEntity *object);
     // the terrain and the runways of the area, made when the area changes; null without them
@@ -40,22 +49,37 @@ public:
     const r4::scene::NodePtr &overlay() const {
         return overlay_;
     }
-    bool active() const {
-        return renderer_ != nullptr;
-    }
-    // frees the GPU objects, before the device of the screen goes
-    void release();
 
     using SCRenderer::drawLine;
     using SCRenderer::drawModel;
 
     void init(int width, int height) override;
     void clear(void) override;
+    void clearDepth() override;
+    void setClearColor(uint8_t red, uint8_t green, uint8_t blue) override;
     void setObjectLight(int ambient_weight, int light_weight, int c0, int c1, int c2) override;
-    void drawModel(RSEntity *object, size_t lodLevel) override;
-    void renderWorldSolid(RSArea *area, int LOD, int verticesPerBlock) override;
 
-    // the GL draws of the game: the kept models first
+    void bindCameraProjectionAndViewViewport(int32_t viewportW, int32_t viewportH, float verticalOffset) override;
+    void initRenderCameraView() override;
+    void pushMatrix() override;
+    void popMatrix() override;
+    void translateMatrix(float x, float y, float z) override;
+    void rotateMatrix(float degrees, float x, float y, float z) override;
+    void scaleMatrix(float x, float y, float z) override;
+
+    void drawModel(RSEntity *object, size_t lodLevel, Vector3D position, Vector3D orientation, Vector3D ajustement, float scale) override;
+    void drawModel(RSEntity *object, size_t lodLevel, Vector3D position, Vector3D orientation, Vector3D ajustement) override;
+    void drawModel(RSEntity *object, size_t lodLevel, Vector3D position, Vector3D orientation) override;
+    void drawModel(RSEntity *object, Vector3D position, Vector3D orientation) override;
+    void drawModel(RSEntity *object, size_t lodLevel) override;
+    void drawModelWithChilds(RSEntity *object, size_t lodLevel, Vector3D position, Vector3D orientation, int wheel_index, int thrust, std::vector<std::tuple<Vector3D, RSEntity *>> weaps_load) override;
+    void drawModelColorPass(RSEntity *object, size_t lodLevel, std::vector<Vector3D> &vertexNormals, float ambientLamber, Vector3D lightEye, float *MV) override;
+    void drawModelTexturePass(RSEntity *object, size_t lodLevel, std::vector<Vector3D> &vertexNormals, float ambientLamber, Vector3D lightEye, float *MV) override;
+    void drawModelTransparentPass(RSEntity *object, size_t lodLevel, std::vector<Vector3D> &vertexNormals, float ambientLamber, Vector3D lightEye, float *MV) override;
+    void displayModel(RSEntity *object, size_t lodLevel) override;
+    void renderObjects(RSArea *area, size_t blockID) override;
+    void renderMissionObjects(RSMission *mission) override;
+
     void drawParticle(Vector3D pos, float alpha) override;
     void drawLine(Vector3D start, Vector3D end, Vector3D color, Vector3D orientation) override;
     void drawLine(Vector3D start, Vector3D end, Vector3D color, Vector3D orientation, Vector3D position) override;
@@ -65,46 +89,105 @@ public:
     void drawBillboard(Vector3D pos, Texture *tex, float size, float alpha = 1.0f) override;
     void drawTriangles(const EffectVertex *vertices, size_t count, unsigned int texture, BlendMode blend, bool depthWrite = false) override;
     void drawTracer(Vector3D pos, Vector3D velocityDir, float length, float pixelWidth, Vector3D color, float alpha) override;
-    void displayModel(RSEntity *object, size_t lodLevel) override;
     void drawTexturedQuad(Vector3D pos, Vector3D orientation, std::vector<Vector3D> quad, Texture *tex) override;
     void renderEllipsoid(float cx, float cy, float cz, float rx, float ry, float rz, int rings, int slices, float r, float g, float b, float baseAlpha) override;
     void renderClouds(RSArea *area) override;
-    void renderBlock(RSArea *area, int LOD, int i, bool renderTexture, const std::unordered_set<int> *skipRight = nullptr, const std::unordered_set<int> *skipBottom = nullptr) override;
-    void renderWorldByID(RSArea *area, int LOD, int verticesPerBlock, int blockId) override;
-    void renderMapOverlay(RSArea *area) override;
     void renderLineCube(Vector3D position, int32_t size) override;
     void renderBBox(Vector3D position, Point3D min, Point3D max) override;
-    void renderWorldToTexture(RSArea *area) override;
+
+    unsigned int createTexture(int w, int h, const unsigned char *rgba, bool repeatT) override;
+    void createTextureInGPU(Texture *texture) override;
+    void uploadTextureContentToGPU(Texture *texture) override;
+    void deleteTextureInGPU(Texture *texture) override;
+    void applyTextureFilter(const Texture *texture) override;
+    void ensureDetailTexture() override;
+    void ensureWaveTexture() override;
+
+    void renderWorldSolid(RSArea *area, int LOD, int verticesPerBlock) override;
+    void renderWorldByID(RSArea *area, int LOD, int verticesPerBlock, int blockId) override;
+    void renderBlock(RSArea *area, int LOD, int i, bool renderTexture, const std::unordered_set<int> *skipRight = nullptr, const std::unordered_set<int> *skipBottom = nullptr) override;
+    void renderTexturedTriangle(MapVertex *tri0, MapVertex *tri1, MapVertex *tri2, RSArea *area, int triangleType, RSImage *image, float colors[3][4]) override;
+    void renderColoredTriangle(MapVertex *tri0, MapVertex *tri1, MapVertex *tri2, float colors[3][4]) override;
+    void renderMapOverlay(RSArea *area) override;
+    void renderTerrainDetail(RSArea *area, int LOD, const std::vector<int> &blocks) override;
+    void renderWaterWaves(RSArea *area, int LOD, const std::vector<int> &blocks) override;
+
     void initRenderToTexture() override;
+    void renderWorldToTexture(RSArea *area) override;
     void getRenderToTexture() override;
+    void readRenderToTexture(std::vector<uint8_t> &rgba) override;
 
 private:
-    // the GL state that a pass of the renderer takes from the game
+    enum class Blend {
+        NONE,
+        ALPHA,
+        ADDITIVE
+    };
+    // the state of a batch of effects: one mesh and one material each pass
+    struct BatchKey {
+        uint32_t texture = 0;
+        Blend blend = Blend::NONE;
+        bool depthTest = true;
+        bool depthWrite = true;
+        bool alphaTest = false;
+        r4::assets::Primitive primitive = r4::assets::Primitive::TRIANGLES;
+        int order = 0;
+        bool operator<(const BatchKey &o) const;
+    };
+    // the camera, the viewport and the target of a pass
     struct View {
-        float projection[16];
-        int viewport[4];
-        bool fog;
-        float fogStart;
-        float fogEnd;
-        float fogColor[4];
+        r4::Mat4 projection{1.0f};
+        r4::Mat4 view{1.0f};
+        int viewport[4] = {0, 0, 0, 0};
+        bool toTexture = false;
     };
     struct Item {
         r4::scene::NodePtr node;
-        r4::Mat4 eye;
+        r4::Mat4 world;
     };
-    static View currentView();
-    static bool sameView(const View &a, const View &b);
-    void queue(const r4::scene::NodePtr &node);
-    void setEnvironment(bool fog, float fogStart, float fogEnd, const float fogColor[4], r4::Vec3 lightDirection);
+    struct TextureEntry {
+        r4::gpu::TextureHandle handle;
+        size_t width = 0;
+        size_t height = 0;
+    };
+
+    bool pending() const;
+    void setView(const View &v);
+    View cameraView(int x, int y, int width, int height, float verticalOffset);
+    const r4::Mat4 &model() const {
+        return stack_.back();
+    }
+    void placeModel(RSEntity *object, const r4::Mat4 &matrix);
+    std::vector<r4::assets::Vertex> &batch(const BatchKey &key);
+    void vertex(std::vector<r4::assets::Vertex> &to, Vector3D p, float u, float v, r4::Vec4 color);
+    void quad(const BatchKey &key, const Vector3D corners[4], r4::Vec4 color);
+    void lines(const Vector3D *ends, size_t count, r4::Vec4 color);
+    void cubeLines(const r4::Mat4 &matrix, r4::Vec4 front, r4::Vec4 back, r4::Vec4 sides);
+    r4::gpu::TextureHandle textureOf(Texture *tex);
+    std::shared_ptr<r4::render::MaterialInstance> materialOf(const BatchKey &key);
+    r4::scene::NodePtr sky();
+    void clearFrame(bool color, bool depth);
 
     std::unique_ptr<r4::render::Renderer> renderer_;
     std::unordered_map<RSEntity *, r4::scene::NodePtr> models_;
     RSArea *area_ = nullptr;
     r4::scene::NodePtr terrain_;
     r4::scene::NodePtr overlay_;
+    std::vector<r4::Mat4> stack_{r4::Mat4(1.0f)};
+    View view_;
     std::vector<Item> items_;
-    View view_{};
-    r4::Vec3 lightEye_{0, -1, 0};
+    std::vector<r4::scene::NodePtr> scenes_;
+    std::map<BatchKey, std::vector<r4::assets::Vertex>> batches_;
+    std::map<BatchKey, std::shared_ptr<r4::render::MaterialInstance>> materials_;
+    bool skyShown_ = false;
+    r4::scene::NodePtr sky_;
+    std::shared_ptr<r4::scene::Group> skyPlace_;
     std::shared_ptr<r4::scene::Group> root_;
     std::vector<std::shared_ptr<r4::scene::Group>> places_;
+    std::unordered_map<const Texture *, TextureEntry> textures_;
+    std::unordered_map<unsigned int, r4::gpu::TextureHandle> effectTextures_;
+    unsigned int nextEffectTexture_ = 1;
+    r4::gpu::RenderTargetHandle targetView_;
+    std::vector<uint8_t> targetPixels_;
+    float clearColor_[3] = {0, 0, 0};
 };
