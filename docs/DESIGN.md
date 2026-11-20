@@ -261,7 +261,8 @@ behaviors are kept, translated into the neutral format:
 | 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |
 | 3b | `r4::ui`, the GUI of perfly redrawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performances; render options in the renderer (culling, freeze, sorting, instancing, textures, lighting, LOD scale) and CPU timings | **done** |
-| later | threaded culling (APP/CULL/DRAW as in Performer), shadows | |
+| later | threaded culling (APP/CULL/DRAW as in Performer) | |
+| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes linked to the message bus of libRealSpace, views without drawing for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | |
 
 ## Integration in libRealSpace
 
