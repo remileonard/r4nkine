@@ -1,0 +1,142 @@
+// r4/math.h - the vectors and matrices of glm (column-major, p' = M * p, the clip space of OpenGL) and the bounds of R4nkine.
+// glm is used with GLM_FORCE_CTOR_INIT: vectors at zero, matrices at the identity.
+#pragma once
+
+#ifndef GLM_FORCE_CTOR_INIT
+#define GLM_FORCE_CTOR_INIT
+#endif
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
+#if GLM_CONFIG_CTOR_INIT == GLM_CTOR_INIT_DISABLE
+#error "R4nkine needs glm with GLM_FORCE_CTOR_INIT: define it before including glm"
+#endif
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <limits>
+
+namespace r4 {
+
+using Vec2 = glm::vec2;
+using Vec3 = glm::vec3;
+using Vec4 = glm::vec4;
+using Mat4 = glm::mat4;
+
+constexpr float kPi = 3.14159265358979323846f;
+inline float radians(float deg) {
+    return deg * (kPi / 180.0f);
+}
+inline float degrees(float rad) {
+    return rad * (180.0f / kPi);
+}
+
+using glm::cross;
+using glm::dot;
+using glm::length;
+inline Mat4 lookAt(Vec3 eye, Vec3 center, Vec3 up) {
+    return glm::lookAt(eye, center, up);
+}
+inline Mat4 perspective(float fovy, float aspect, float znear, float zfar) {
+    return glm::perspective(fovy, aspect, znear, zfar);
+}
+
+// the zero vector stays zero
+inline Vec3 normalize(Vec3 a) {
+    float l = glm::length(a);
+    return l > 0 ? a / l : Vec3(0);
+}
+inline Vec3 min(Vec3 a, Vec3 b) {
+    return glm::min(a, b);
+}
+inline Vec3 max(Vec3 a, Vec3 b) {
+    return glm::max(a, b);
+}
+
+inline Mat4 translate(Vec3 t) {
+    return glm::translate(Mat4(1.0f), t);
+}
+inline Mat4 scale(Vec3 s) {
+    return glm::scale(Mat4(1.0f), s);
+}
+// counterclockwise
+inline Mat4 rotate(float angle, Vec3 axis) {
+    return glm::rotate(Mat4(1.0f), angle, normalize(axis));
+}
+
+inline Vec3 transformPoint(const Mat4 &m, Vec3 p) {
+    return Vec3(m * Vec4(p, 1.0f));
+}
+inline Vec3 transformVector(const Mat4 &m, Vec3 v) {
+    return Vec3(m * Vec4(v, 0.0f));
+}
+inline Vec3 translationOf(const Mat4 &m) {
+    return Vec3(m[3]);
+}
+// how much a radius grows
+inline float maxScale(const Mat4 &m) {
+    return std::sqrt(std::max(glm::dot(Vec3(m[0]), Vec3(m[0])), std::max(glm::dot(Vec3(m[1]), Vec3(m[1])), glm::dot(Vec3(m[2]), Vec3(m[2])))));
+}
+inline const float *dataOf(const Mat4 &m) {
+    return &m[0][0];
+}
+
+// the identity when singular
+Mat4 inverse(const Mat4 &a);
+// the inverse transpose of the upper 3x3
+Mat4 normalMatrix(const Mat4 &a);
+
+// empty when min > max
+struct Box {
+    Vec3 min{std::numeric_limits<float>::max()};
+    Vec3 max{-std::numeric_limits<float>::max()};
+    bool empty() const {
+        return min.x > max.x;
+    }
+    void extend(Vec3 p) {
+        min = r4::min(min, p);
+        max = r4::max(max, p);
+    }
+    void extend(const Box &b) {
+        if (!b.empty()) {
+            extend(b.min);
+            extend(b.max);
+        }
+    }
+    Vec3 center() const {
+        return (min + max) * 0.5f;
+    }
+};
+
+// empty when radius < 0
+struct Sphere {
+    Vec3 center;
+    float radius = -1;
+    bool empty() const {
+        return radius < 0;
+    }
+    // exact for two spheres
+    void extend(const Sphere &s);
+    Sphere transformed(const Mat4 &m) const {
+        if (empty()) {
+            return *this;
+        }
+        return {transformPoint(m, center), radius * maxScale(m)};
+    }
+};
+Sphere sphereOf(const Box &b);
+
+// normals pointing inside: p is inside when dot(n, p) + d >= 0 for all
+struct Frustum {
+    Vec4 planes[6]; // left, right, bottom, top, near, far
+    static Frustum fromMatrix(const Mat4 &viewProj);
+    enum Result {
+        Outside,
+        Intersects,
+        Inside
+    };
+    Result test(const Sphere &s) const;
+};
+
+} // namespace r4

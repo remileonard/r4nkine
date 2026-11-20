@@ -1,0 +1,68 @@
+name: CI
+
+# On demand only, to spare the minutes of Actions:
+# - Actions > CI > Run workflow (the button needs this file on main);
+# - or a commit whose message holds [ci], once pushed.
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  # the library and the tests; the viewer needs the X11/Wayland development
+  # packages for the SDL2 of vcpkg, it is built on Windows
+  linux:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
+    # the GCC 11 of the archives: the oldest compiler the project builds with
+    runs-on: ubuntu-22.04
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure
+        run: cmake --preset linux -DR4_BUILD_APPS=OFF
+      - name: Build
+        run: cmake --build --preset linux -j
+      - name: Test
+        run: ctest --preset linux --output-on-failure
+
+  # the library, the viewer (OpenGL 4.1 core) and the tests on macOS
+  macos:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
+    runs-on: macos-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: Configure
+        run: cmake --preset macos
+      - name: Build
+        run: cmake --build --preset macos -j
+      - name: Test
+        run: ctest --preset macos --output-on-failure
+
+  windows:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[ci]')
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+    steps:
+      - uses: actions/checkout@v4
+      - name: vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+      # the runners may not have the 2022 version of Visual Studio
+      - name: Configure
+        run: cmake --preset windows-vs
+      - name: Build
+        run: cmake --build --preset windows-vs
+      - name: Test
+        run: ctest --preset windows-vs --output-on-failure

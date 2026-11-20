@@ -1,0 +1,97 @@
+name: libRealSpace viewer
+
+# r4objviewer for Windows: libRealSpace (github.com/remileonard/libRealSpace)
+# with the bridge of contrib/librealspace laid over it, built against this
+# R4nkine. Nothing is pushed to libRealSpace: its clone is patched in the
+# runner only.
+#
+# The archive (r4objviewer.exe and its DLLs) is attached to the run
+# (Artifacts). The game data are not in it: r4objviewer -data <folder of the TRE>.
+
+# On demand only: Actions > libRealSpace viewer > Run workflow (the button
+# needs this file on main), or a commit whose message holds [viewer], once
+# pushed. Other pushes skip the job: no minutes used.
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      librealspace_ref:
+        description: "Branch, tag or commit of libRealSpace (empty: its default branch)"
+        type: string
+        default: ""
+
+jobs:
+  windows:
+    if: github.event_name != 'push' || contains(github.event.head_commit.message, '[viewer]')
+    runs-on: windows-latest
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}\vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: r4nkine
+      - uses: actions/checkout@v4
+        with:
+          repository: remileonard/libRealSpace
+          ref: ${{ inputs.librealspace_ref }}
+          path: librealspace
+
+      # the bridge into the clone of libRealSpace: its files, the include of
+      # cmake/R4nkine.cmake, and glm, stb and cgltf in its vcpkg.json
+      - name: Lay the bridge over libRealSpace
+        run: |
+          cp -r r4nkine/contrib/librealspace/src r4nkine/contrib/librealspace/cmake librealspace/
+          cd librealspace
+          sed -i 's|^add_subdirectory(tests)|include(cmake/R4nkine.cmake)\n\nadd_subdirectory(tests)|' CMakeLists.txt
+          grep -n "R4nkine.cmake" CMakeLists.txt
+          python - <<'EOF'
+          import json
+          m = json.load(open("vcpkg.json"))
+          names = [d if isinstance(d, str) else d["name"] for d in m["dependencies"]]
+          m["dependencies"] += [n for n in ("glm", "stb", "cgltf") if n not in names]
+          json.dump(m, open("vcpkg.json", "w"), indent=2)
+          EOF
+          cat vcpkg.json
+          echo "LRS_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      # the packages of vcpkg, built once: libRealSpace needs boost, SDL2_mixer_ext...
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-lrs-windows-${{ hashFiles('librealspace/vcpkg.json', 'librealspace/vcpkg-configuration.json') }}-${{ github.run_id }}
+          restore-keys: vcpkg-lrs-windows-${{ hashFiles('librealspace/vcpkg.json', 'librealspace/vcpkg-configuration.json') }}-
+
+      - name: vcpkg
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Configure
+        working-directory: librealspace
+        run: cmake --preset windows -DR4NKINE_DIR="$GITHUB_WORKSPACE/r4nkine"
+      - name: Build r4objviewer
+        working-directory: librealspace
+        run: cmake --build out/build/windows --config Release --target r4objviewer -j 4
+
+      # the exe and the DLLs vcpkg copied next to it
+      - name: Package
+        run: |
+          dir="r4objviewer-windows-x64-r4nkine-${GITHUB_SHA::7}-librealspace-$LRS_SHA"
+          mkdir -p "$dir"
+          cp librealspace/out/build/windows/src/executables/r4objviewer/Release/*.exe "$dir/"
+          cp librealspace/out/build/windows/src/executables/r4objviewer/Release/*.dll "$dir/" 2>/dev/null || true
+          cp r4nkine/contrib/librealspace/README_R4NKINE.md r4nkine/LICENSE "$dir/"
+          ls -l "$dir"
+          echo "DIR=$dir" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.DIR }}
+          path: ${{ env.DIR }}

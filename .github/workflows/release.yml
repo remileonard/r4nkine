@@ -1,0 +1,157 @@
+name: Release
+
+# Archives of r4fly for Linux, Windows and macOS (Apple silicon), to
+# download and try.
+#
+# - Actions > Release > Run workflow: the archives are built and attached to
+#   the run (Artifacts). With "publish" checked, they also go into a GitHub
+#   release: the tag given, or dev-<run number> as a prerelease.
+# - Pushing a tag v* (git tag v0.3.0 && git push origin v0.3.0) builds and
+#   publishes the release of that tag.
+# - A commit whose message holds [release] builds the archives once pushed
+#   (without publishing). Other pushes skip the jobs: no minutes used.
+# The "Run workflow" button needs this file on the default branch (main).
+
+on:
+  push:
+    tags: ["v*"]
+    # the archives of a commit marked [release], to try them (without publishing)
+    branches: ["**"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish a GitHub release with the archives"
+        type: boolean
+        default: false
+      tag:
+        description: "Tag of the release (empty: dev-<run number>, a prerelease)"
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    if: github.event_name != 'push' || github.ref_type == 'tag' || contains(github.event.head_commit.message, '[release]')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            runner: ubuntu-22.04
+            preset: linux
+          - os: windows
+            runner: windows-latest
+            preset: windows-vs
+          - os: macos
+            runner: macos-latest
+            preset: macos
+    runs-on: ${{ matrix.runner }}
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      # the SDL2 of vcpkg is built against the X11 and Wayland headers
+      - name: System packages
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool pkg-config \
+            libx11-dev libxft-dev libxext-dev libxrandr-dev libxi-dev libxcursor-dev \
+            libxss-dev libxxf86vm-dev libxinerama-dev libxkbcommon-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libwayland-dev libdbus-1-dev libibus-1.0-dev
+
+      - name: vcpkg (Linux, macOS)
+        if: matrix.os != 'windows'
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+      - name: vcpkg (Windows)
+        if: matrix.os == 'windows'
+        shell: pwsh
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "$env:VCPKG_ROOT"
+          & "$env:VCPKG_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }} -j 4
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }} --output-on-failure
+
+      - name: Name
+        id: name
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then
+            version="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            version="${{ inputs.tag }}"
+          else
+            version="dev-${{ github.run_number }}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          arch=x64
+          [ "${{ matrix.os }}" = macos ] && arch=arm64
+          echo "dir=r4fly-$version-${{ matrix.os }}-$arch" >> "$GITHUB_OUTPUT"
+
+      # r4fly, the examples (and SDL2.dll on Windows), the license, the README and the
+      # small models of the tests as samples
+      - name: Package
+        run: |
+          dir="${{ steps.name.outputs.dir }}"
+          cmake --install "out/build/${{ matrix.preset }}" --config Release --prefix stage
+          mkdir -p "$dir/samples"
+          cp stage/bin/* "$dir/"
+          cp LICENSE README.md "$dir/"
+          cp tests/data/* "$dir/samples/"
+          rm -f "$dir/samples/make_data.py"
+          if [ "$RUNNER_OS" = Windows ]; then
+            7z a "$dir.zip" "$dir"
+            echo "ARCHIVE=$dir.zip" >> "$GITHUB_ENV"
+          else
+            tar czf "$dir.tar.gz" "$dir"
+            echo "ARCHIVE=$dir.tar.gz" >> "$GITHUB_ENV"
+          fi
+          ls -l "$dir"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.name.outputs.dir }}
+          path: ${{ env.ARCHIVE }}
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag' || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Tag
+        id: tag
+        run: |
+          if [ "${{ github.ref_type }}" = tag ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: r4fly ${{ steps.tag.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ steps.tag.outputs.prerelease }}
+          generate_release_notes: true
+          files: dist/*
