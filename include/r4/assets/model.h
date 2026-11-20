@@ -64,8 +64,12 @@ struct Material {
     float alphaTest = 0;
     // drawn over the coplanar faces drawn before it
     bool decal = false;
-    // the bin of its draws, the lower first, as the bins of Performer
+    // the bin of its draws, the lower first, as the bins of Performer; below 0 the background bins, drawn before all the others, blended or not
     int drawOrder = 0;
+    // off: drawn whatever the depth already there
+    bool depthTest = true;
+    // off: never in the fog of the environment
+    bool fog = true;
     bool castShadows = true;
     bool receiveShadows = true;
     // PALETTE_RAMP: the intensity is rampAmbient + rampLight * max(N.L, 0)

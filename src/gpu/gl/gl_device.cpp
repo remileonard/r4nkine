@@ -535,7 +535,12 @@ public:
                     gl.Uniform1i(loc, (GLint)slot);
                 }
             }
-            gl.UseProgram(currentProgram);
+            // after a host interop the bound program is unknown: p stays bound and known
+            if (currentProgram == (GLuint)-1) {
+                currentProgram = p;
+            } else {
+                gl.UseProgram(currentProgram);
+            }
         }
         return {shaders.add({p})};
     }
@@ -616,6 +621,15 @@ public:
         if (mask) {
             gl.Clear(mask);
         }
+    }
+
+    void bindForHost(RenderTargetHandle target) override {
+        GLuint fbo = 0;
+        if (GLRenderTarget *r = targets.get(target.id)) {
+            fbo = r->msaaFbo ? r->msaaFbo : r->fbo;
+        }
+        gl.BindFramebuffer(FRAMEBUFFER, fbo);
+        boundFbo = fbo;
     }
 
     void endPass() override {

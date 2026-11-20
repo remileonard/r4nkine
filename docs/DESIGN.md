@@ -99,7 +99,7 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
    - The receivers compare their depth with a 3 x 3 PCF filter. A normal offset and a bias prevent shadow acne. The shadow fades at the end of `shadowDistance`.
    - The lit materials lose the direct light in the shadow. The unlit materials lose `shadowStrength` of their color.
 3. **Draw list**: each visible drawable becomes an item. The item contains the mesh, the material, the world matrix, the depth and the pipeline.
-4. **Sort**: the renderer sorts the opaque items by pipeline, then by material, then by mesh. This decreases the number of state changes. It sorts the transparent items from back to front.
+4. **Sort**: the renderer sorts the opaque items by pipeline, then by material, then by mesh. This decreases the number of state changes. It sorts the transparent items from back to front. The items sort first by the `drawOrder` of their material (bins). A bin below 0 is a background bin: its items go before all the others, also if they are blended (the sky, the clouds of a game).
 5. **Upload**: the model matrices of all the items go into one vertex buffer. The renderer uploads this buffer one time for each frame. The shader reads the matrices as a per-instance stream (locations 4 to 7). The shader calculates the normal matrix.
 6. **Draw**: consecutive items with the same mesh, material and pipeline become one instanced draw. The draw starts at their offset in the matrix buffer. The device does not bind again a binding that did not change.
 
@@ -184,7 +184,7 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 
 - `Unlit`: the color without change.
 - `Phong`: per-pixel Blinn-Phong with one directional light, ambient light, emission and linear fog. On a two-sided face, the normal turns to the eye, whatever the winding (two-sided lighting).
-- **Common options** (all models): vertex colors (lmcolor or color material), diffuse texture, alpha masks and blending, decals, sphere maps, no depth writes.
+- **Common options** (all models): vertex colors (lmcolor or color material), diffuse texture, alpha masks and blending, decals, sphere maps, no depth writes, no depth test (`depthTest`), no fog (`fog`).
 - `PaletteRamp`: the lighting of the 8-bit games (Strike Commander and others).
   - The intensity is `rampAmbient + rampLight × max(N·L, 0)`.
   - The red of the vertex colors gives the palette index of the face. The index and the intensity select the shade in a table of 256 colors × 32 intensities. This table is the image of the material. The loader makes it from the ramps of the palette.
@@ -207,7 +207,7 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | 3b | `r4::ui`, the GUI of perfly drawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performance; render options in the renderer (culling, freeze, sort, instancing, textures, lighting, LOD scale) and CPU times | **done** |
 | 4 | RealSpace in `contrib/librealspace`: RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
 | 4b | renderer: shadow map, fog, texture scalers, anisotropic filter, mipmaps, palette index textures, animated textures, shadow mask, compact placements | **done** |
-| 5 | libRealSpace integration: a renderer from `SCRenderer` that sends the work to R4nkine, with host interop | not done |
+| 5 | libRealSpace integration: `neosc_r4`, the game drawn only by R4nkine in a core context: screen, 320 x 200 screen, renderer, flight on the scene graph | **done** |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | not done |
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
 | game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | not done |
@@ -232,11 +232,15 @@ libRealSpace reads the data of the game. The code in `contrib/librealspace` goes
 
 **r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `contrib/librealspace/README_R4NKINE.md`.
 
-## Integration in libRealSpace (plan, step 5)
+## Integration in libRealSpace (step 5)
 
-`SCRenderer` has virtual methods and a `setInstance()` hook. Thus, a `R4Renderer : public SCRenderer` can replace it. The game does not change.
+`neosc_r4` is neosc drawn by R4nkine. The code is in `contrib/librealspace/src/r4game`. A patch adds virtual methods to libRealSpace (`contrib/librealspace/patches/r4-hooks.patch`). The behavior of neosc does not change.
 
-- **Overridden functions**: only the high-level entry points: `renderWorldSolid`, the `drawModel` overloads, `drawModelWithChilds`, `renderMissionObjects` and `renderObjects`. The immediate-mode helpers are not necessary after this change.
-- **GL context**: the game keeps its compatibility context. R4nkine draws between `beginHostInterop()` and `endHostInterop()`. Thus, the cockpit, the HUD and the 2D screens continue to draw with fixed-pipeline GL.
-- **Draw order**: first, `drawModel` draws immediately with the precompiled meshes. Thus, the order of the game stays the same. After this step, a draw list with sort and instancing comes. The renderer sends this list at synchronization points, for example before the cockpit.
-- **Objects added to the map**: they are in the graph of R4nkine (forests, villages). The renderer draws them with the terrain. The game can do collision queries on them with an intersection call.
+- **Context**: OpenGL 3.3 core (4.1 core on macOS). The game makes no GL call. Only R4nkine uses the context.
+- **Screen** (`R4Screen`, `R4VGA`, `R4Loader`): the window, the post process, the 320 x 200 screen and the loading screen. The 320 x 200 screen is an overlay over the 3D. Its index 255 is clear.
+- **Renderer** (`R4Renderer : SCRenderer`): it overrides all the methods that draw.
+  - It has its own model matrix stack (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`). The patch adds these methods. The game code that used the GL matrix stack uses them now.
+  - It keeps the calls of the game: the models with their matrix, the effects (billboards, sprites, particles, tracers, effect triangles, textured quads, clouds, lines, points) as triangles batched by state, the sky, the graphs of the scenes.
+  - A pass of the renderer draws them with the camera of the game. The pass occurs before a change of view, before the 320 x 200 screen and at the end of the frame.
+  - The view of the target camera has its own render target (107 x 75). The renderer reads it back for the cockpit (`readRenderToTexture`).
+- **Flight** (`R4Strike : SCStrike`): the graph of the flight lives as long as the flight. It has the terrain, a node for each plane, mission object and simulated object. The APP step sets the nodes from the game one time for each frame. The graph goes in the same pass as the effects and the cockpit. See [GAME_INTEGRATION.md](GAME_INTEGRATION.md).

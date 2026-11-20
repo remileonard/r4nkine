@@ -31,7 +31,14 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/executables/r4objviewer/WorldScene.h/.cpp` | Une mission en scène R4nkine : `RSMission`, `RSWorld` et `RSArea` chargés par libRealSpace, le terrain, les objets de la carte et de la mission |
 | `src/executables/r4objviewer/TerrainDiag.h/.cpp` | Le diagnostic d'un terrain (`-diag`) : ses types et ses textures en images |
 | `src/executables/r4objviewer/CMakeLists.txt` | L'exécutable, lié comme le debugger |
-| `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge et r4objviewer |
+| `src/r4game/R4Screen.h/.cpp` | La fenêtre du jeu sur R4nkine : contexte GL, device, post-process, l'image où le jeu dessine, l'allumage de la TV |
+| `src/r4game/R4VGA.h/.cpp` | L'écran 320 x 200 (menus, conversations, films, cockpit 2D) affiché par les overlays de R4nkine, par-dessus ce que le jeu a dessiné |
+| `src/r4game/R4Loader.h/.cpp` | L'écran de chargement affiché par un overlay de R4nkine |
+| `src/r4game/R4Renderer.h/.cpp` | Le rendu de libRealSpace sur R4nkine, sans aucun appel GL : sa pile de matrices, les modèles et les effets du jeu gardés puis dessinés en une passe, le ciel, la caméra de cible |
+| `src/r4game/R4Strike.h/.cpp` | Le vol sur le graphe de scène : le graphe du vol, l'APP qui le met à jour depuis le jeu, son dessin |
+| `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA`, `R4Loader`, `R4Renderer` et `R4Strike` |
+| `patches/r4-hooks.patch` | Le patch de libRealSpace que demande `neosc_r4` |
+| `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge, r4objviewer, et r4game et neosc_r4 quand le patch est appliqué |
 
 ## Intégration
 
@@ -128,6 +135,142 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 
      Avec `-frames 1`, le viewer se ferme ensuite.
 
+## neosc_r4 : le jeu sur R4nkine
+
+`neosc_r4` est neosc dont l'affichage passe par R4nkine. Le travail se fait par étapes :
+
+| Étape | Contenu | État |
+|---|---|---|
+| 1 | `R4Screen`, `R4VGA`, `R4Loader` : la fenêtre, le post-process, l'écran 320 x 200 et le chargement | **fait** |
+| 2 | `R4Strike` : le vol sur le graphe de scène (terrain, avions, objets, armes), mis à jour par l'APP | **fait** |
+| 3 | Tout le reste par R4nkine : effets, nuages, ciel, caméra de cible, cockpit 3D, visionneuse d'objets | **fait** |
+| 4 | Le contexte core (3.3, 4.1 sous macOS) : le jeu ne fait plus aucun appel GL | **fait** |
+
+**Le patch.** `RSVGA`, `Loader` et `SCStrike` n'ont pas de méthode virtuelle pour leur affichage. `patches/r4-hooks.patch` en ajoute, sans changer le comportement de neosc :
+- `RSVGA` : `displayBuffer`, `init`, `activate` et le destructeur deviennent virtuels ; la création des textures GL passe dans `initTextures()`, virtuelle ; les membres privés deviennent protégés ;
+- `Loader` : l'affichage de la surface de chargement passe dans `presentSurface()`, virtuelle ; le destructeur devient virtuel ;
+- `SCStrike` : la lambda de dessin de `runFrame` devient `renderScene`, `renderWorld` et `renderPlayerPlane`, virtuelles ; `SCStrike::create()` et `setFactory()` choisissent le type des vols (`SCGameFlow::flyMission` et `SCTrainingMenu::OnSearchAndDestroy` passent par `create()`) ;
+- `SCPlane::getWheelIndex()` et `SCSimulatedObject::smokeSet()` donnent l'accès au train et à la fumée ;
+- `SCRenderer` : `pushMatrix`, `popMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `clearDepth` et `readRenderToTexture`, virtuelles (par défaut les appels GL d'avant) ; `SCVirtualCockpit::render`, `SCObjectViewer::runFrame` et `SCCockpit::RenderMFDSCamera` passent par elles au lieu d'appeler GL.
+
+Pour l'appliquer, à la racine de libRealSpace : `git apply chemin/vers/patches/r4-hooks.patch`. Sans le patch, `cmake/R4nkine.cmake` ne construit pas `neosc_r4` et le dit par un avertissement.
+
+**L'étape 1.**
+- `R4Screen` ouvre la fenêtre et le contexte OpenGL (voir l'étape 4).
+- Le post-process de libRealSpace (`fx_cpc_palette`, `fx_scanlines`, `fx_pixel_scale`, `fx_fxaa` de `[video]`, et `msaa` de `[Video]`) passe par celui de R4nkine. Quand un effet est actif, le jeu dessine dans la cible du post-process (`Device::bindForHost`), puis `refresh()` applique les effets dans la fenêtre. La palette CPC compte 27 couleurs (0, 128 ou 255 par canal).
+- `R4VGA` reçoit l'image 320 x 200 déjà passée par la palette, les fondus, le contraste et la teinte (`displayBuffer`). Il la montre en 4:3 au centre de la fenêtre avec un overlay, net ou filtré avec `super_eagle_2x`, et les bandes latérales de l'écran large (`widescreen_ambilight`). L'index 255 reste transparent : le cockpit 2D se pose sur la 3D.
+- `R4Loader` montre la surface de chargement en 4:3, ses couleurs converties depuis le format de la surface SDL.
+- Testé ici sans les données complètes du jeu (SC.DAT, LILTRE.TRE et VOCLIST.TRE manquent) : un programme de test lance les vraies classes. L'allumage de la TV s'affiche, puis l'écran 320 x 200 sur une scène dessinée en pipeline fixe, sa zone transparente laisse voir la scène, et l'état GL du jeu est intact après chaque passage de R4nkine. Avec scanlines, pixels x 2 et MSAA 4x, l'image finale porte les effets.
+
+**L'étape 2 : le vol sur le graphe de scène.**
+- `R4Strike` remplace `SCStrike` pour tous les vols : campagne, entraînement, Tactical Operations. Le patch ajoute la fabrique `SCStrike::create()` ; `neosc_r4` lui donne `R4Strike` (`SCStrike::setFactory`).
+- Le graphe vit autant que le vol, en axes de libRealSpace (Y en haut) :
+  - `terrain` (masque `LAYER_TERRAIN`) : le terrain de `r4bridge::terrainModel` (quadtree, anneaux, atlas) et les pistes de `overlayModel`, faits une fois par zone ;
+  - `actors` : un nœud par avion (corps, roues, postcombustion, armes sous les points d'emport) et un nœud par objet de la mission ; l'avion du joueur a le masque `LAYER_PLAYER` ;
+  - `simulated objects` (masque `LAYER_SHOTS`) : un nœud par missile, bombe ou obus avec un modèle.
+- Les modèles des `RSEntity` sont faits par `r4bridge::toModel` à leur première apparition et partagés entre les nœuds.
+- **APP** (`R4Strike::app`, une fois par image, après le placement de la caméra) : les matrices et la visibilité des nœuds viennent de l'état du jeu (position, cap, tangage, roulis, train, poussée, emports), avec les mêmes calculs que `SCPlane::Render` et `SCRenderer::drawModel`. Un nœud est créé quand son objet apparaît et retiré quand il disparaît. Les avions et objets cachés ou à plus de 40 km gardent leur nœud, avec le masque 0.
+- **CULL et DRAW** (`R4Strike::renderWorld`) : le graphe du vol entre dans la passe de `R4Renderer` (`addScene`), avec le ciel, les effets du jeu et le cockpit 3D. Une seule passe du renderer dessine la vue, avec la caméra du jeu.
+- Le patch sort de `SCStrike::runFrame` le dessin d'une vue : `renderScene`, `renderWorld` et `renderPlayerPlane`, virtuelles. Le comportement de neosc ne change pas. Il ajoute aussi `SCPlane::getWheelIndex()` et `SCSimulatedObject::smokeSet()`.
+- Le vol avec les boîtes de debug (`show_bbox`) reprend le dessin de `SCStrike`, par `R4Renderer`.
+- `RenderOptions::clear` à faux : une passe du renderer garde la couleur et la profondeur de la cible (le ciel du jeu).
+- Testé ici avec un programme de test sur MISN-1A : la vue cockpit (cockpit 2D sur la 3D) et la vue extérieure (F-16 du joueur avec ses emports, un autre avion, la piste) donnent la même image avec `SCRenderer` et `SCStrike` qu'avec `R4Strike` et son graphe. Avec scanlines et pixels x 2, la 3D passe par la cible du post-process.
+
+**L'étape 3 : tout le rendu par R4nkine.** `R4Renderer` remplace toutes les méthodes de `SCRenderer` qui dessinent, et n'appelle plus GL.
+- **Matrices** : une pile de matrices propre (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`) à la place de celle de GL. Tous les `drawModel` (position, orientation, ajustement, échelle, `drawModelWithChilds`, `renderObjects`, `renderMissionObjects`) calculent leur matrice comme `SCRenderer` (`glRotatef` en degrés ou `Matrix::rotateM` en radians).
+- **Caméra** : `bindCameraProjectionAndViewViewport` et `initRenderCameraView` donnent la vue, la projection (avec le décalage vertical) et le viewport de la passe, depuis la `Camera` du jeu.
+- **Passe** : les modèles, les effets, le ciel et les graphes (`addScene`) sont gardés, puis dessinés en un seul `render()` : avant un changement de vue, avant l'écran 320 x 200 (`R4Screen::beginGamePass`) et à la fin de l'image (`refresh`).
+- **Effets** : billboards, sprites, particules, traçantes, triangles d'effets (`drawTriangles`, additifs ou alpha), quads texturés (panneaux du cockpit 3D), nuages, lignes, boîtes et points deviennent des triangles en monde, regroupés par état (texture, mélange, test et écriture de profondeur, test alpha, bac). Un maillage par groupe et par passe.
+- **Ordre** : le ciel (bac -2, sans profondeur, hors du brouillard) puis les nuages (bac -1) avant tout, comme le dôme et les nuages de `renderWorldSolid` ; les points et les lignes en dernier, sans profondeur, comme le jeu les dessine après les modèles.
+- **Textures du jeu** : les `Texture` (billboards, panneaux du cockpit 3D) et les textures de `createTexture` sont envoyées à R4nkine ; `uploadTextureContentToGPU` les met à jour.
+- **Caméra de cible** : sa vue a sa propre cible de rendu de 107 x 75. `getRenderToTexture` la relit, et le cockpit la lit par `readRenderToTexture`. Le problème du MSAA de l'étape 1 disparaît.
+- **R4nkine** : `Material::depthTest` et `Material::fog` (le ciel), les bacs de fond (`drawOrder` négatif, dessinés avant tout, mélangés ou non).
+- Testé ici, avec la même scène par `SCRenderer` (contexte compatibilité) et par `R4Renderer` (contexte core) : terrain, modèles, billboard, sprite, particule, triangles additifs et alpha, traçante, quad texturé, ligne, point, boîtes, nuage, et l'image de la caméra de cible. Les images sont les mêmes. Différence voulue : les sprites et les particules n'écrivent plus la profondeur et gardent le test de profondeur ; dans le jeu, ils le perdaient par un état GL laissé par `drawModel`.
+
+**L'étape 4 : le contexte core.**
+- `R4Screen` demande un contexte OpenGL 3.3 core (4.1 core avec forward compatible sous macOS). La clé `gl_compatibility` de `[Video]` demande un contexte compatibilité, seulement pour comparer avec `SCRenderer`.
+- Le jeu ne fait plus aucun appel GL en vol, dans les menus et dans la visionneuse d'objets. Seul l'affichage VR de `SCStrike` (`drawTargetSquareOverlay`) appelle encore GL : il sera repris avec OpenXR.
+- R4nkine : `createShader` laissait une erreur GL après une interop (programme inconnu restauré). Corrigé.
+- Testé ici en contexte core avec la sortie de debug de GL : MISN-1A en vue cockpit, extérieure et cible, 200 images chacune, la visionneuse d'objets, et la scène des effets : aucune erreur GL. macOS n'est pas testé ici.
+
+
+**Les options du rendu (`config.ini`, section `[R4nkine]`).** `R4Renderer` les lit à son démarrage. Sans elles, l'image reste celle du jeu.
+
+```ini
+[R4nkine]
+; ombres portées : une carte d'ombre depuis la lumière des objets du jeu
+shadows = false
+shadow_map_size = 2048
+; en mètres : la zone couverte devant la caméra
+shadow_distance = 1500
+; les arbres projettent aussi leur ombre (coûteux)
+tree_shadows = false
+; off, noise (bois et clairières sur le vert du terrain) ou textures (les arbres peints dans les textures)
+forests = off
+; multiplie toutes les densités
+forest_density = 1.0
+; les bâtiments sur les textures de villes, villages, fermes et ports
+buildings = false
+; none, 2xsai, xbr2x ou xbr4x : agrandit les textures des objets et du terrain
+texture_upscale = none
+texture_mipmaps = false
+; filtre anisotrope, de 1 à 16
+anisotropy = 1
+; le terrain éclairé par le soleil le long de ses rampes, comme les objets, plutôt que par la lumière des données (-lit de r4objviewer)
+sun_terrain = false
+; multiplie le relief pour les normales seulement, de 1 à 16 (-relief)
+terrain_relief = 4
+; la part de leur couleur que perd dans l'ombre ce qui n'est pas éclairé : terrain des données, pistes (Shadow on Unlit)
+shadow_strength = 0.5
+; le soleil, en degrés : cap depuis le nord vers l'est, hauteur (-sun C E) ; sans ces clés, la lumière des objets du jeu
+; sun_heading = 120
+; sun_elevation = 30
+; la lumière des objets (ambiante + directe x N.L) ; sans ces clés, celle du jeu (Ambient, Light)
+; light_ambient = 0.375
+; light_direct = 0.625
+; le brouillard en km depuis l'œil ; sans ces clés, celui du jeu (0,40 et 0,93 x max_view_distance) ; show_fog de [Game] l'active
+; fog_start = 64
+; fog_end = 149
+; Wireframe, Flat Shading
+wireframe = false
+flat_shading = false
+; multiplie les distances des LOD du terrain, des objets et des arbres (LOD Scale, 0,05 à 4)
+lod_scale = 1
+; distance (par la distance), fine, medium ou coarse (Terrain Detail)
+terrain_lod = distance
+vsync = true
+
+; le post-process de r4objviewer ; chaque clé présente remplace le réglage du jeu (fx_* de [video], msaa de [Video])
+; msaa = 1               ; 1, 2, 4 ou 8
+; fxaa = false
+; pixelate = 1           ; l'image dessinée comme si elle était N fois moins large
+; brightness = 0         ; -1 à 1
+; contrast = 1
+; saturation = 1         ; 0 : gris
+; gamma = 1
+; tint = 1, 1, 1         ; r, g, b de 0 à 1, multipliés
+; fade = 0               ; 0 à 1 vers fade_color
+; fade_color = 0, 0, 0
+; palette = none         ; none, vga256, ega16, cga4, handheld4, amber8, grey16 ou cpc27 (Reduce to a Palette)
+; dither = true          ; Bayer 4 x 4 avec la palette
+; scanlines = false
+; scanline_strength = 0.35
+; scanline_size = 3      ; pixels par ligne
+; curvature = 0          ; 0 à 0,3
+; aberration = 0         ; pixels, aux bords
+; vignette = 0           ; 0 à 1
+```
+
+Les réglages de r4objviewer qui ne sont pas ici : **Textures** et **Gouraud by Vertex** sont `show_texture` et `object_gouraud` de `[Game]`, **Fog** est `show_fog` de `[Game]`. Le mode, la caméra, la navigation, les couches (terrain, pistes, objets, parties), Follow the Ground, On Ground et `-nolift` sont propres au viewer : dans le jeu, c'est lui qui place sa caméra et ses objets.
+
+- Les forêts et les bâtiments viennent de `r4bridge` (`forestChunks`, `plantForest`, `treeModel`, `cityModel`), comme dans r4objviewer. Ils sont faits une fois par zone. Il n'y en a pas sur les pistes, sur les objets de la carte, ni sur les objets de la mission (`R4Strike` donne leur place et leur taille).
+- Les forêts sont des blocs de 2 km : un LOD par bloc, un instancer par espèce, l'arbre complet jusqu'à 1,5 km et l'arbre simple jusqu'à 6 km.
+- Le soleil (`sun_heading`, `sun_elevation`) éclaire les objets et le terrain (`sun_terrain`) et donne la direction des ombres. Sans ces clés, c'est la lumière des objets du jeu (`setObjectLight`), presque verticale : les ombres sont courtes.
+- En fil de fer, le dôme du ciel et les nuages sont aussi en lignes : ce sont des maillages, alors que le ciel de r4objviewer est la couleur du fond.
+- Les ombres ne sont pas faites dans la vue de la caméra de cible. Sans `tree_shadows`, les forêts (masque `R4Renderer::kForestMask`) sont hors de la passe d'ombre.
+- Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
+- Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.
+- Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, une vue proche où le F-16 et le char projettent leur ombre sur le terrain, puis le post-process (MSAA 4x, FXAA, palette EGA tramée, scanlines, courbure, vignette, aberration ; luminosité, contraste, saturation, gamma, fondu), le fil de fer, le rendu plat avec une autre lumière, le terrain grossier avec `lod_scale` 0,2 et un brouillard de 0,2 à 1,5 km.
 ## Ce qu'il faut regarder pour apprendre R4nkine
 
 Le viewer suit les étapes d'un programme R4nkine, numérotées dans `main.cpp`.

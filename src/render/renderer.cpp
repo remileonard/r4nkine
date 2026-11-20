@@ -41,7 +41,7 @@ struct MaterialBlock {
     float flags2[4]; // sphere map, palette mode (1 ramp, 2 lit by the ramp's intensity), ramp ambient, ramp light
     float flags3[4]; // receives the shadows, drawn over the face of the same depth, index atlas columns and rows
     float textureMean[4];
-    float animation[4]; // frames, frames per second
+    float animation[4]; // frames, frames per second, out of the fog
 };
 
 const char *kVertexShader = R"(#version 330
@@ -217,7 +217,7 @@ float rampIntensity(float shadow) {
     return intensity;
 }
 vec3 fogged(vec3 color) {
-    if (fogParams.z > 0.5) {
+    if (fogParams.z > 0.5 && animation.z < 0.5) {
         float f = clamp((length(vPosition) - fogParams.x) / max(fogParams.y - fogParams.x, 1e-6), 0.0, 1.0);
         color = mix(color, fogColor.rgb, f);
     }
@@ -462,7 +462,7 @@ bool Renderer::createShaders() {
 gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
     bool blend = m.alpha == assets::AlphaMode::BLEND;
     bool additive = m.alpha == assets::AlphaMode::ADDITIVE;
-    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8;
+    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8 | (m.depthTest ? 0u : 1u << 16);
     auto it = pipelines_.find(key);
     if (it != pipelines_.end()) {
         return it->second;
@@ -477,6 +477,9 @@ gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Pri
     d.depthWrite = (!blend || m.blendDepthWrite) && m.depthWrite;
     if (m.depthEqual) {
         d.depthCompare = gpu::CompareOp::EQUAL;
+    }
+    if (!m.depthTest) {
+        d.depthCompare = gpu::CompareOp::ALWAYS;
     }
     d.wireframe = wireframe_ && tris;
     if (m.decal && !m.depthEqual) {
@@ -591,6 +594,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     copyVec(b.textureMean, Vec3{mean.x, mean.y, mean.z}, mean.w);
     b.animation[0] = (float)std::max(1, p.frames);
     b.animation[1] = p.framesPerSecond;
+    b.animation[2] = p.fog ? 0.0f : 1.0f;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -676,7 +680,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     item.order = mat->params.drawOrder;
     item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
-    bool behind = mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE;
+    bool behind = (mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE) && mat->params.drawOrder >= 0;
     (behind ? transparent_ : opaque_).push_back(item);
     stats_.drawables++;
 }
@@ -908,6 +912,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     clear.g = env_.clearColor.y;
     clear.b = env_.clearColor.z;
     clear.a = env_.clearColor.w;
+    clear.color = options_.clear;
+    clear.depth = options_.clear;
     device_.beginPass(target_, x, y, width, height, clear);
     device_.bindUniformBuffer(FRAME_SLOT, frameUniforms_, 0, sizeof(FrameBlock));
     if (shadowMap_) {
