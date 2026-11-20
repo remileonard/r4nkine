@@ -1,5 +1,7 @@
 # R4nkine
 
+<p align="center"><img src="docs/logo.png" alt="R4nkine" width="256"></p>
+
 A 3D rendering library in the spirit of IRIS Performer, for today's GPUs:
 a scene graph built for speed, loaders for old and new asset formats, and
 `r4fly`, a viewer that is the heir of perfly.
