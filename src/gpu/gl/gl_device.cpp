@@ -618,6 +618,15 @@ public:
         }
     }
 
+    void bindForHost(RenderTargetHandle target) override {
+        GLuint fbo = 0;
+        if (GLRenderTarget *r = targets.get(target.id)) {
+            fbo = r->msaaFbo ? r->msaaFbo : r->fbo;
+        }
+        gl.BindFramebuffer(FRAMEBUFFER, fbo);
+        boundFbo = fbo;
+    }
+
     void endPass() override {
         setCap(SCISSOR_TEST, false, scissorEnabled);
     }

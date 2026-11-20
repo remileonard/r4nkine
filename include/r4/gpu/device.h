@@ -256,6 +256,10 @@ public:
     }
     virtual void endHostInterop() {
     }
+    // the host draws into target as into its window, until it binds another framebuffer; a null target is the window
+    virtual void bindForHost(RenderTargetHandle target) {
+        (void)target;
+    }
 };
 
 // in the GL context current on this thread; getProc: the function loader of the window system

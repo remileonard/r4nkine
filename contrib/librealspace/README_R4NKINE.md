@@ -31,7 +31,12 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/executables/r4objviewer/WorldScene.h/.cpp` | Une mission en scène R4nkine : `RSMission`, `RSWorld` et `RSArea` chargés par libRealSpace, le terrain, les objets de la carte et de la mission |
 | `src/executables/r4objviewer/TerrainDiag.h/.cpp` | Le diagnostic d'un terrain (`-diag`) : ses types et ses textures en images |
 | `src/executables/r4objviewer/CMakeLists.txt` | L'exécutable, lié comme le debugger |
-| `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge et r4objviewer |
+| `src/r4game/R4Screen.h/.cpp` | La fenêtre du jeu sur R4nkine : contexte GL, device, post-process, l'image où le jeu dessine, l'allumage de la TV |
+| `src/r4game/R4VGA.h/.cpp` | L'écran 320 x 200 (menus, conversations, films, cockpit 2D) affiché par les overlays de R4nkine, par-dessus ce que le jeu a dessiné |
+| `src/r4game/R4Loader.h/.cpp` | L'écran de chargement affiché par un overlay de R4nkine |
+| `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA` et `R4Loader` |
+| `patches/r4-hooks.patch` | Le patch de libRealSpace que demande `neosc_r4` |
+| `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge, r4objviewer, et r4game et neosc_r4 quand le patch est appliqué |
 
 ## Intégration
 
@@ -127,6 +132,32 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
      - `textures.txt` : par image, le nombre de triangles, les types sur lesquels elle est posée et ses premières cellules.
 
      Avec `-frames 1`, le viewer se ferme ensuite.
+
+## neosc_r4 : le jeu sur R4nkine
+
+`neosc_r4` est neosc dont l'affichage passe par R4nkine. Le travail se fait par étapes :
+
+| Étape | Contenu | État |
+|---|---|---|
+| 1 | `R4Screen`, `R4VGA`, `R4Loader` : la fenêtre, le post-process, l'écran 320 x 200 et le chargement | **fait** |
+| 2 | `R4Renderer` pour la 3D du vol : terrain, objets, matrices, caméras | à faire |
+| 3 | `R4Renderer` pour le reste : effets, nuages, rendu dans une texture, cockpit 3D, visionneuse d'objets | à faire |
+| 4 | le contexte core strict, pour macOS | à faire |
+
+**Le patch.** `RSVGA` et `Loader` n'ont pas de méthode virtuelle pour leur affichage. `patches/r4-hooks.patch` en ajoute, sans changer le comportement de neosc :
+- `RSVGA` : `displayBuffer`, `init`, `activate` et le destructeur deviennent virtuels ; la création des textures GL passe dans `initTextures()`, virtuelle ; les membres privés deviennent protégés ;
+- `Loader` : l'affichage de la surface de chargement passe dans `presentSurface()`, virtuelle ; le destructeur devient virtuel.
+
+Pour l'appliquer, à la racine de libRealSpace : `git apply chemin/vers/patches/r4-hooks.patch`. Sans le patch, `cmake/R4nkine.cmake` ne construit pas `neosc_r4` et le dit par un avertissement.
+
+**L'étape 1.**
+- `R4Screen` ouvre un contexte OpenGL 3.3 compatibilité sous Windows et Linux, 4.1 core sous macOS. Le jeu dessine encore une partie de son image en pipeline fixe : sous macOS, `neosc_r4` ne marchera qu'à l'étape 4.
+- Le post-process de libRealSpace (`fx_cpc_palette`, `fx_scanlines`, `fx_pixel_scale`, `fx_fxaa` de `[video]`, et `msaa` de `[Video]`) passe par celui de R4nkine. Quand un effet est actif, le jeu dessine dans la cible du post-process (`Device::bindForHost`), puis `refresh()` applique les effets dans la fenêtre. La palette CPC compte 27 couleurs (0, 128 ou 255 par canal).
+- `R4VGA` reçoit l'image 320 x 200 déjà passée par la palette, les fondus, le contraste et la teinte (`displayBuffer`). Il la montre en 4:3 au centre de la fenêtre avec un overlay, net ou filtré avec `super_eagle_2x`, et les bandes latérales de l'écran large (`widescreen_ambilight`). L'index 255 reste transparent : le cockpit 2D se pose sur la 3D.
+- `R4Loader` montre la surface de chargement en 4:3, ses couleurs converties depuis le format de la surface SDL.
+- Tout ce que R4nkine dessine passe entre `beginHostInterop()` et `endHostInterop()` : l'état GL du jeu est rendu tel quel.
+- Limite connue : `SCRenderer` fait l'image de la caméra de cible en copiant un coin de l'image courante (`glCopyTexImage2D`). Avec `msaa` à 2 ou plus, l'image courante est une cible multi-échantillonnée, et OpenGL refuse cette copie : l'écran de la caméra de cible garde son ancienne image. Sans MSAA, la copie marche. L'étape 3 remplace ce rendu.
+- Testé ici sans les données complètes du jeu (SC.DAT, LILTRE.TRE et VOCLIST.TRE manquent) : un programme de test lance les vraies classes. L'allumage de la TV s'affiche, puis l'écran 320 x 200 sur une scène dessinée en pipeline fixe, sa zone transparente laisse voir la scène, et l'état GL du jeu est intact après chaque passage de R4nkine. Avec scanlines, pixels x 2 et MSAA 4x, l'image finale porte les effets.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine
 

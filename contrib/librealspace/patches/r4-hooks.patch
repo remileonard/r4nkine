@@ -1,0 +1,114 @@
+--- a/src/engine/RSVGA.h
++++ b/src/engine/RSVGA.h
+@@ -21,7 +21,7 @@
+ struct VGAPalette;
+ 
+ class RSVGA{
+-private:
++protected:
+     int width;
+     int height;
+     VGAPalette palette;
+@@ -30,7 +30,8 @@
+     uint32_t textureID;
+     Texel data[320 * 200];
+     inline static std::unique_ptr<RSVGA> s_instance{};
+-    void displayBuffer(uint32_t* buffer, int width, int height);
++    virtual void displayBuffer(uint32_t* buffer, int width, int height);
++    virtual void initTextures();
+     RSScreen *Screen = &RSScreen::instance();
+ 
+     // --- Widescreen Ambilight ---
+@@ -68,9 +69,9 @@
+     static bool hasInstance() { return (bool)s_instance; }
+ 
+     RSVGA();
+-    ~RSVGA();
+-    void init(int width, int height);
+-    void activate(void);
++    virtual ~RSVGA();
++    virtual void init(int width, int height);
++    virtual void activate(void);
+     void setPalette(VGAPalette* newPalette);
+     VGAPalette* getPalette(void);
+     void vSync(void);
+--- a/src/engine/RSVGA.cpp
++++ b/src/engine/RSVGA.cpp
+@@ -204,7 +204,10 @@
+     }
+     
+     this->palette = *palette.GetColorPalette();
++    this->initTextures();
++}
+ 
++void RSVGA::initTextures() {
+     glGenTextures(1, &this->textureID);
+     glBindTexture(GL_TEXTURE_2D, this->textureID);
+ 
+--- a/src/engine/Loader.h
++++ b/src/engine/Loader.h
+@@ -41,7 +41,7 @@
+     static bool hasInstance() { return (bool)s_instance; }
+ 
+     Loader();
+-    ~Loader();
++    virtual ~Loader();
+ 
+     void init();
+     void startLoading(std::function<void(Loader*)> loadingCallback);
+@@ -50,4 +50,6 @@
+     void log(const std::string& message);
+     void setProgress(float progress);
+     void close();    
++protected:
++    virtual void presentSurface(SDL_Surface *surface);
+ };
+\ No newline at end of file
+--- a/src/engine/Loader.cpp
++++ b/src/engine/Loader.cpp
+@@ -80,15 +80,6 @@
+     }
+     
+     SDL_FillRect(loadingSurface, NULL, SDL_MapRGBA(loadingSurface->format, 0, 0, 0, 255));
+-    glClearColor(0.f, 0.f, 0.0f, 1.f);
+-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+-    glMatrixMode(GL_PROJECTION);
+-    glPushMatrix();
+-    glLoadIdentity();
+-    glOrtho(-1, 1, -1, 1, -1, 1);
+-    glMatrixMode(GL_MODELVIEW);
+-    glPushMatrix();
+-    glLoadIdentity();
+ 
+     TTF_Font* font = TTF_OpenFont("./assets/AcPlus_IBM_VGA_9x16.ttf", 36);
+     if (font) {
+@@ -144,6 +135,20 @@
+         }
+         TTF_CloseFont(font);
+     }
++    this->presentSurface(loadingSurface);
++    SDL_FreeSurface(loadingSurface);
++}
++
++void Loader::presentSurface(SDL_Surface *loadingSurface) {
++    glClearColor(0.f, 0.f, 0.0f, 1.f);
++    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
++    glMatrixMode(GL_PROJECTION);
++    glPushMatrix();
++    glLoadIdentity();
++    glOrtho(-1, 1, -1, 1, -1, 1);
++    glMatrixMode(GL_MODELVIEW);
++    glPushMatrix();
++    glLoadIdentity();
+     GLuint loadingTexture;
+     glGenTextures(1, &loadingTexture);
+     glBindTexture(GL_TEXTURE_2D, loadingTexture);
+@@ -155,8 +160,6 @@
+     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, loadingSurface->w, loadingSurface->h, 
+                  0, GL_RGBA, GL_UNSIGNED_BYTE, loadingSurface->pixels);
+ 
+-    SDL_FreeSurface(loadingSurface);
+-
+     glDisable(GL_BLEND);
+     glDisable(GL_CULL_FACE);
+     glEnable(GL_TEXTURE_2D);
