@@ -547,6 +547,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
         }
     }
     m->bounds = sphereOf(b);
+    m->box = b;
     return m;
 }
 
@@ -821,7 +822,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         size_t o = opaque_.size();
         size_t t = transparent_.size();
         RenderStats keep = stats_;
-        cull(root, Mat4(1.0f), Frustum::fromMatrix(lightViewProj), false, cam.mask, cullEye_);
+        cull(root, Mat4(1.0f), Frustum::fromMatrix(lightViewProj), false, cam.mask & options_.shadowMask, cullEye_);
         stats_ = keep;
         auto casts = [](const DrawItem &it) {
             const assets::Material &m = it.material->params;

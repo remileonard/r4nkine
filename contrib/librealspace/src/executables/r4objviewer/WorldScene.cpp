@@ -115,6 +115,7 @@ WorldScene::WorldScene(AssetManager &assets, RSPalette &palette, r4::render::Ren
     overlays_->setName("overlays (runways)");
     forests_ = r4::scene::make<r4::scene::Switch>();
     forests_->setName("forests");
+    forests_->setMask(kForestMask);
     buildings_ = r4::scene::make<r4::scene::Switch>();
     buildings_->setName("buildings");
     root_->addChild(terrain_);
@@ -260,8 +261,9 @@ bool WorldScene::load(const WorldEntry &entry, std::string &error) {
     return true;
 }
 
-// as SCMission::loadMission and SCMissionScene::spawnCast: the player in its area; the others in the area of the first scene whose cast holds them (placement 1 at its center, 4000 high for an aircraft),
-// then on the ground when under it; the parts of no scene in a hidden layer of their own
+// as SCMission::loadMission and SCMissionScene::spawnCast: the player in its area; the others in the area of the first scene whose cast holds them,
+// placement 1 as SCMission::placeRelativeToPlayer with the center of that area, heading north, in place of the player; then on the ground when under it;
+// the parts of no scene in a hidden layer of their own
 void WorldScene::placeParts() {
     MISN &data = mission_->mission_data;
     MISN_PART *player = mission_->getPlayerCoord();
@@ -303,10 +305,8 @@ void WorldScene::placeParts() {
             int s = sceneOf[i];
             AREA *a = s >= 0 ? areaOf(data.scenes[s]->area_id) : areaOf(part->area_id);
             if (a) {
-                part->position = a->position;
-            }
-            if (isAircraft(part)) {
-                part->position.y = 4000;
+                part->position = a->position + part->relative_position;
+                part->azymuth = part->relative_azymuth % 360;
             }
         } else if (AREA *a = areaOf(part->area_id)) {
             part->position += a->position;

@@ -239,6 +239,9 @@ behaviors are kept, translated into the neutral format:
   equal cells: the green and blue of the vertex colors give the cell, its
   alpha the log2 of the width and height of the image in it, and the filter
   stays inside that image.
+- **Shadow mask**: the shadow pass culls with the camera mask and
+  `RenderOptions::shadowMask`; a node whose mask shares no bit with it casts
+  no shadow, nor its children, and is not visited by that pass.
 - **Animated textures**: `frames` > 1 makes `diffuseImage` a strip of frames
   from top to bottom, shown in turn at `framesPerSecond` by the time of the
   environment (`Environment::time`, set by the application).

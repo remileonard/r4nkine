@@ -15,6 +15,7 @@
 //  -lit      le terrain éclairé par le soleil (ses rampes, ses normales)
 //  -sun C E  le soleil : son cap et son élévation, en degrés
 //  -shadows  les ombres portées du soleil
+//  -treeshadows avec -shadows : les arbres aussi projettent leur ombre
 //  -nolift   les objets de la carte et de la mission laissés à la hauteur des données, au lieu d'être posés sur le terrain
 //  -nofog    sans le brouillard, qui commence 120 km et finit 450 km au-delà de la cible
 //  -at X,Y   avec -mission : la caméra sur ce point de la carte (axes de R4nkine)
@@ -183,12 +184,108 @@ struct GraphView {
     std::map<const r4::scene::Node *, bool> open;      // the open nodes
     std::map<r4::scene::Node *, uint32_t> hiddenMasks; // the hidden nodes, their old mask
     const r4::scene::Node *selected = nullptr;
+    r4::Mat4 selectedParent{1.0f}; // the world matrix of the parent of the selection
     void reset() {
         open.clear();
         hiddenMasks.clear();
         selected = nullptr;
+        selectedParent = r4::Mat4(1.0f);
     }
 };
+
+// the box of a node in the space of its parent: the boxes of its meshes, the spheres of its instancers
+r4::Box boxOf(r4::scene::Node &n) {
+    r4::Box box;
+    if (n.type() == r4::scene::NodeType::INSTANCER) {
+        const r4::Sphere &s = n.bounds();
+        if (!s.empty()) {
+            box.extend(s.center - r4::Vec3(s.radius));
+            box.extend(s.center + r4::Vec3(s.radius));
+        }
+        return box;
+    }
+    r4::Box local;
+    if (n.type() == r4::scene::NodeType::GEODE || n.type() == r4::scene::NodeType::BILLBOARD) {
+        for (const r4::scene::Drawable &d : static_cast<r4::scene::Geode &>(n).drawables()) {
+            if (d.mesh && !d.mesh->box.empty()) {
+                local.extend(d.mesh->box);
+            }
+        }
+    }
+    for (const r4::scene::NodePtr &c : n.children()) {
+        r4::Box child = boxOf(*c);
+        if (!child.empty()) {
+            local.extend(child);
+        }
+    }
+    if (local.empty()) {
+        return box;
+    }
+    for (int k = 0; k < 8; k++) {
+        r4::Vec3 corner{k & 1 ? local.max.x : local.min.x, k & 2 ? local.max.y : local.min.y, k & 4 ? local.max.z : local.min.z};
+        box.extend(r4::transformPoint(n.matrix(), corner));
+    }
+    return box;
+}
+
+// the culling sphere (a circle about each axis, of radius 1) and the bounding box (the unit cube) of the selected node
+std::shared_ptr<r4::scene::Group> makeSelectionMarkers(r4::render::Renderer &renderer, std::shared_ptr<r4::scene::Geode> &sphere, std::shared_ptr<r4::scene::Geode> &box) {
+    r4::assets::Material material;
+    material.name = "selection";
+    material.shading = r4::assets::Shading::UNLIT;
+    material.vertexColors = true;
+    material.castShadows = false;
+    auto line = [](r4::assets::Mesh &m, r4::Vec3 a, r4::Vec3 b, uint32_t color) {
+        for (r4::Vec3 p : {a, b}) {
+            r4::assets::Vertex v;
+            v.position = p;
+            v.color = color;
+            m.vertices.push_back(v);
+            m.indices.push_back((uint32_t)m.vertices.size() - 1);
+        }
+    };
+    r4::assets::Mesh circles;
+    circles.name = "culling sphere";
+    circles.primitive = r4::assets::Primitive::LINES;
+    const int n = 64;
+    const float turn = 2 * std::acos(-1.0f);
+    for (int axis = 0; axis < 3; axis++) {
+        for (int i = 0; i < n; i++) {
+            auto at = [&](int k) {
+                float c = std::cos(turn * k / n);
+                float s = std::sin(turn * k / n);
+                return axis == 0 ? r4::Vec3{0, c, s} : axis == 1 ? r4::Vec3{c, 0, s} : r4::Vec3{c, s, 0};
+            };
+            line(circles, at(i), at(i + 1), 0xff20e0ffu);
+        }
+    }
+    circles.computeBounds();
+    r4::assets::Mesh cube;
+    cube.name = "bounding box";
+    cube.primitive = r4::assets::Primitive::LINES;
+    for (int k = 0; k < 8; k++) {
+        for (int axis = 0; axis < 3; axis++) {
+            int other = k | 1 << axis;
+            if (other != k) {
+                r4::Vec3 a{(float)(k & 1), (float)(k >> 1 & 1), (float)(k >> 2 & 1)};
+                r4::Vec3 b{(float)(other & 1), (float)(other >> 1 & 1), (float)(other >> 2 & 1)};
+                line(cube, a, b, 0xffff40ffu);
+            }
+        }
+    }
+    cube.computeBounds();
+    sphere = r4::scene::make<r4::scene::Geode>();
+    sphere->setName("culling sphere");
+    sphere->addDrawable({renderer.uploadMesh(circles), renderer.createMaterial(material)});
+    box = r4::scene::make<r4::scene::Geode>();
+    box->setName("bounding box");
+    box->addDrawable({renderer.uploadMesh(cube), renderer.createMaterial(material)});
+    auto group = r4::scene::make<r4::scene::Group>();
+    group->setName("selection");
+    group->addChild(sphere);
+    group->addChild(box);
+    return group;
+}
 
 const char *typeTag(r4::scene::NodeType t) {
     switch (t) {
@@ -247,6 +344,7 @@ r4::scene::Node *graphRows(r4::ui::Context &gui, GraphView &view, r4::scene::Nod
     bool wasVisible = visible;
     if (gui.treeRow(row, open, visible)) {
         view.selected = &n;
+        view.selectedParent = parent;
         clicked = &n;
         center = r4::transformPoint(parent, n.bounds().center);
         radius = n.bounds().radius;
@@ -294,6 +392,7 @@ int main(int argc, char **argv) {
     bool shadowsAtStart = false;
     bool fogAtStart = true;
     bool onGroundAtStart = true;
+    bool treeShadowsAtStart = false;
     int forestsAtStart = 2;
     std::string gameAtStart;
     int woodsAtStart = 0;
@@ -337,6 +436,8 @@ int main(int argc, char **argv) {
             shadowsAtStart = true;
         } else if (a == "-nofog") {
             fogAtStart = false;
+        } else if (a == "-treeshadows") {
+            treeShadowsAtStart = true;
         } else if (a == "-nolift") {
             onGroundAtStart = false;
         } else if (a == "-at" && i + 1 < argc) {
@@ -499,6 +600,12 @@ int main(int argc, char **argv) {
             std::unique_ptr<RSEntity> entity;
             std::shared_ptr<r4::assets::Model> model;
             r4::scene::NodePtr root;
+            std::shared_ptr<r4::scene::Geode> selectionSphere;
+            std::shared_ptr<r4::scene::Geode> selectionBox;
+            std::shared_ptr<r4::scene::Group> selection = makeSelectionMarkers(renderer, selectionSphere, selectionBox);
+            selection->setMask(0);
+            std::shared_ptr<r4::scene::Group> top = r4::scene::make<r4::scene::Group>();
+            top->setName("view");
             r4::Sphere bounds;
             r4bridge::Lighting lighting;
             struct Thumb {
@@ -725,6 +832,7 @@ int main(int argc, char **argv) {
             bool openSun = false;
             bool openNav = true;
             bool shadows = shadowsAtStart;
+            bool treeShadows = treeShadowsAtStart;
             bool fog = fogAtStart;
             float fogStartKm = 120;
             float fogEndKm = 450;
@@ -1072,6 +1180,7 @@ int main(int argc, char **argv) {
                     gui.toggle("Cast Shadows", shadows);
                     if (shadows) {
                         gui.menu("Shadow Distance", shadowRange, {"Auto (the view)", "500", "2 000", "10 000", "50 000"});
+                        gui.toggle("Tree Shadows", treeShadows);
                         gui.slider("Shadow on Unlit", renderer.options().shadowStrength, 0, 1, "%.2f");
                     }
                 }
@@ -1224,13 +1333,33 @@ int main(int argc, char **argv) {
                     env.lightDirection = -sunTowards();
                 }
                 renderer.options().shadows = shadows;
+                renderer.options().shadowMask = treeShadows ? 0xffffffffu : ~WorldScene::kForestMask;
                 renderer.options().shadowDistance = shadowRange > 0 ? kShadowRanges[shadowRange] : std::max(distance * 3, 100.0f);
                 renderer.options().shadowCasterReach = showWorld ? 8000.0f : std::max(distance * 2, bounds.radius * 4);
                 renderer.setWireframe(wireframe);
                 r4::gpu::RenderTargetHandle rt = post.begin(win.width, win.height);
                 renderer.setTarget(rt);
                 env.time = SDL_GetTicks() / 1000.0f;
-                renderer.render(showWorld ? *world.root() : *root, camera, vx, 0, vw, win.height);
+                r4::scene::NodePtr shownRoot = showWorld ? world.root() : root;
+                if (top->children().size() != 2 || top->children()[0] != shownRoot) {
+                    top->removeAllChildren();
+                    top->addChild(shownRoot);
+                    top->addChild(selection);
+                }
+                if (graph.selected && showGraph) {
+                    auto *selected = const_cast<r4::scene::Node *>(graph.selected);
+                    const r4::Sphere s = selected->bounds();
+                    selectionSphere->setMatrix(graph.selectedParent * r4::translate(s.center) * r4::scale(r4::Vec3(std::max(s.radius, 1e-3f))));
+                    r4::Box b = boxOf(*selected);
+                    if (b.empty()) {
+                        b.extend(s.center);
+                    }
+                    selectionBox->setMatrix(graph.selectedParent * r4::translate(b.min) * r4::scale(r4::max(b.max - b.min, r4::Vec3(1e-3f))));
+                    selection->setMask(~0u);
+                } else {
+                    selection->setMask(0);
+                }
+                renderer.render(*top, camera, vx, 0, vw, win.height);
                 renderer.setTarget({});
                 post.end(0, 0, win.width, win.height, win.width, win.height);
                 gui.render();

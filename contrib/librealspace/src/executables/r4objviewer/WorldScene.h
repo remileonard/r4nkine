@@ -64,6 +64,8 @@ public:
     void showMapObjects(bool on);
     void showParts(bool on);
     void showOverlays(bool on);
+    // the mask of the forests: they cast no shadow when RenderOptions::shadowMask leaves this bit out
+    static constexpr uint32_t kForestMask = 1u << 31;
     // the map objects and mission parts set on the terrain, the flying aircraft only raised over it (r4bridge::onGround)
     void setOnGround(bool on);
     bool onGround() const {

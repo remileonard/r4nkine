@@ -20,6 +20,7 @@ struct GpuMesh {
     uint32_t indexCount = 0;
     assets::Primitive primitive = assets::Primitive::TRIANGLES;
     Sphere bounds;
+    Box box;
     std::string name;
 };
 
@@ -81,6 +82,8 @@ struct RenderOptions {
     float shadowDistance = 200;
     // how far towards the light the casters are taken beyond the view covered
     float shadowCasterReach = 2000;
+    // the state of the shadow pass, with the mask of the camera: a node whose mask shares no bit with it casts no shadow, nor its children
+    uint32_t shadowMask = 0xffffffffu;
     // the part of the light the unlit materials lose in the shadow
     float shadowStrength = 0.5f;
     // against the acne: the receivers pushed along their normal by this many texels, the depth compared minus this bias
