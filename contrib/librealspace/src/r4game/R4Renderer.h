@@ -100,7 +100,7 @@ public:
     void beginWorld(RSArea *area);
     // the node of an entity, made at its first use
     r4::scene::NodePtr modelOf(RSEntity *object);
-    // the terrain, the runways, the forests and the buildings of the area, made when the area or keepOut changes; null without them
+    // the terrain, the runways, the clouds, the forests and the buildings of the area, made when the area or keepOut changes; null without them
     // keepOut: x, z, radius in libRealSpace where no tree nor building goes; null keeps the one of the area
     void useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut = nullptr);
     const r4::scene::NodePtr &forests() const {
@@ -237,6 +237,7 @@ private:
     r4::scene::NodePtr sky();
     void clearFrame(bool color, bool depth);
     r4::scene::NodePtr makeForests(RSArea *area, size_t &trees);
+    r4::scene::NodePtr makeClouds(RSArea *area);
     r4bridge::Lighting objectLighting() const;
     void applyTerrainLod();
 
@@ -247,6 +248,7 @@ private:
     r4::scene::NodePtr overlay_;
     r4::scene::NodePtr forests_;
     r4::scene::NodePtr buildings_;
+    r4::scene::NodePtr clouds_;
     std::vector<r4::Vec3> keepOut_;
     R4Settings settings_;
     std::vector<r4::Mat4> stack_{r4::Mat4(1.0f)};

@@ -31,6 +31,9 @@ constexpr int kTargetWidth = 107;
 constexpr int kTargetHeight = 75;
 constexpr int kSkyRings = 12;
 constexpr int kSkySlices = 48;
+// the ellipsoid of a puff, as SCRenderer::renderClouds
+constexpr int kCloudRings = 6;
+constexpr int kCloudSlices = 12;
 constexpr float kPointPixels = 2.5f;
 const float kFogColor[3] = {0.89f, 0.89f, 0.98f};
 // the trees in full under kTreeNear, simple under kTreeFar, none beyond
@@ -197,6 +200,7 @@ void R4Renderer::release() {
     overlay_.reset();
     forests_.reset();
     buildings_.reset();
+    clouds_.reset();
     textures_.clear();
     effectTextures_.clear();
     area_ = nullptr;
@@ -432,6 +436,7 @@ void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
         models_.clear();
         terrain_.reset();
         overlay_.reset();
+        clouds_.reset();
         keepOut_.clear();
     }
     if (keepOut != nullptr) {
@@ -474,6 +479,9 @@ void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
     if (city) {
         buildings_ = renderer_->upload(*city);
         buildings_->setName("buildings");
+    }
+    if (newArea) {
+        clouds_ = makeClouds(area);
     }
     screen->device().endHostInterop();
     size_t trees = 0;
@@ -884,29 +892,60 @@ void R4Renderer::renderEllipsoid(float cx, float cy, float cz, float rx, float r
     }
 }
 
+// the clouds of the area are a graph, made once by useArea
 void R4Renderer::renderClouds(RSArea *area) {
-    if (!area) {
-        return;
+    useArea(area);
+    if (clouds_) {
+        items_.push_back({clouds_, r4::Mat4(1.0f)});
     }
-    Point3D cam = camera.getPosition();
-    std::vector<const Cloud *> sorted;
-    for (auto &c : area->clouds) {
-        if (c.position.x < cam.x - this->max_view_distance || c.position.x > cam.x + this->max_view_distance || c.position.z < cam.z - this->max_view_distance || c.position.z > cam.z + this->max_view_distance) {
-            continue;
+}
+
+// SCRenderer::renderClouds as a graph: a geode by cloud with all its puffs in one mesh, culled by its bounds.
+// The puffs are white, so their blend gives the same color in any order: no sort by the distance.
+r4::scene::NodePtr R4Renderer::makeClouds(RSArea *area) {
+    if (area->clouds.empty()) {
+        return nullptr;
+    }
+    BatchKey key;
+    key.blend = Blend::ALPHA;
+    key.depthTest = false;
+    key.depthWrite = false;
+    key.order = -1;
+    std::shared_ptr<r4::render::MaterialInstance> material = materialOf(key);
+    auto clouds = r4::scene::make<r4::scene::Group>();
+    clouds->setName("clouds");
+    const uint32_t row = kCloudSlices + 1;
+    for (const Cloud &c : area->clouds) {
+        r4::assets::Mesh mesh;
+        mesh.name = "cloud";
+        for (const CloudPuff &p : c.puffs) {
+            const uint32_t base = (uint32_t)mesh.vertices.size();
+            for (int ring = 0; ring <= kCloudRings; ring++) {
+                const float phi = (float)M_PI * ring / kCloudRings - (float)M_PI_2;
+                for (int s = 0; s <= kCloudSlices; s++) {
+                    const float theta = 2.0f * (float)M_PI * s / kCloudSlices;
+                    r4::assets::Vertex v;
+                    v.position = {c.position.x + p.ox + p.rx * cosf(phi) * cosf(theta), c.position.y + p.oy + p.ry * sinf(phi), c.position.z + p.oz + p.rz * cosf(phi) * sinf(theta)};
+                    v.normal = {0, 1, 0};
+                    v.color = packColor({1, 1, 1, c.alpha * (sinf(phi) + 1.0f) * 0.5f});
+                    mesh.vertices.push_back(v);
+                }
+            }
+            for (uint32_t ring = 0; ring < (uint32_t)kCloudRings; ring++) {
+                for (uint32_t s = 0; s < (uint32_t)kCloudSlices; s++) {
+                    const uint32_t a = base + ring * row + s;
+                    const uint32_t b = a + row;
+                    const uint32_t quad[6] = {a, b, b + 1, a, b + 1, a + 1};
+                    mesh.indices.insert(mesh.indices.end(), quad, quad + 6);
+                }
+            }
         }
-        sorted.push_back(&c);
+        auto geode = r4::scene::make<r4::scene::Geode>();
+        geode->setName("cloud");
+        geode->addDrawable({renderer_->uploadMesh(mesh), material});
+        clouds->addChild(geode);
     }
-    auto farther = [&](const Cloud *a, const Cloud *b) {
-        float da = (a->position.x - cam.x) * (a->position.x - cam.x) + (a->position.z - cam.z) * (a->position.z - cam.z);
-        float db = (b->position.x - cam.x) * (b->position.x - cam.x) + (b->position.z - cam.z) * (b->position.z - cam.z);
-        return da > db;
-    };
-    std::sort(sorted.begin(), sorted.end(), farther);
-    for (const Cloud *c : sorted) {
-        for (const auto &p : c->puffs) {
-            this->renderEllipsoid(c->position.x + p.ox, c->position.y + p.oy, c->position.z + p.oz, p.rx, p.ry, p.rz, 6, 12, 1.0f, 1.0f, 1.0f, c->alpha);
-        }
-    }
+    return clouds;
 }
 
 void R4Renderer::renderLineCube(Vector3D position, int32_t size) {
