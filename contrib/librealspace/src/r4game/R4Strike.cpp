@@ -93,13 +93,28 @@ void R4Strike::useArea() {
     planes_.clear();
     objects_.clear();
     shotPlaces_.clear();
-    r->useArea(area_);
-    if (r->terrain()) {
-        terrain_->addChild(r->terrain());
+    // no tree nor building on the objects of the mission
+    std::vector<r4::Vec3> keepOut;
+    for (SCMissionActors *actor : this->current_mission->actors) {
+        if (actor->object == nullptr || actor->object->entity == nullptr) {
+            continue;
+        }
+        BoudingBox *bb = actor->object->entity->GetBoudingBpx();
+        float radius = std::max({std::abs(bb->min.x), std::abs(bb->max.x), std::abs(bb->min.z), std::abs(bb->max.z)});
+        keepOut.push_back({actor->object->position.x, actor->object->position.z, std::max(radius * 1.2f, 40.0f)});
     }
-    if (r->overlay()) {
-        terrain_->addChild(r->overlay());
+    r->useArea(area_, &keepOut);
+    for (const r4::scene::NodePtr &node : {r->terrain(), r->overlay(), r->forests(), r->buildings()}) {
+        if (node) {
+            terrain_->addChild(node);
+        }
     }
+}
+
+void R4Strike::runFrame() {
+    // the area before the view of the target camera, which also draws it
+    useArea();
+    SCStrike::runFrame();
 }
 
 bool R4Strike::playerPlaneShown() const {

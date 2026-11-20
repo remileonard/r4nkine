@@ -11,6 +11,8 @@
 
 #include "engine/SCRenderer.h"
 
+#include "R4World.h"
+
 #include "r4/render/renderer.h"
 #include "r4/scene/node.h"
 
@@ -19,8 +21,28 @@
 #include <unordered_map>
 #include <vector>
 
+// the options of the section [R4nkine] of config.ini; the defaults keep the look of the game
+struct R4Settings {
+    bool shadows = false;
+    int shadowMapSize = 2048;
+    float shadowDistance = 1500;
+    bool treeShadows = false;
+    bool forests = false;
+    r4bridge::ForestMode forestMode = r4bridge::ForestMode::NOISE;
+    float forestDensity = 1;
+    bool buildings = false;
+    r4::assets::Upscale upscale = r4::assets::Upscale::NONE;
+    bool mipmaps = false;
+    float anisotropy = 1;
+    // reads config.ini
+    void load();
+};
+
 class R4Renderer : public SCRenderer {
 public:
+    // the mask of the forests, out of the shadow pass without treeShadows
+    static constexpr uint32_t kForestMask = 1u << 31;
+
     R4Renderer();
     ~R4Renderer() override;
 
@@ -41,8 +63,18 @@ public:
     void beginWorld(RSArea *area);
     // the node of an entity, made at its first use
     r4::scene::NodePtr modelOf(RSEntity *object);
-    // the terrain and the runways of the area, made when the area changes; null without them
-    void useArea(RSArea *area);
+    // the terrain, the runways, the forests and the buildings of the area, made when the area or keepOut changes; null without them
+    // keepOut: x, z, radius in libRealSpace where no tree nor building goes; null keeps the one of the area
+    void useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut = nullptr);
+    const r4::scene::NodePtr &forests() const {
+        return forests_;
+    }
+    const r4::scene::NodePtr &buildings() const {
+        return buildings_;
+    }
+    R4Settings &settings() {
+        return settings_;
+    }
     const r4::scene::NodePtr &terrain() const {
         return terrain_;
     }
@@ -167,12 +199,17 @@ private:
     std::shared_ptr<r4::render::MaterialInstance> materialOf(const BatchKey &key);
     r4::scene::NodePtr sky();
     void clearFrame(bool color, bool depth);
+    r4::scene::NodePtr makeForests(RSArea *area, size_t &trees);
 
     std::unique_ptr<r4::render::Renderer> renderer_;
     std::unordered_map<RSEntity *, r4::scene::NodePtr> models_;
     RSArea *area_ = nullptr;
     r4::scene::NodePtr terrain_;
     r4::scene::NodePtr overlay_;
+    r4::scene::NodePtr forests_;
+    r4::scene::NodePtr buildings_;
+    std::vector<r4::Vec3> keepOut_;
+    R4Settings settings_;
     std::vector<r4::Mat4> stack_{r4::Mat4(1.0f)};
     View view_;
     std::vector<Item> items_;

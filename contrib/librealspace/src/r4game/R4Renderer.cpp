@@ -19,7 +19,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <map>
+#include <string>
 
 namespace {
 
@@ -30,6 +33,9 @@ constexpr int kSkyRings = 12;
 constexpr int kSkySlices = 48;
 constexpr float kPointPixels = 2.5f;
 const float kFogColor[3] = {0.89f, 0.89f, 0.98f};
+// the trees in full under kTreeNear, simple under kTreeFar, none beyond
+constexpr float kTreeNear = 1500;
+constexpr float kTreeFar = 6000;
 
 r4::Mat4 toMat4(Matrix &m) {
     return glm::make_mat4(&m.v[0][0]);
@@ -87,6 +93,28 @@ r4::Vec3 skyColor(float t) {
 
 } // namespace
 
+void R4Settings::load() {
+    Config &config = Config::getInstance();
+    auto number = [&](const char *key, float fallback) {
+        std::string v = config.getString("R4nkine", key, "");
+        return v.empty() ? fallback : (float)std::atof(v.c_str());
+    };
+    shadows = config.getBool("R4nkine", "shadows", shadows);
+    shadowMapSize = std::clamp(config.getInt("R4nkine", "shadow_map_size", shadowMapSize), 256, 8192);
+    shadowDistance = std::max(100.0f, number("shadow_distance", shadowDistance));
+    treeShadows = config.getBool("R4nkine", "tree_shadows", treeShadows);
+    std::string mode = config.getString("R4nkine", "forests", "off");
+    forests = mode == "noise" || mode == "textures";
+    forestMode = mode == "textures" ? r4bridge::ForestMode::TEXTURES : r4bridge::ForestMode::NOISE;
+    forestDensity = std::max(0.0f, number("forest_density", forestDensity));
+    buildings = config.getBool("R4nkine", "buildings", buildings);
+    const std::map<std::string, r4::assets::Upscale> upscales{{"none", r4::assets::Upscale::NONE}, {"2xsai", r4::assets::Upscale::SAI_2X}, {"xbr2x", r4::assets::Upscale::XBR_2X}, {"xbr4x", r4::assets::Upscale::XBR_4X}};
+    auto it = upscales.find(config.getString("R4nkine", "texture_upscale", "none"));
+    upscale = it != upscales.end() ? it->second : r4::assets::Upscale::NONE;
+    mipmaps = config.getBool("R4nkine", "texture_mipmaps", mipmaps);
+    anisotropy = std::clamp(number("anisotropy", anisotropy), 1.0f, 16.0f);
+}
+
 bool R4Renderer::BatchKey::operator<(const BatchKey &o) const {
     auto tie = [](const BatchKey &k) {
         return std::make_tuple(k.order, k.texture, (int)k.blend, k.depthTest, k.depthWrite, k.alphaTest, (int)k.primitive);
@@ -119,6 +147,8 @@ void R4Renderer::release() {
     models_.clear();
     terrain_.reset();
     overlay_.reset();
+    forests_.reset();
+    buildings_.reset();
     textures_.clear();
     effectTextures_.clear();
     area_ = nullptr;
@@ -158,6 +188,9 @@ void R4Renderer::init(int width, int height) {
     camera.setPersective(this->fov, this->width / (float)this->height, kNear, this->max_view_distance + this->max_view_distance * 0.2f);
     light.SetWithCoo(300, 300, 300);
     view_ = cameraView(0, 0, width, height, 0.0f);
+    settings_.load();
+    r4bridge::textureQuality().upscale = settings_.upscale;
+    r4bridge::textureQuality().mipmaps = settings_.mipmaps;
 
     R4Screen *screen = R4Screen::current();
     if (!screen || !screen->hasDevice()) {
@@ -166,6 +199,7 @@ void R4Renderer::init(int width, int height) {
     }
     screen->device().beginHostInterop();
     renderer_ = std::make_unique<r4::render::Renderer>(screen->device());
+    renderer_->options().anisotropy = settings_.anisotropy;
     r4::gpu::RenderTargetDesc d;
     d.width = kTargetWidth;
     d.height = kTargetHeight;
@@ -304,25 +338,47 @@ r4::scene::NodePtr R4Renderer::modelOf(RSEntity *object) {
     return node;
 }
 
-void R4Renderer::useArea(RSArea *area) {
-    if (area == area_ || !renderer_) {
+void R4Renderer::useArea(RSArea *area, const std::vector<r4::Vec3> *keepOut) {
+    const bool newKeepOut = keepOut != nullptr && *keepOut != keepOut_;
+    if ((area == area_ && !newKeepOut) || !renderer_) {
         return;
     }
     flush();
+    if (area != area_) {
+        // a new mission can free its entities and make others at the same addresses
+        models_.clear();
+        terrain_.reset();
+        overlay_.reset();
+        keepOut_.clear();
+    }
+    if (keepOut != nullptr) {
+        keepOut_ = *keepOut;
+    }
+    const bool newArea = area != area_;
     area_ = area;
-    terrain_.reset();
-    overlay_.reset();
-    // a new mission can free its entities and make others at the same addresses
-    models_.clear();
+    forests_.reset();
+    buildings_.reset();
     if (!area) {
         return;
     }
-    r4bridge::TerrainLight light;
-    light.ranges = &terrain_ranges;
-    light.lighting.ambient = object_light_ambient;
-    light.lighting.light = object_light_share;
-    auto terrain = r4bridge::terrainModel(area, palette, {0, 40000, 100000, 1e30f}, light);
-    auto overlay = r4bridge::overlayModel(area, palette);
+    r4bridge::Lighting lighting;
+    lighting.ambient = object_light_ambient;
+    lighting.light = object_light_share;
+    std::shared_ptr<r4::assets::Model> terrain;
+    std::shared_ptr<r4::assets::Model> overlay;
+    if (newArea) {
+        r4bridge::TerrainLight light;
+        light.ranges = &terrain_ranges;
+        light.lighting = lighting;
+        terrain = r4bridge::terrainModel(area, palette, {0, 40000, 100000, 1e30f}, light);
+        overlay = r4bridge::overlayModel(area, palette);
+    }
+    std::vector<r4::Vec3> around = keepOut_;
+    for (const MapObject &object : area->objects) {
+        around.push_back({object.position.x, object.position.z, 40.0f});
+    }
+    size_t buildings = 0;
+    std::shared_ptr<r4::assets::Model> city = settings_.buildings ? r4bridge::cityModel(area, palette, lighting, around, &buildings) : nullptr;
     R4Screen *screen = R4Screen::current();
     screen->device().beginHostInterop();
     if (terrain) {
@@ -331,7 +387,77 @@ void R4Renderer::useArea(RSArea *area) {
     if (overlay) {
         overlay_ = renderer_->upload(*overlay);
     }
+    if (city) {
+        buildings_ = renderer_->upload(*city);
+        buildings_->setName("buildings");
+    }
     screen->device().endHostInterop();
+    size_t trees = 0;
+    if (settings_.forests) {
+        forests_ = makeForests(area, trees);
+    }
+    std::printf("[R4Renderer] area: %zu trees, %zu buildings, shadows %s\n", trees, buildings, settings_.shadows ? "on" : "off");
+}
+
+// the forests of r4objviewer: chunks of trees, each a LOD with an instancer by species, the full tree near and the simple one far
+r4::scene::NodePtr R4Renderer::makeForests(RSArea *area, size_t &trees) {
+    r4bridge::ForestSettings fs;
+    fs.mode = settings_.forestMode;
+    fs.density = settings_.forestDensity;
+    fs.palette = &palette;
+    for (const r4::Vec3 &k : keepOut_) {
+        fs.keepOut.push_back({k.x, k.y, std::max(k.z * 2, 150.0f)});
+    }
+    for (const MapObject &object : area->objects) {
+        fs.keepOut.push_back({object.position.x, object.position.z, 150.0f});
+    }
+    std::vector<r4bridge::ForestChunk> chunks = r4bridge::forestChunks(area, fs);
+    if (chunks.empty() || fs.density <= 0) {
+        return nullptr;
+    }
+    r4bridge::Lighting lighting;
+    lighting.ambient = object_light_ambient;
+    lighting.light = object_light_share;
+    R4Screen *screen = R4Screen::current();
+    std::vector<r4::scene::InstancePart> parts[r4bridge::TREE_SPECIES_COUNT][2];
+    screen->device().beginHostInterop();
+    for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
+        for (int level = 0; level < 2; level++) {
+            auto model = r4bridge::treeModel(sp, level != 0, palette, terrain_ranges, lighting);
+            parts[sp][level] = r4::scene::collectParts(*renderer_->upload(*model));
+        }
+    }
+    screen->device().endHostInterop();
+    auto forests = r4::scene::make<r4::scene::Group>();
+    forests->setName("forests");
+    forests->setMask(kForestMask);
+    std::map<std::pair<int, int>, std::shared_ptr<r4::scene::Group>> blocks;
+    for (r4bridge::ForestChunk &chunk : chunks) {
+        auto lod = r4::scene::make<r4::scene::LOD>();
+        lod->setCenter(chunk.center);
+        lod->setRanges({0, kTreeFar + chunk.radius});
+        auto group = r4::scene::make<r4::scene::Group>();
+        r4bridge::plantForest(area, fs, chunk);
+        for (int sp = 0; sp < r4bridge::TREE_SPECIES_COUNT; sp++) {
+            auto instancer = r4::scene::make<r4::scene::Instancer>();
+            instancer->setUp({0, 1, 0});
+            instancer->addLevel(parts[sp][0], kTreeNear);
+            instancer->addLevel(parts[sp][1], kTreeFar);
+            trees += chunk.trees[sp].size();
+            instancer->setPlacements(std::move(chunk.trees[sp]));
+            group->addChild(instancer);
+        }
+        lod->addChild(group);
+        int bx = (int)(chunk.cx * fs.chunk / BLOCK_WIDTH);
+        int bz = (int)(chunk.cz * fs.chunk / BLOCK_WIDTH);
+        auto &block = blocks[{bx, bz}];
+        if (!block) {
+            block = r4::scene::make<r4::scene::Group>();
+            forests->addChild(block);
+        }
+        block->addChild(lod);
+    }
+    return forests;
 }
 
 void R4Renderer::addScene(const r4::scene::NodePtr &root) {
@@ -947,6 +1073,11 @@ void R4Renderer::flush() {
     options.clear = false;
     options.textures = show_textured;
     options.rampGouraud = object_gouraud;
+    options.shadows = settings_.shadows && !view_.toTexture;
+    options.shadowMapSize = settings_.shadowMapSize;
+    options.shadowDistance = settings_.shadowDistance;
+    options.shadowCasterReach = 8000;
+    options.shadowMask = settings_.treeShadows ? 0xffffffffu : ~kForestMask;
     renderer_->setTarget(view_.toTexture ? targetView_ : screen->frameTarget());
     renderer_->render(*root_, cam, view_.viewport[0], view_.viewport[1], view_.viewport[2], view_.viewport[3]);
     root_->removeAllChildren();
@@ -978,6 +1109,12 @@ void R4Renderer::renderWorldSolid(RSArea *area, int LOD, int verticesPerBlock) {
     }
     if (overlay_) {
         items_.push_back({overlay_, r4::Mat4(1.0f)});
+    }
+    if (forests_) {
+        items_.push_back({forests_, r4::Mat4(1.0f)});
+    }
+    if (buildings_) {
+        items_.push_back({buildings_, r4::Mat4(1.0f)});
     }
 }
 

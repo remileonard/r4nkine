@@ -29,6 +29,7 @@ public:
 
     R4Strike();
     ~R4Strike() override;
+    void runFrame() override;
 
     // the world of the flight, in libRealSpace's axes
     r4::scene::Node &world() {

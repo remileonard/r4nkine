@@ -193,6 +193,37 @@ Pour l'appliquer, à la racine de libRealSpace : `git apply chemin/vers/patches/
 - R4nkine : `createShader` laissait une erreur GL après une interop (programme inconnu restauré). Corrigé.
 - Testé ici en contexte core avec la sortie de debug de GL : MISN-1A en vue cockpit, extérieure et cible, 200 images chacune, la visionneuse d'objets, et la scène des effets : aucune erreur GL. macOS n'est pas testé ici.
 
+
+**Les options du rendu (`config.ini`, section `[R4nkine]`).** `R4Renderer` les lit à son démarrage. Sans elles, l'image reste celle du jeu.
+
+```ini
+[R4nkine]
+; ombres portées : une carte d'ombre depuis la lumière des objets du jeu
+shadows = false
+shadow_map_size = 2048
+; en mètres : la zone couverte devant la caméra
+shadow_distance = 1500
+; les arbres projettent aussi leur ombre (coûteux)
+tree_shadows = false
+; off, noise (bois et clairières sur le vert du terrain) ou textures (les arbres peints dans les textures)
+forests = off
+; multiplie toutes les densités
+forest_density = 1.0
+; les bâtiments sur les textures de villes, villages, fermes et ports
+buildings = false
+; none, 2xsai, xbr2x ou xbr4x : agrandit les textures des objets et du terrain
+texture_upscale = none
+texture_mipmaps = false
+; filtre anisotrope, de 1 à 16
+anisotropy = 1
+```
+
+- Les forêts et les bâtiments viennent de `r4bridge` (`forestChunks`, `plantForest`, `treeModel`, `cityModel`), comme dans r4objviewer. Ils sont faits une fois par zone. Il n'y en a pas sur les pistes, sur les objets de la carte, ni sur les objets de la mission (`R4Strike` donne leur place et leur taille).
+- Les forêts sont des blocs de 2 km : un LOD par bloc, un instancer par espèce, l'arbre complet jusqu'à 1,5 km et l'arbre simple jusqu'à 6 km.
+- Les ombres ne sont pas faites dans la vue de la caméra de cible. Sans `tree_shadows`, les forêts (masque `R4Renderer::kForestMask`) sont hors de la passe d'ombre.
+- Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
+- Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.
+- Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, et une vue proche où le F-16 et le char projettent leur ombre sur le terrain.
 ## Ce qu'il faut regarder pour apprendre R4nkine
 
 Le viewer suit les étapes d'un programme R4nkine, numérotées dans `main.cpp`.
