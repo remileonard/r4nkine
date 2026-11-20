@@ -26,6 +26,23 @@ public:
 
     // draws the terrain and the models kept since the last flush
     void flush();
+    // the sky of the game in GL, the color and depth cleared, fog set as renderWorldSolid
+    void drawSky(RSArea *area);
+    // a graph in world space (libRealSpace axes) with a camera of the game, in the frame of the screen
+    void drawGraph(r4::scene::Node &root, const r4::render::Camera &camera, int x, int y, int width, int height);
+    // the node of an entity, made at its first use
+    r4::scene::NodePtr modelOf(RSEntity *object);
+    // the terrain and the runways of the area, made when the area changes; null without them
+    void useArea(RSArea *area);
+    const r4::scene::NodePtr &terrain() const {
+        return terrain_;
+    }
+    const r4::scene::NodePtr &overlay() const {
+        return overlay_;
+    }
+    bool active() const {
+        return renderer_ != nullptr;
+    }
     // frees the GPU objects, before the device of the screen goes
     void release();
 
@@ -78,8 +95,7 @@ private:
     static View currentView();
     static bool sameView(const View &a, const View &b);
     void queue(const r4::scene::NodePtr &node);
-    void useArea(RSArea *area);
-    r4::scene::NodePtr modelOf(RSEntity *object);
+    void setEnvironment(bool fog, float fogStart, float fogEnd, const float fogColor[4], r4::Vec3 lightDirection);
 
     std::unique_ptr<r4::render::Renderer> renderer_;
     std::unordered_map<RSEntity *, r4::scene::NodePtr> models_;

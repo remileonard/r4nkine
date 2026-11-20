@@ -81,6 +81,12 @@ Each traversal has its own mask. The shadow pass has this mask now (`RenderOptio
 - The server is the authority for the trigger events. The message bus sends these events to the clients.
 - The renderer has one camera and one mask for each view now. A network game adds views that do not draw.
 
+## Status
+
+- `R4Strike` (in `contrib/librealspace/src/r4game`) keeps the graph of a flight. The graph has the terrain, a node for each actor and a node for each simulated object. Each layer has a mask (`LAYER_TERRAIN`, `LAYER_ACTORS`, `LAYER_SHOTS`, `LAYER_PLAYER`).
+- `R4Strike::app` is the first form of APP. It runs one time in each frame, before the draw. It sets the matrices and the masks of the nodes from the state of the game. It adds and removes the nodes. It has no node callbacks yet.
+- One pass draws the graph with the camera of the game.
+
 ## Sequence of work
 
 1. ISECT: segment and ray queries, ground height, mask. This step is useful immediately (placement, physics). It does not need the other steps.

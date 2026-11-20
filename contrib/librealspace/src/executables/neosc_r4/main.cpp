@@ -2,11 +2,12 @@
 //  main.cpp
 //  libRealSpace
 //
-//  neosc on R4nkine: the main of neosc with the screen, the VGA and the loader of r4game.
+//  neosc on R4nkine: the main of neosc with the screen, the VGA, the loader, the renderer and the flights (R4Strike) of r4game.
 //
 #include "../../strike_commander/precomp.h"
 #include "../../tactical_operation/TOGameSelectMenu.h"
 #include "../../r4game/R4Loader.h"
+#include "../../r4game/R4Strike.h"
 #include "../../r4game/R4Renderer.h"
 #include "../../r4game/R4Screen.h"
 #include "../../r4game/R4VGA.h"
@@ -19,6 +20,9 @@ int main(int argc, char *argv[]) {
     config.load("./assets/config.ini");
     GameTimer::getInstance().setTimer(std::make_unique<DesktopTimer>());
     SCRenderer::setInstance(std::make_unique<R4Renderer>());
+    SCStrike::setFactory([]() -> SCStrike * {
+        return new R4Strike();
+    });
     RSScreen::setInstance(std::make_unique<R4Screen>());
     RSVGA::setInstance(std::make_unique<R4VGA>());
     Loader::setInstance(std::make_unique<R4Loader>());

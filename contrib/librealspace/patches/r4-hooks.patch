@@ -1,72 +1,8 @@
---- a/src/engine/RSVGA.h
-+++ b/src/engine/RSVGA.h
-@@ -21,7 +21,7 @@
- struct VGAPalette;
- 
- class RSVGA{
--private:
-+protected:
-     int width;
-     int height;
-     VGAPalette palette;
-@@ -30,7 +30,8 @@
-     uint32_t textureID;
-     Texel data[320 * 200];
-     inline static std::unique_ptr<RSVGA> s_instance{};
--    void displayBuffer(uint32_t* buffer, int width, int height);
-+    virtual void displayBuffer(uint32_t* buffer, int width, int height);
-+    virtual void initTextures();
-     RSScreen *Screen = &RSScreen::instance();
- 
-     // --- Widescreen Ambilight ---
-@@ -68,9 +69,9 @@
-     static bool hasInstance() { return (bool)s_instance; }
- 
-     RSVGA();
--    ~RSVGA();
--    void init(int width, int height);
--    void activate(void);
-+    virtual ~RSVGA();
-+    virtual void init(int width, int height);
-+    virtual void activate(void);
-     void setPalette(VGAPalette* newPalette);
-     VGAPalette* getPalette(void);
-     void vSync(void);
---- a/src/engine/RSVGA.cpp
-+++ b/src/engine/RSVGA.cpp
-@@ -204,7 +204,10 @@
-     }
-     
-     this->palette = *palette.GetColorPalette();
-+    this->initTextures();
-+}
- 
-+void RSVGA::initTextures() {
-     glGenTextures(1, &this->textureID);
-     glBindTexture(GL_TEXTURE_2D, this->textureID);
- 
---- a/src/engine/Loader.h
-+++ b/src/engine/Loader.h
-@@ -41,7 +41,7 @@
-     static bool hasInstance() { return (bool)s_instance; }
- 
-     Loader();
--    ~Loader();
-+    virtual ~Loader();
- 
-     void init();
-     void startLoading(std::function<void(Loader*)> loadingCallback);
-@@ -50,4 +50,6 @@
-     void log(const std::string& message);
-     void setProgress(float progress);
-     void close();    
-+protected:
-+    virtual void presentSurface(SDL_Surface *surface);
- };
-\ No newline at end of file
+diff --git a/src/engine/Loader.cpp b/src/engine/Loader.cpp
+index b3aaa0d..8a8595c 100644
 --- a/src/engine/Loader.cpp
 +++ b/src/engine/Loader.cpp
-@@ -80,15 +80,6 @@
+@@ -80,15 +80,6 @@ void Loader::runFrame() {
      }
      
      SDL_FillRect(loadingSurface, NULL, SDL_MapRGBA(loadingSurface->format, 0, 0, 0, 255));
@@ -82,7 +18,7 @@
  
      TTF_Font* font = TTF_OpenFont("./assets/AcPlus_IBM_VGA_9x16.ttf", 36);
      if (font) {
-@@ -144,6 +135,20 @@
+@@ -144,6 +135,20 @@ void Loader::runFrame() {
          }
          TTF_CloseFont(font);
      }
@@ -103,7 +39,7 @@
      GLuint loadingTexture;
      glGenTextures(1, &loadingTexture);
      glBindTexture(GL_TEXTURE_2D, loadingTexture);
-@@ -155,8 +160,6 @@
+@@ -155,8 +160,6 @@ void Loader::runFrame() {
      glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, loadingSurface->w, loadingSurface->h, 
                   0, GL_RGBA, GL_UNSIGNED_BYTE, loadingSurface->pixels);
  
@@ -112,3 +48,594 @@
      glDisable(GL_BLEND);
      glDisable(GL_CULL_FACE);
      glEnable(GL_TEXTURE_2D);
+diff --git a/src/engine/Loader.h b/src/engine/Loader.h
+index 8abcc79..c3dade4 100644
+--- a/src/engine/Loader.h
++++ b/src/engine/Loader.h
+@@ -41,7 +41,7 @@ public:
+     static bool hasInstance() { return (bool)s_instance; }
+ 
+     Loader();
+-    ~Loader();
++    virtual ~Loader();
+ 
+     void init();
+     void startLoading(std::function<void(Loader*)> loadingCallback);
+@@ -50,4 +50,6 @@ public:
+     void log(const std::string& message);
+     void setProgress(float progress);
+     void close();    
++protected:
++    virtual void presentSurface(SDL_Surface *surface);
+ };
+\ No newline at end of file
+diff --git a/src/engine/RSVGA.cpp b/src/engine/RSVGA.cpp
+index 6f9215a..050b540 100644
+--- a/src/engine/RSVGA.cpp
++++ b/src/engine/RSVGA.cpp
+@@ -204,7 +204,10 @@ void RSVGA::init(int width, int height) {
+     }
+     
+     this->palette = *palette.GetColorPalette();
++    this->initTextures();
++}
+ 
++void RSVGA::initTextures() {
+     glGenTextures(1, &this->textureID);
+     glBindTexture(GL_TEXTURE_2D, this->textureID);
+ 
+diff --git a/src/engine/RSVGA.h b/src/engine/RSVGA.h
+index 6a9c0b1..64ab770 100644
+--- a/src/engine/RSVGA.h
++++ b/src/engine/RSVGA.h
+@@ -21,7 +21,7 @@
+ struct VGAPalette;
+ 
+ class RSVGA{
+-private:
++protected:
+     int width;
+     int height;
+     VGAPalette palette;
+@@ -30,7 +30,8 @@ private:
+     uint32_t textureID;
+     Texel data[320 * 200];
+     inline static std::unique_ptr<RSVGA> s_instance{};
+-    void displayBuffer(uint32_t* buffer, int width, int height);
++    virtual void displayBuffer(uint32_t* buffer, int width, int height);
++    virtual void initTextures();
+     RSScreen *Screen = &RSScreen::instance();
+ 
+     // --- Widescreen Ambilight ---
+@@ -68,9 +69,9 @@ public:
+     static bool hasInstance() { return (bool)s_instance; }
+ 
+     RSVGA();
+-    ~RSVGA();
+-    void init(int width, int height);
+-    void activate(void);
++    virtual ~RSVGA();
++    virtual void init(int width, int height);
++    virtual void activate(void);
+     void setPalette(VGAPalette* newPalette);
+     VGAPalette* getPalette(void);
+     void vSync(void);
+diff --git a/src/strike_commander/SCGameFlow.cpp b/src/strike_commander/SCGameFlow.cpp
+index e1c0716..f2fe920 100644
+--- a/src/strike_commander/SCGameFlow.cpp
++++ b/src/strike_commander/SCGameFlow.cpp
+@@ -131,7 +131,7 @@ void SCGameFlow::loadoutExit(bool fly) {
+     }
+ }
+ void SCGameFlow::flyMission(uint8_t missionid) {
+-    SCStrike *fly = new SCStrike();
++    SCStrike *fly = SCStrike::create();
+     fly->init();
+     fly->player_loadout = this->player_loadout_pending;
+     this->player_loadout_pending = false;
+diff --git a/src/strike_commander/SCPlane.h b/src/strike_commander/SCPlane.h
+index 8eb15c3..d9e2d70 100644
+--- a/src/strike_commander/SCPlane.h
++++ b/src/strike_commander/SCPlane.h
+@@ -323,6 +323,7 @@ public:
+     Matrix incremental;
+     bool disable_azimuth{false};
+     int getThrust() const { return thrust; }
++    int getWheelIndex() const { return wheel_index; }
+     SCPlane();
+     SCPlane(float LmaxDEF, float LminDEF, float Fmax, float Smax, float ELEVF_CSTE, float ROLLFF_CSTE, float s, float W,
+             float fuel_weight, float Mthrust, float b, float ie_pi_AR, int MIN_LIFT_SPEED,
+diff --git a/src/strike_commander/SCSimulatedObject.h b/src/strike_commander/SCSimulatedObject.h
+index ab041fb..8d89d7f 100644
+--- a/src/strike_commander/SCSimulatedObject.h
++++ b/src/strike_commander/SCSimulatedObject.h
+@@ -19,6 +19,7 @@ protected:
+     RSMixer &Mixer = RSMixer::getInstance();
+     float missile_roll{0.0f};
+ public:
++    SCSmokeSet &smokeSet() { return smoke_set; }
+     bool is_simulated{false};
+     bool guidance{true};
+     bool no_gravity{true};
+diff --git a/src/strike_commander/SCStrike.cpp b/src/strike_commander/SCStrike.cpp
+index ae1bc8f..ffbbf2d 100644
+--- a/src/strike_commander/SCStrike.cpp
++++ b/src/strike_commander/SCStrike.cpp
+@@ -1710,200 +1710,6 @@ void SCStrike::runFrame(void) {
+         this->virtual_cockpit->beginFrame();
+     }
+ 
+-    auto renderScene = [&](int32_t viewportW, int32_t viewportH, float projVerticalOffset, bool forceVirtualCockpit) {
+-        Renderer.bindCameraProjectionAndViewViewport(viewportW, viewportH, projVerticalOffset);
+-        Renderer.renderWorldSolid(area, this->world_lod, 400);
+-
+-        if (this->show_bbox) {
+-            for (auto rrarea: this->current_mission->mission->mission_data.areas) {
+-                Renderer.renderLineCube(rrarea->position, rrarea->AreaWidth);
+-            }
+-        }
+-
+-        for (auto actor: this->current_mission->actors) {
+-            if (actor->is_hidden) {
+-                continue;
+-            }
+-            if (actor->plane != nullptr) {
+-                if (actor->plane != this->player_plane) {
+-                    Vector3D distance = {
+-                        actor->plane->x - this->player_plane->x,
+-                        actor->plane->y - this->player_plane->y,
+-                        actor->plane->z - this->player_plane->z
+-                    };
+-                    if (distance.Length() > RENDER_DISTANCE) {
+-                        continue; // Skip rendering if the plane is too far away
+-                    }
+-                    if (this->show_bbox) {
+-                        actor->plane->renderPlaneLined();
+-                        BoudingBox *bb = actor->plane->object->entity->GetBoudingBpx();
+-                        Vector3D position = {actor->plane->x, actor->plane->y, actor->plane->z};
+-                        Vector3D orientation = {
+-                            actor->plane->azimuthf/10.0f + 90,
+-                            actor->plane->elevationf/10.0f,
+-                            -actor->plane->twist/10.0f
+-                        };
+-                        for (auto vertex: actor->plane->object->entity->vertices) {
+-                            if (vertex.x == bb->min.x) {
+-                                Renderer.drawPoint(vertex, {1.0f,0.0f,0.0f}, position, orientation);
+-                            }
+-                            if (vertex.x == bb->max.x) {
+-                                Renderer.drawPoint(vertex, {0.0f,1.0f,0.0f}, position, orientation);
+-                            }
+-                            if (vertex.z == bb->min.z) {
+-                                Renderer.drawPoint(vertex, {1.0f,0.0f,0.0f}, position, orientation);
+-                            }
+-                            if (vertex.z == bb->max.z) {
+-                                Renderer.drawPoint(vertex, {0.0f,1.0f,0.0f}, position, orientation);
+-                            }
+-                        }
+-                        Renderer.renderBBox(position, bb->min, bb->max);
+-                    } else {
+-                        actor->plane->Render();
+-                        this->afterPlaneRendered(actor->plane, Vector3D(actor->plane->x, actor->plane->y, actor->plane->z), actor->plane->getThrust());
+-                    }
+-                }
+-            } else if (actor->object->entity != nullptr) {
+-                Vector3D actor_position = {actor->object->position.x, actor->object->position.y, actor->object->position.z};
+-                Vector3D actor_orientation = {(360.0f - static_cast<float>(actor->object->azymuth) + 90.0f), static_cast<float>(actor->object->pitch), -static_cast<float>(actor->object->roll)};
+-                Vector3D distance = {
+-                    actor_position.x - this->player_plane->x,
+-                    actor_position.y - this->player_plane->y,
+-                    actor_position.z - this->player_plane->z
+-                };
+-                if (distance.Length() > RENDER_DISTANCE) {
+-                    continue; // Skip rendering if the object is too far away
+-                }
+-                Renderer.drawModel(actor->object->entity, Renderer.lodLevel, actor_position, actor_orientation);
+-                if (actor->smoke != nullptr) {
+-                    actor->smoke->render(Renderer.camera.getPosition());
+-                }
+-                if (this->show_bbox) {
+-                    if (actor->aiming_vector.x != 0.0f || actor->aiming_vector.y != 0.0f || actor->aiming_vector.z != 0.0f) {
+-                        Vector3D aim_pos = {actor->aiming_vector.x, actor->aiming_vector.y, actor->aiming_vector.z};
+-                        Renderer.drawLine(actor_position, aim_pos, {1.0f, 0.0f, 0.0f});
+-                    }
+-                }
+-                for (auto weapons : actor->weapons_shooted) {
+-                    if (weapons->alive) {
+-                        weapons->Render();
+-                    }
+-                }
+-                if (this->show_bbox) {
+-                    BoudingBox *bb = actor->object->entity->GetBoudingBpx();
+-                    Vector3D position = {actor->object->position.x, actor->object->position.y, actor->object->position.z};
+-                    Renderer.renderBBox(position, bb->min, bb->max);
+-                }
+-            }
+-        }
+-
+-        for (auto expl: this->current_mission->explosions) {
+-            if (expl->is_finished) {
+-                // Remove explosion when finished
+-                this->current_mission->explosions.erase(
+-                    std::remove_if(
+-                        this->current_mission->explosions.begin(),
+-                        this->current_mission->explosions.end(),
+-                        [](const auto& expl) { return expl->is_finished; }
+-                    ),
+-                    this->current_mission->explosions.end());
+-                continue;
+-            }
+-            expl->render();
+-        }
+-
+-        this->cockpit->cam = camera;
+-
+-        Vector3D centerPoint = {0,0,-10};
+-        
+-        centerPoint = camera->getPosition()+camera->getForward()*10.0f;
+-        Renderer.drawPoint(centerPoint, {0.0f, 1.0f, 0.0f}, {0,0,0}, {0.0f, 0.0f, 0.0f});
+-        Renderer.drawPoint(this->cockpit->targetImpactPointWorld, {0.0f, 1.0f, 1.0f}, {0,0,0}, {0.0f, 0.0f, 0.0f});
+-        this->player_plane->RenderSimulatedObject();
+-        for (auto objs: this->simulated_objects) {
+-            if (objs->alive) {
+-                objs->Simulate(this->player_plane->tps);
+-                objs->Render();
+-            }
+-        }
+-        switch (this->camera_mode) {
+-        case View::CAM_DIRECTOR:
+-        case View::MISSILE_CAM:
+-        case View::TARGET:
+-        case View::OBJECT:
+-        case View::AUTO_PILOT:
+-        case View::CRASH_VIEW_P3:
+-        case View::FOLLOW:
+-            if (!this->show_bbox) {
+-                this->player_plane->Render();
+-                this->afterPlaneRendered(this->player_plane, Vector3D(this->player_plane->x, this->player_plane->y, this->player_plane->z), this->player_plane->getThrust());
+-            } else {
+-                this->player_plane->renderPlaneLined();
+-            }
+-            break;
+-        case View::FRONT:
+-            if (!forceVirtualCockpit) {
+-                this->afterCockpitSceneRendered();
+-                if (this->zoom_cockpit) {
+-                    this->cockpit->Render(CockpitFace::CP_BIG);
+-                } else {
+-                    this->cockpit->Render(CockpitFace::CP_FRONT);
+-                }
+-                break;
+-            }
+-        case View::RIGHT:
+-            if (!forceVirtualCockpit) {
+-                this->afterCockpitSceneRendered();
+-                this->cockpit->Render(CockpitFace::CP_RIGHT);
+-                break;    
+-            }
+-        case View::LEFT:
+-            if (!forceVirtualCockpit) {
+-                this->afterCockpitSceneRendered();
+-                this->cockpit->Render(CockpitFace::CP_LEFT);
+-                break;
+-            }
+-        case View::REAR:
+-            if (!forceVirtualCockpit) {
+-                this->afterCockpitSceneRendered();
+-                this->cockpit->Render(CockpitFace::CP_REAR);
+-                break;
+-            }
+-        case View::CRASH_VIEW_P1:
+-            if (!forceVirtualCockpit) {
+-                if (this->cockpit->RenderCrashAnimationP1()) {
+-                    this->camera_mode = View::CRASH_VIEW_P2;
+-                    this->cockpit->frame = 0;
+-                }
+-                break;
+-            }
+-        case View::CRASH_VIEW_P2:
+-            if (!forceVirtualCockpit) {
+-                if (this->cockpit->RenderCrashAnimationP2()) {
+-                    this->camera_mode = View::CRASH_VIEW_P3;
+-                }
+-                break;
+-            }
+-        case View::EJECT_VIEW_P1:
+-            if (!forceVirtualCockpit) {
+-                if (this->cockpit->RenderEjectionAnimation()) {
+-                    this->camera_mode = View::EJECT_VIEW_P2;
+-                }
+-                break;
+-            }
+-        case View::EYE_ON_TARGET:
+-        case View::REAL:
+-        case View::CONTROLLER_LOOK:
+-            this->renderVirtualCockpit();
+-            break;
+-        case View::EJECT_VIEW_P2:
+-        case View::EJECT_VIEW_P3:
+-            this->player_plane->Render();
+-            this->afterPlaneRendered(this->player_plane, Vector3D(this->player_plane->x, this->player_plane->y, this->player_plane->z), this->player_plane->getThrust());
+-            break;
+-        
+-        }
+-    };
+ 
+     // VR stéréo: rendu par oeil + cockpit VR uniquement.
+     bool vrShouldRender = false;
+@@ -1961,6 +1767,218 @@ void SCStrike::runFrame(void) {
+     }
+ }
+ 
++void SCStrike::renderScene(int32_t viewportW, int32_t viewportH, float projVerticalOffset, bool forceVirtualCockpit) {
++    Renderer.bindCameraProjectionAndViewViewport(viewportW, viewportH, projVerticalOffset);
++    this->renderWorld();
++    this->cockpit->cam = camera;
++    switch (this->camera_mode) {
++    case View::CAM_DIRECTOR:
++    case View::MISSILE_CAM:
++    case View::TARGET:
++    case View::OBJECT:
++    case View::AUTO_PILOT:
++    case View::CRASH_VIEW_P3:
++    case View::FOLLOW:
++        if (!this->show_bbox) {
++            this->renderPlayerPlane();
++        } else {
++            this->player_plane->renderPlaneLined();
++        }
++        break;
++    case View::FRONT:
++        if (!forceVirtualCockpit) {
++            this->afterCockpitSceneRendered();
++            if (this->zoom_cockpit) {
++                this->cockpit->Render(CockpitFace::CP_BIG);
++            } else {
++                this->cockpit->Render(CockpitFace::CP_FRONT);
++            }
++            break;
++        }
++    case View::RIGHT:
++        if (!forceVirtualCockpit) {
++            this->afterCockpitSceneRendered();
++            this->cockpit->Render(CockpitFace::CP_RIGHT);
++            break;    
++        }
++    case View::LEFT:
++        if (!forceVirtualCockpit) {
++            this->afterCockpitSceneRendered();
++            this->cockpit->Render(CockpitFace::CP_LEFT);
++            break;
++        }
++    case View::REAR:
++        if (!forceVirtualCockpit) {
++            this->afterCockpitSceneRendered();
++            this->cockpit->Render(CockpitFace::CP_REAR);
++            break;
++        }
++    case View::CRASH_VIEW_P1:
++        if (!forceVirtualCockpit) {
++            if (this->cockpit->RenderCrashAnimationP1()) {
++                this->camera_mode = View::CRASH_VIEW_P2;
++                this->cockpit->frame = 0;
++            }
++            break;
++        }
++    case View::CRASH_VIEW_P2:
++        if (!forceVirtualCockpit) {
++            if (this->cockpit->RenderCrashAnimationP2()) {
++                this->camera_mode = View::CRASH_VIEW_P3;
++            }
++            break;
++        }
++    case View::EJECT_VIEW_P1:
++        if (!forceVirtualCockpit) {
++            if (this->cockpit->RenderEjectionAnimation()) {
++                this->camera_mode = View::EJECT_VIEW_P2;
++            }
++            break;
++        }
++    case View::EYE_ON_TARGET:
++    case View::REAL:
++    case View::CONTROLLER_LOOK:
++        this->renderVirtualCockpit();
++        break;
++    case View::EJECT_VIEW_P2:
++    case View::EJECT_VIEW_P3:
++        this->renderPlayerPlane();
++        break;
++    
++    }
++}
++
++void SCStrike::renderWorld() {
++    Renderer.renderWorldSolid(area, this->world_lod, 400);
++
++    if (this->show_bbox) {
++        for (auto rrarea: this->current_mission->mission->mission_data.areas) {
++            Renderer.renderLineCube(rrarea->position, rrarea->AreaWidth);
++        }
++    }
++
++    for (auto actor: this->current_mission->actors) {
++        if (actor->is_hidden) {
++            continue;
++        }
++        if (actor->plane != nullptr) {
++            if (actor->plane != this->player_plane) {
++                Vector3D distance = {
++                    actor->plane->x - this->player_plane->x,
++                    actor->plane->y - this->player_plane->y,
++                    actor->plane->z - this->player_plane->z
++                };
++                if (distance.Length() > RENDER_DISTANCE) {
++                    continue; // Skip rendering if the plane is too far away
++                }
++                if (this->show_bbox) {
++                    actor->plane->renderPlaneLined();
++                    BoudingBox *bb = actor->plane->object->entity->GetBoudingBpx();
++                    Vector3D position = {actor->plane->x, actor->plane->y, actor->plane->z};
++                    Vector3D orientation = {
++                        actor->plane->azimuthf/10.0f + 90,
++                        actor->plane->elevationf/10.0f,
++                        -actor->plane->twist/10.0f
++                    };
++                    for (auto vertex: actor->plane->object->entity->vertices) {
++                        if (vertex.x == bb->min.x) {
++                            Renderer.drawPoint(vertex, {1.0f,0.0f,0.0f}, position, orientation);
++                        }
++                        if (vertex.x == bb->max.x) {
++                            Renderer.drawPoint(vertex, {0.0f,1.0f,0.0f}, position, orientation);
++                        }
++                        if (vertex.z == bb->min.z) {
++                            Renderer.drawPoint(vertex, {1.0f,0.0f,0.0f}, position, orientation);
++                        }
++                        if (vertex.z == bb->max.z) {
++                            Renderer.drawPoint(vertex, {0.0f,1.0f,0.0f}, position, orientation);
++                        }
++                    }
++                    Renderer.renderBBox(position, bb->min, bb->max);
++                } else {
++                    actor->plane->Render();
++                    this->afterPlaneRendered(actor->plane, Vector3D(actor->plane->x, actor->plane->y, actor->plane->z), actor->plane->getThrust());
++                }
++            }
++        } else if (actor->object->entity != nullptr) {
++            Vector3D actor_position = {actor->object->position.x, actor->object->position.y, actor->object->position.z};
++            Vector3D actor_orientation = {(360.0f - static_cast<float>(actor->object->azymuth) + 90.0f), static_cast<float>(actor->object->pitch), -static_cast<float>(actor->object->roll)};
++            Vector3D distance = {
++                actor_position.x - this->player_plane->x,
++                actor_position.y - this->player_plane->y,
++                actor_position.z - this->player_plane->z
++            };
++            if (distance.Length() > RENDER_DISTANCE) {
++                continue; // Skip rendering if the object is too far away
++            }
++            Renderer.drawModel(actor->object->entity, Renderer.lodLevel, actor_position, actor_orientation);
++            if (actor->smoke != nullptr) {
++                actor->smoke->render(Renderer.camera.getPosition());
++            }
++            if (this->show_bbox) {
++                if (actor->aiming_vector.x != 0.0f || actor->aiming_vector.y != 0.0f || actor->aiming_vector.z != 0.0f) {
++                    Vector3D aim_pos = {actor->aiming_vector.x, actor->aiming_vector.y, actor->aiming_vector.z};
++                    Renderer.drawLine(actor_position, aim_pos, {1.0f, 0.0f, 0.0f});
++                }
++            }
++            for (auto weapons : actor->weapons_shooted) {
++                if (weapons->alive) {
++                    weapons->Render();
++                }
++            }
++            if (this->show_bbox) {
++                BoudingBox *bb = actor->object->entity->GetBoudingBpx();
++                Vector3D position = {actor->object->position.x, actor->object->position.y, actor->object->position.z};
++                Renderer.renderBBox(position, bb->min, bb->max);
++            }
++        }
++    }
++
++    for (auto expl: this->current_mission->explosions) {
++        if (expl->is_finished) {
++            // Remove explosion when finished
++            this->current_mission->explosions.erase(
++                std::remove_if(
++                    this->current_mission->explosions.begin(),
++                    this->current_mission->explosions.end(),
++                    [](const auto& expl) { return expl->is_finished; }
++                ),
++                this->current_mission->explosions.end());
++            continue;
++        }
++        expl->render();
++    }
++
++    Vector3D centerPoint = {0,0,-10};
++    
++    centerPoint = camera->getPosition()+camera->getForward()*10.0f;
++    Renderer.drawPoint(centerPoint, {0.0f, 1.0f, 0.0f}, {0,0,0}, {0.0f, 0.0f, 0.0f});
++    Renderer.drawPoint(this->cockpit->targetImpactPointWorld, {0.0f, 1.0f, 1.0f}, {0,0,0}, {0.0f, 0.0f, 0.0f});
++    this->player_plane->RenderSimulatedObject();
++    for (auto objs: this->simulated_objects) {
++        if (objs->alive) {
++            objs->Simulate(this->player_plane->tps);
++            objs->Render();
++        }
++    }
++}
++
++void SCStrike::renderPlayerPlane() {
++    this->player_plane->Render();
++    this->afterPlaneRendered(this->player_plane, Vector3D(this->player_plane->x, this->player_plane->y, this->player_plane->z), this->player_plane->getThrust());
++}
++
++SCStrike *SCStrike::create() {
++    if (s_factory != nullptr) {
++        return s_factory();
++    }
++    return new SCStrike();
++}
++
++void SCStrike::setFactory(SCStrike *(*factory)()) {
++    s_factory = factory;
++}
++
+ // ALT+O (Input_AltKeyCommands_26F7E) : effets sonores coupés (SoundFX_StopAll_5AA95), vol figé, curseur des menus.
+ void SCStrike::openFlightOptions() {
+     if (this->flight_options == nullptr) {
+diff --git a/src/strike_commander/SCStrike.h b/src/strike_commander/SCStrike.h
+index 5aded40..9a67478 100644
+--- a/src/strike_commander/SCStrike.h
++++ b/src/strike_commander/SCStrike.h
+@@ -70,6 +70,19 @@ protected:
+      */
+     virtual void afterFrameRendered() {}
+ 
++    /**
++     * @brief Draws one view of the flight: the world, then the player's plane or the cockpit of the view.
++     */
++    virtual void renderScene(int32_t viewportW, int32_t viewportH, float projVerticalOffset, bool forceVirtualCockpit);
++    /**
++     * @brief Draws the world of a view: terrain, actors, explosions, aim points and simulated objects.
++     */
++    virtual void renderWorld();
++    /**
++     * @brief Draws the player's plane in the outside views.
++     */
++    virtual void renderPlayerPlane();
++
+     bool air_weapons_mode{false};
+     /**
+      * @brief Path to current mission file
+@@ -303,6 +316,8 @@ protected:
+     virtual void keyEyesOnTarget();
+     virtual void keySpecKey1();
+     virtual void keySpecKey2();
++private:
++    inline static SCStrike *(*s_factory)() = nullptr;
+ public:
+     float verticalOffset{0.45f};
+     // Chunk PLYR d'OP2MISN.IFF : chargement choisi par le joueur (départ par l'écran d'armement).
+@@ -311,6 +326,11 @@ public:
+      * @brief Constructor
+      */
+     SCStrike();
++    /**
++     * @brief Makes the activity of a flight: a SCStrike, or the type that setFactory gives
++     */
++    static SCStrike *create();
++    static void setFactory(SCStrike *(*factory)());
+     /**
+      * @brief Destructor
+      */
+diff --git a/src/strike_commander/SCTrainingMenu.cpp b/src/strike_commander/SCTrainingMenu.cpp
+index 26cccc6..56694ca 100644
+--- a/src/strike_commander/SCTrainingMenu.cpp
++++ b/src/strike_commander/SCTrainingMenu.cpp
+@@ -257,7 +257,7 @@ void SCTrainingMenu::unFocus(void) {
+ // Départ du vol, pour les deux types : MISSIONS\TEMPLATE.IFF, complété par SCTrainingMenu::applyTraining dans
+ // SCMission::loadMission. Le nom est gardé : EnhancedTrainingMenu le redéfinit pour lancer EnhancedStrike.
+ void SCTrainingMenu::OnSearchAndDestroy() {
+-    SCStrike *strike = new SCStrike();
++    SCStrike *strike = SCStrike::create();
+     strike->init();
+     strike->player_loadout = this->player_loadout_pending;
+     strike->setMission("TEMPLATE.IFF");

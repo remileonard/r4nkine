@@ -129,17 +129,7 @@ void R4Renderer::flush() {
     cam.znear = kNear;
     cam.zfar = (float)max_view_distance * 1.2f;
 
-    r4::render::Environment &env = renderer_->environment();
-    env.fog = view_.fog;
-    env.fogStart = view_.fogStart;
-    env.fogEnd = view_.fogEnd;
-    env.fogColor = {view_.fogColor[0], view_.fogColor[1], view_.fogColor[2]};
-    env.lightDirection = lightEye_;
-    env.time = (float)SDL_GetTicks() / 1000.0f;
-    r4::render::RenderOptions &options = renderer_->options();
-    options.clear = false;
-    options.textures = show_textured;
-    options.rampGouraud = object_gouraud;
+    setEnvironment(view_.fog, view_.fogStart, view_.fogEnd, view_.fogColor, lightEye_);
 
     root_->removeAllChildren();
     while (places_.size() < items_.size()) {
@@ -162,6 +152,61 @@ void R4Renderer::flush() {
     }
     root_->removeAllChildren();
     items_.clear();
+}
+
+void R4Renderer::setEnvironment(bool fog, float fogStart, float fogEnd, const float fogColor[4], r4::Vec3 lightDirection) {
+    r4::render::Environment &env = renderer_->environment();
+    env.fog = fog;
+    env.fogStart = fogStart;
+    env.fogEnd = fogEnd;
+    env.fogColor = {fogColor[0], fogColor[1], fogColor[2]};
+    env.lightDirection = lightDirection;
+    env.time = (float)SDL_GetTicks() / 1000.0f;
+    r4::render::RenderOptions &options = renderer_->options();
+    options.clear = false;
+    options.textures = show_textured;
+    options.rampGouraud = object_gouraud;
+}
+
+void R4Renderer::drawGraph(r4::scene::Node &root, const r4::render::Camera &camera, int x, int y, int width, int height) {
+    R4Screen *screen = R4Screen::current();
+    if (!renderer_ || !screen) {
+        return;
+    }
+    flush();
+    float fogColor[4] = {0.89f, 0.89f, 0.98f, 1.0f};
+    r4::Vec3 towards{object_light_direction.x, object_light_direction.y, object_light_direction.z};
+    setEnvironment(show_fog, max_view_distance * 0.40f, max_view_distance * 0.93f, fogColor, -r4::normalize(towards));
+    r4::gpu::Device &device = screen->device();
+    device.beginHostInterop();
+    renderer_->setTarget(screen->frameTarget());
+    renderer_->render(root, camera, x, y, width, height);
+    device.endHostInterop();
+}
+
+void R4Renderer::drawSky(RSArea *area) {
+    flush();
+    GLfloat fogColor[4] = {0.89f, 0.89f, 0.98f, 1.0f};
+    if (this->show_fog) {
+        glFogi(GL_FOG_MODE, GL_LINEAR);
+        glFogfv(GL_FOG_COLOR, fogColor);
+        glFogf(GL_FOG_START, this->max_view_distance * 0.40f);
+        glFogf(GL_FOG_END, this->max_view_distance * 0.93f);
+        glHint(GL_FOG_HINT, GL_DONT_CARE);
+        glEnable(GL_FOG);
+    } else {
+        glDisable(GL_FOG);
+    }
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDisable(GL_CULL_FACE);
+    this->renderWorldSkyAndGround();
+    if (this->show_clouds && area) {
+        SCRenderer::renderClouds(area);
+    }
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+    glEnable(GL_DEPTH_TEST);
+    glDepthFunc(GL_LESS);
 }
 
 r4::scene::NodePtr R4Renderer::modelOf(RSEntity *object) {
@@ -249,29 +294,8 @@ void R4Renderer::renderWorldSolid(RSArea *area, int LOD, int verticesPerBlock) {
         SCRenderer::renderWorldSolid(area, LOD, verticesPerBlock);
         return;
     }
-    flush();
     useArea(area);
-    GLfloat fogColor[4] = {0.89f, 0.89f, 0.98f, 1.0f};
-    if (this->show_fog) {
-        glFogi(GL_FOG_MODE, GL_LINEAR);
-        glFogfv(GL_FOG_COLOR, fogColor);
-        glFogf(GL_FOG_START, this->max_view_distance * 0.40f);
-        glFogf(GL_FOG_END, this->max_view_distance * 0.93f);
-        glHint(GL_FOG_HINT, GL_DONT_CARE);
-        glEnable(GL_FOG);
-    } else {
-        glDisable(GL_FOG);
-    }
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDisable(GL_CULL_FACE);
-    this->renderWorldSkyAndGround();
-    if (this->show_clouds) {
-        SCRenderer::renderClouds(area);
-    }
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LESS);
+    drawSky(area);
     if (terrain_) {
         queue(terrain_);
     }
