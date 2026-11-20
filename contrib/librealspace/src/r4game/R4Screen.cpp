@@ -3,6 +3,7 @@
 //  libRealSpace
 //
 #include "R4Screen.h"
+#include "R4Renderer.h"
 
 #include "engine/Config.hpp"
 #include "engine/GLExtensions.h"
@@ -44,6 +45,9 @@ void *glProc(const char *name) {
 R4Screen::R4Screen() = default;
 
 R4Screen::~R4Screen() {
+    if (R4Renderer *renderer = R4Renderer::current()) {
+        renderer->release();
+    }
     tv_.reset();
     post_.reset();
     device_.reset();
@@ -186,6 +190,9 @@ void R4Screen::beginFrame() {
 }
 
 void R4Screen::beginGamePass() {
+    if (R4Renderer *renderer = R4Renderer::current()) {
+        renderer->flush();
+    }
     device_->beginHostInterop();
     r4::gpu::ClearValues keep;
     keep.color = false;
@@ -202,6 +209,9 @@ void R4Screen::refresh(void) {
     if (!device_) {
         SDL_GL_SwapWindow(m_window);
         return;
+    }
+    if (R4Renderer *renderer = R4Renderer::current()) {
+        renderer->flush();
     }
     if (frameTarget_) {
         device_->bindForHost(r4::gpu::RenderTargetHandle{});

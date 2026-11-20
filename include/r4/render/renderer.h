@@ -63,6 +63,8 @@ struct Environment {
 };
 
 struct RenderOptions {
+    // off: the pass keeps the color and the depth of its target, for a host that drew before
+    bool clear = true;
     bool frustumCulling = true; // off: everything drawn
     bool freezeCulling = false; // the culling and the LODs keep the eye of the moment it was set
     bool sortByState = true;    // off: in the order of the graph

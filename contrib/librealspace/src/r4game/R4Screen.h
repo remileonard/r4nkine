@@ -29,6 +29,9 @@ public:
     void fxTurnOnTv() override;
     void initPostProcess() override;
 
+    bool hasDevice() const {
+        return device_ != nullptr;
+    }
     r4::gpu::Device &device() {
         return *device_;
     }

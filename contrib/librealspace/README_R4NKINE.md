@@ -34,7 +34,8 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/r4game/R4Screen.h/.cpp` | La fenêtre du jeu sur R4nkine : contexte GL, device, post-process, l'image où le jeu dessine, l'allumage de la TV |
 | `src/r4game/R4VGA.h/.cpp` | L'écran 320 x 200 (menus, conversations, films, cockpit 2D) affiché par les overlays de R4nkine, par-dessus ce que le jeu a dessiné |
 | `src/r4game/R4Loader.h/.cpp` | L'écran de chargement affiché par un overlay de R4nkine |
-| `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA` et `R4Loader` |
+| `src/r4game/R4Renderer.h/.cpp` | La 3D du jeu sur R4nkine : le terrain et les objets, dessinés par le renderer avec les matrices du jeu |
+| `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA`, `R4Loader` et `R4Renderer` |
 | `patches/r4-hooks.patch` | Le patch de libRealSpace que demande `neosc_r4` |
 | `cmake/R4nkine.cmake` | Ajoute R4nkine (dossier local ou FetchContent), r4bridge, r4objviewer, et r4game et neosc_r4 quand le patch est appliqué |
 
@@ -140,7 +141,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | Étape | Contenu | État |
 |---|---|---|
 | 1 | `R4Screen`, `R4VGA`, `R4Loader` : la fenêtre, le post-process, l'écran 320 x 200 et le chargement | **fait** |
-| 2 | `R4Renderer` pour la 3D du vol : terrain, objets, matrices, caméras | à faire |
+| 2 | `R4Renderer` pour la 3D du vol : terrain, objets, matrices, caméras | **fait** |
 | 3 | `R4Renderer` pour le reste : effets, nuages, rendu dans une texture, cockpit 3D, visionneuse d'objets | à faire |
 | 4 | le contexte core strict, pour macOS | à faire |
 
@@ -158,6 +159,18 @@ Pour l'appliquer, à la racine de libRealSpace : `git apply chemin/vers/patches/
 - Tout ce que R4nkine dessine passe entre `beginHostInterop()` et `endHostInterop()` : l'état GL du jeu est rendu tel quel.
 - Limite connue : `SCRenderer` fait l'image de la caméra de cible en copiant un coin de l'image courante (`glCopyTexImage2D`). Avec `msaa` à 2 ou plus, l'image courante est une cible multi-échantillonnée, et OpenGL refuse cette copie : l'écran de la caméra de cible garde son ancienne image. Sans MSAA, la copie marche. L'étape 3 remplace ce rendu.
 - Testé ici sans les données complètes du jeu (SC.DAT, LILTRE.TRE et VOCLIST.TRE manquent) : un programme de test lance les vraies classes. L'allumage de la TV s'affiche, puis l'écran 320 x 200 sur une scène dessinée en pipeline fixe, sa zone transparente laisse voir la scène, et l'état GL du jeu est intact après chaque passage de R4nkine. Avec scanlines, pixels x 2 et MSAA 4x, l'image finale porte les effets.
+
+**L'étape 2.**
+- `R4Renderer` remplace `SCRenderer` (`SCRenderer::setInstance`). Sans `R4Screen`, il reste `SCRenderer`.
+- Le jeu garde ses matrices, ses caméras et ses appels GL. Tous les `drawModel` du jeu (avec position, orientation, ajustement, échelle, `drawModelWithChilds` : roues, postcombustion, armes) finissent dans `drawModel(objet, lod)`. `R4Renderer` y lit la matrice modelview de GL et garde l'objet avec elle : les objets restent en espace œil, comme dans le jeu, sans perte de précision loin de l'origine.
+- `renderWorldSolid` dessine le ciel du jeu (et les nuages s'ils sont actifs), puis garde le terrain de `r4bridge::terrainModel` (quadtree, anneaux, atlas) et les pistes de `overlayModel`, avec la matrice de vue. Ils sont construits une fois par `RSArea`.
+- Les objets gardés partent en une passe du renderer (`RenderOptions::clear` à faux : la passe garde le ciel et la profondeur du jeu). Cette passe a lieu avant chaque dessin GL du jeu : points, lignes, billboards, triangles d'effets, quads du cockpit 3D, rendu dans une texture, puis avant l'écran 320 x 200 et avant `refresh()`. L'ordre des dessins du jeu est donc gardé.
+- Une passe prend la projection, le viewport et le brouillard de GL au moment du premier objet. Quand l'un d'eux change (caméra de cible en 107 x 75, décalage vertical de la vue), la passe part avant.
+- Les modèles des `RSEntity` sont faits par `r4bridge::toModel` à leur premier dessin, avec la palette et la lumière des objets du jeu (`setObjectLight`). Ils sont refaits quand la lumière ou la zone changent.
+- `textures` suit `show_textured`, `rampGouraud` suit `object_gouraud`. Les textures animées (hélices) suivent l'heure, pas le compteur d'images du jeu.
+- Après un objet, `R4Renderer` laisse à GL l'état que laisse `SCRenderer::drawModel`.
+- Testé ici avec un programme de test sur ARENA : la même image par `SCRenderer` et par `R4Renderer` (terrain texturé, char, C-130, F-16 avec postcombustion, un point GL entre les objets). Les deux images sont presque les mêmes. Avec scanlines et pixels x 2, la 3D passe par la cible du post-process.
+- Reste à l'étape 3 : le rendu de la caméra de cible (encore en GL), les effets, les nuages et la visionneuse d'objets.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine
 

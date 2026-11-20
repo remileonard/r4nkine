@@ -7,6 +7,7 @@
 #include "../../strike_commander/precomp.h"
 #include "../../tactical_operation/TOGameSelectMenu.h"
 #include "../../r4game/R4Loader.h"
+#include "../../r4game/R4Renderer.h"
 #include "../../r4game/R4Screen.h"
 #include "../../r4game/R4VGA.h"
 #include "../../engine/gametimer.h"
@@ -17,7 +18,7 @@ int main(int argc, char *argv[]) {
     Config &config = Config::getInstance();
     config.load("./assets/config.ini");
     GameTimer::getInstance().setTimer(std::make_unique<DesktopTimer>());
-    SCRenderer::setInstance(std::make_unique<SCRenderer>());
+    SCRenderer::setInstance(std::make_unique<R4Renderer>());
     RSScreen::setInstance(std::make_unique<R4Screen>());
     RSVGA::setInstance(std::make_unique<R4VGA>());
     Loader::setInstance(std::make_unique<R4Loader>());
