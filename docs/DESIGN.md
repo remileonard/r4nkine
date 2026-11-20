@@ -1,284 +1,197 @@
 # R4nkine design
 
-R4nkine is a 3D rendering library in the spirit of IRIS Performer: a scene
-graph made for speed, loaders for many asset formats, and a viewer to show
-them. It is written in C++17 for today's GPUs.
+R4nkine is a 3D rendering library. Its model is IRIS Performer. It has these parts:
 
-The name comes from the Rankine scale, the absolute version of the
-Fahrenheit scale. Fahrenheit was the scene graph that SGI, Microsoft and HP
-announced in 1997 and never shipped. R4nkine is a homage to the old OpenGL
-demos.
+- a scene graph for high speed,
+- loaders for many asset formats,
+- a viewer that shows the assets.
+
+R4nkine is in C++17 for the GPUs of today.
+
+The name comes from the Rankine scale. The Rankine scale is the absolute version of the Fahrenheit scale. Fahrenheit was a scene graph of SGI, Microsoft and HP. They announced it in 1997, but they did not release it. R4nkine is a homage to the old OpenGL demos.
 
 ## Goals
 
-1. **Fast**: cull, sort by state, batch, instance. The CPU work per object
-   is small and the work per triangle is zero.
-2. **Any asset**: every loader produces one neutral format
-   (`r4::assets::Model`). A game can replace an old asset with a modern one
-   without its code changing.
-3. **A living world**: nodes can be added and removed at run time (forests,
-   villages, cities on a terrain), and the bounds stay right without manual
-   updates.
-4. **Several backends**: nothing above `r4::gpu` calls a graphics API.
-5. **Embeddable**: it can live inside a game that still draws part of its
-   frame in fixed-pipeline OpenGL (libRealSpace).
+1. **Speed**: the renderer culls, sorts by state, batches and instances. The CPU work for each object is small. There is no CPU work for each triangle.
+2. **All assets**: each loader makes one neutral format (`r4::assets::Model`). Thus, a game can replace an old asset with a modern asset. The code of the game does not change.
+3. **A world that changes**: you can add and remove nodes at run time (forests, villages, cities on a terrain). The bounds stay correct without manual updates.
+4. **Different backends**: no code above `r4::gpu` calls a graphics API.
+5. **Embedded use**: R4nkine can operate in a game that draws a part of its frame with fixed-pipeline OpenGL (libRealSpace).
 
 ## Layers
 
 ```
-apps      r4fly (the viewer, heir of perfly), demos
+apps      r4fly (the viewer, after perfly), demos
 ui        the panels of Performer: buttons, switches, sliders, menus, trees
 raster    2D on the CPU: indexed or true-color surfaces, primitives, fonts
 render    cull → draw list → sort → batch/instance → passes; materials;
           overlays (raster surfaces), post process (MSAA, FXAA, CRT, palette)
 scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
-terrain   (to come) blocks, LOD, seams, placement rules
+terrain   (not done) blocks, LOD, seams, placement rules
 assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
           YAODL, flip .bin, pfb, dwb, OpenFlight, gset, glTF 2.0; SGI,
-          PPM, 5551E, PNG/JPEG/BMP/TGA/GIF (to come: RealSpace IFF)
+          PPM, 5551E, PNG/JPEG/BMP/TGA/GIF (not done: RealSpace IFF)
 gpu       Device: buffers, textures, shaders, pipelines, draws
-          backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (to come)
+          backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (not done)
 core      math: glm (Vec3, Mat4, column-major), Box, Sphere, Frustum
 ```
 
 ## Dependencies
 
-The dependencies come from vcpkg in manifest mode (`vcpkg.json`, with the
-baseline in `vcpkg-configuration.json`, the same as libRealSpace):
+The dependencies come from vcpkg in manifest mode. The manifest is `vcpkg.json`. The baseline is in `vcpkg-configuration.json`. It is the same baseline as libRealSpace.
 
-- **glm**: the vectors and matrices. `r4::Vec3` and `r4::Mat4` are
-  `glm::vec3` and `glm::mat4`, so a program using glm passes its values as
-  they are. R4nkine needs `GLM_FORCE_CTOR_INIT` (zero vectors, identity
-  matrices by default): the target defines it for its users.
-- **stb**: the common image formats.
+- **glm**: vectors and matrices. `r4::Vec3` and `r4::Mat4` are `glm::vec3` and `glm::mat4`. Thus, a program that uses glm gives its values without conversion. R4nkine needs `GLM_FORCE_CTOR_INIT`: vectors are zero and matrices are identity by default. The target defines it for its users.
+- **stb**: the usual image formats.
 - **cgltf**: glTF 2.0.
-- **SDL2**: only for r4fly, the `viewer` feature.
+- **SDL2**: only for r4fly (the `viewer` feature).
 
-The GUI (`r4::ui`) is part of the library and draws through `r4::gpu`; its
-font is baked into `src/ui/font_data.inc` by `tools/bake_font.cpp`.
+The GUI (`r4::ui`) is a part of the library. It draws through `r4::gpu`. `tools/bake_font.cpp` makes its font in `src/ui/font_data.inc`.
 
-The library itself needs no graphics header and no GL loader, because the
-OpenGL functions are loaded at run time.
+The library does not need a graphics header or a GL loader. It loads the OpenGL functions at run time.
 
 ## Conventions
 
-- **Space**: right-handed and Z-up, as in Performer, OpenFlight, Vega,
-  OpenSceneGraph, VulkanSceneGraph and the flight simulators. X is right, Y
-  is forward, Z is up, and units are meters. The axes are named in one place,
-  `r4/axes.h` (`axes::kRight`, `kForward`, `kUp`, `headingOf`, `pitchOf`,
-  `heightOf`). The code names them instead of writing `{0, 0, 1}`, so the
-  places that depend on the convention are exactly the users of that header.
-- **One convention inside, a conversion at each border**: a Y-up source (OBJ,
-  glTF, the gobj and YAODL of the SGI demos, a game whose code is Y-up such as
-  libRealSpace, the tracking space of OpenXR) is turned once by
-  `axes::fromYUpMatrix()`, at the root of what it brings (`transformFromYUp`
-  for a single transform). Nothing else converts. Both conventions are
-  right-handed: the turn keeps the winding of the faces, and it costs nothing
-  at run time (one matrix, or once per vertex at loading).
-- **Matrices**: column-major, `p' = M * p`, with OpenGL clip space for the
-  GL backend.
-- **Images**: rows start at the bottom (OpenGL order), 8 bits per channel.
-- **Ownership**: scene nodes are `shared_ptr`. GPU meshes and materials are
-  `shared_ptr` that free their buffers when the last user goes away.
+- **Space**: the axes are right-handed and Z is up. Performer, OpenFlight, Vega, OpenSceneGraph, VulkanSceneGraph and the flight simulators use the same axes.
+  - X is right, Y is forward, Z is up. The units are meters.
+  - `r4/axes.h` gives the names of the axes: `axes::kRight`, `kForward`, `kUp`, `headingOf`, `pitchOf`, `heightOf`.
+  - The code uses these names. It does not write `{0, 0, 1}`. Thus, the code that uses the convention is the code that includes this header.
+- **One convention inside, one conversion at each border**:
+  - These sources are Y-up: OBJ, glTF, the gobj and YAODL files of the SGI demos, a game with Y-up code (libRealSpace), the tracking space of OpenXR.
+  - `axes::fromYUpMatrix()` turns a Y-up source one time, at the root of its data. `transformFromYUp` turns one transform.
+  - No other code makes a conversion.
+  - The two conventions are right-handed. Thus, the turn keeps the winding of the faces. It has no cost at run time (one matrix, or one time for each vertex when the asset loads).
+- **Matrices**: column-major, `p' = M * p`. The GL backend uses the OpenGL clip space.
+- **Images**: the rows start at the bottom (OpenGL order). Each channel has 8 bits.
+- **Ownership**: the scene nodes are `shared_ptr`. The GPU meshes and materials are `shared_ptr`. They release their buffers when the last user releases them.
 
-## The GPU interface (`r4::gpu::Device`)
+## GPU interface (`r4::gpu::Device`)
 
-It follows the model of the explicit APIs (Vulkan, Metal, D3D12), so that
-every backend can implement it:
+The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, all the backends can implement it.
 
-- **Resources are opaque handles**: `BufferHandle`, `TextureHandle`,
-  `ShaderHandle`, `PipelineHandle`.
-- **States are baked into pipelines** made in advance: the vertex layout,
-  blending, depth, culling, polygon mode and offset.
-- **Uniforms live in uniform buffers** bound by slot and range. A frame's
-  object matrices go into one buffer, and each draw binds its range.
-- **Shaders**: the GL backend takes GLSL 330. Uniform blocks and samplers
-  are bound to slots by name in `ShaderDesc`, because GLSL 330 has no
-  `binding` qualifier. The other backends will take the same sources
-  compiled to SPIR-V and cross-compiled.
-- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and
-  restore the GL state of a host that draws with the same context. This is
-  how R4nkine can draw inside libRealSpace, between its fixed-pipeline
-  passes.
+- **Resources**: they are opaque handles: `BufferHandle`, `TextureHandle`, `ShaderHandle`, `PipelineHandle`.
+- **States**: the pipelines contain the states. The program makes the pipelines before it uses them. A pipeline contains the vertex layout, the blending, the depth, the culling, the polygon mode and the polygon offset.
+- **Uniforms**: they are in uniform buffers. The device binds a uniform buffer by slot and by range. The object matrices of a frame go into one buffer. Each draw binds its range.
+- **Shaders**: the GL backend uses GLSL 330. GLSL 330 has no `binding` qualifier. Thus, `ShaderDesc` binds the uniform blocks and the samplers to slots by name. The other backends will use the same sources, compiled to SPIR-V and then cross-compiled.
+- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes.
 
-### The OpenGL 3.3 backend
+### OpenGL 3.3 backend
 
-- **Function loading**: the functions are loaded at run time through the
-  window system's loader (`SDL_GL_GetProcAddress`...). The library needs no
-  GL header and no loader library.
-- **One VAO per pipeline**: without separate vertex formats (GL 4.3),
-  attributes are pointed again only when the buffers bound to a VAO change.
-- **State cache**: every state is cached, so redundant calls are skipped.
-- **Profiles**: it works in a core context and in a compatibility context.
-  macOS has only core contexts above OpenGL 2.1 (up to 4.1): r4fly asks for
-  a 4.1 core context there.
+- **Function loading**: the backend loads the functions at run time through the loader of the window system (`SDL_GL_GetProcAddress`). The library does not need a GL header or a loader library.
+- **One VAO for each pipeline**: OpenGL 3.3 has no separate vertex formats (they come with OpenGL 4.3). Thus, the backend sets the attributes again only when the buffers of a VAO change.
+- **State cache**: the backend keeps all the states in a cache. Thus, it does not send the same state two times.
+- **Profiles**: the backend operates in a core context and in a compatibility context. Above OpenGL 2.1, macOS has only core contexts (up to 4.1). Thus, r4fly requests a 4.1 core context on macOS.
 
-## Rendering a frame
+## Frame sequence
 
-1. **Cull**: the graph is traversed with the world matrices. Each node's
-   bounding sphere is tested against the frustum. A node fully inside is not
-   tested further, and a node outside is skipped with its subtree. A Switch
-   visits its active children; a LOD visits the child for the eye distance.
-   Nodes whose mask does not match the camera mask are skipped.
-2. **Draw list**: each visible drawable becomes an item holding its mesh,
-   material, world matrix, depth and pipeline.
-3. **Sort**: opaque items are sorted by pipeline, then material, then mesh,
-   to keep state changes few. Transparent items are sorted from back to
-   front.
-4. **Upload**: the model matrices of all the items go into one vertex
-   buffer, uploaded once per frame. The shader reads them as a
-   per-instance stream (locations 4 to 7). The normal matrix is computed in
-   the shader.
-5. **Draw**: consecutive items with the same mesh, material and pipeline
-   become one instanced draw, starting at their offset in the matrix
-   buffer. The device skips bindings that did not change.
+1. **Cull**: the renderer goes through the graph with the world matrices.
+   - It compares the bounding sphere of each node with the frustum.
+   - When a node is fully inside, the renderer does not test its children.
+   - When a node is outside, the renderer ignores the node and its subtree.
+   - A Switch goes into its active children. A LOD goes into the child for the distance to the eye.
+   - The renderer ignores a node when its mask has no bit of the camera mask.
+2. **Draw list**: each visible drawable becomes an item. The item contains the mesh, the material, the world matrix, the depth and the pipeline.
+3. **Sort**: the renderer sorts the opaque items by pipeline, then by material, then by mesh. This decreases the number of state changes. It sorts the transparent items from back to front.
+4. **Upload**: the model matrices of all the items go into one vertex buffer. The renderer uploads this buffer one time for each frame. The shader reads the matrices as a per-instance stream (locations 4 to 7). The shader calculates the normal matrix.
+5. **Draw**: consecutive items with the same mesh, material and pipeline become one instanced draw. The draw starts at their offset in the matrix buffer. The device does not bind again a binding that did not change.
 
-**Billboards** turn about the origin of their node, with -Y towards the
-eye: about Z only (axis), or about Z and X (point). Their bounds are taken
-around their origin, so they stay valid for every turn.
+**Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
 
-**Instancers** hold levels (parts, each a drawable at a matrix, and the
-farthest distance the level is used at) and a list of instance matrices.
-Each instance is culled on its own sphere and gets the level for its
-distance. All the visible instances of a part become one draw call after
-sorting.
+**Instancers**: an instancer has levels and a list of instance matrices. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
 
-**Bounds**: they are lazy. A change to a node (matrix, children,
-drawables) marks it and its ancestors dirty, and the next `bounds()` call
-recomputes only what was marked. The world can therefore change at run
-time, nodes added or removed, without full updates.
+**Bounds**: the renderer calculates the bounds only when it needs them. A change to a node (matrix, children, drawables) sets a flag on the node and on its ancestors. The next call to `bounds()` calculates only the nodes with the flag. Thus, you can add or remove nodes at run time without full updates.
 
-## The GUI (`r4::ui`)
+## GUI (`r4::ui`)
 
-The look is that of the GUI of IRIS Performer (libpfutil), as ported for
-perfly in legacy_opengl_demo: the same colors and reliefs, the yellow
-lights of the switches, the blue bars of the sliders, the lists of the
-menu buttons. The model is immediate: the program calls the widgets each
-frame with its own variables, and they report the changes. A frame is
-built on the CPU into one vertex buffer (rectangles, triangles and glyphs,
-all with one texture: the font atlas and a white texel), then drawn with
-one pipeline and a few draws, clipped by the scissor to the panels. The
-panels scroll with the wheel when their widgets are taller.
+The GUI looks like the GUI of IRIS Performer (libpfutil), as the perfly port in legacy_opengl_demo shows it:
 
-## 2D layers and the post process
+- the same colors and reliefs,
+- the yellow lights of the switches,
+- the blue bars of the sliders,
+- the lists of the menu buttons.
 
-`r4::raster` draws on the CPU into surfaces of any size, indexed (a byte per
-pixel and a palette, as the VGA) or in true colors. It knows nothing of the
-GPU: a game can keep drawing its cockpit as it did, pixel by pixel.
-`render::Overlay` shows a surface: the indices go up as an R8 texture and
-the palette as a 256 x 1 texture, and the shader looks the colors up (the
-transparent index clear), so the palette effects cost one upload of 1 KB.
-A surface is sent again only when its version changed. `Overlay::texture()`
-draws it into a render target, for a material.
+The model is immediate. Each frame, the program calls the widgets with its own variables. The widgets tell the changes.
 
-The device has **render targets** (a color texture, a depth buffer, and
-multisampled buffers resolved into the texture by a blit) and
-**texture updates**. `PostProcess` gives the target the frame is drawn
-into, then applies the effects in one pass (two with FXAA). The reduction
-to a palette uses a table of 32 x 32 x 32 colors made on the CPU, each the
-nearest color of the palette, after an ordered dithering.
+The CPU builds a frame into one vertex buffer. The buffer contains rectangles, triangles and glyphs. They all use one texture: the font atlas and a white texel. The GPU draws the frame with one pipeline and a small number of draws. The scissor clips the draws to the panels. When the widgets of a panel are taller than the panel, the wheel scrolls the panel.
 
-## Render options and measures
+## 2D layers and post process
 
-`Renderer::options()` turns the stages on and off at run time, to see what
-each one is worth: frustum culling, sorting by state, the merging of equal
-items into instanced draws, textures, lighting, and a scale on the
-distances of the LODs and instancers. **Freezing the culling** keeps the
-frustum and the eye of the moment: the camera can then move out and look at
-what was culled. `stats()` gives the counters of the frame and the CPU time
-of each stage (cull, sort, upload, draw).
+`r4::raster` draws on the CPU into surfaces of all sizes. A surface is indexed (one byte for each pixel and a palette, as VGA) or true color. `r4::raster` does not use the GPU. Thus, a game can continue to draw its cockpit pixel by pixel.
 
-## The old formats
+`render::Overlay` shows a surface:
 
-Each loader is a port of the loader of legacy_opengl_demo. The original
-behaviors are kept, translated into the neutral format:
+- The indices go to the GPU as an R8 texture.
+- The palette goes to the GPU as a 256 x 1 texture.
+- The shader finds the colors in the palette. The transparent index is clear.
+- Thus, a palette effect costs one upload of 1 KB.
+- The overlay sends a surface again only when its version changes.
+- `Overlay::texture()` draws the surface into a render target, for a material.
 
-- **State bits (libgobj)**: the statebits of the flight objects become node
-  masks. The model's `defaultState` is the state of the original `drawobj`
-  call (body, landing gear and weapons), applied as the state filter of the
-  model's root.
-- **Modes**: culled back faces, transparency and no depth writes (flames)
-  are material flags. Subfaces (OpenFlight) and layers (pfb, dwb) are
-  `decal` materials, drawn with a polygon offset.
-- **YAODL execution**: YAODL objects are executed as in the original (the
-  attributes pushed and popped per element), and the drawing calls are
-  recorded into meshes. The matrices are applied to the vertices.
-- **YAODL extras**: NURBS surfaces are tessellated, but their trimming
-  curves are ignored. Sphere maps are done in the shader, and the linear
-  texture coordinate generation on the CPU.
-- **Switches and LODs**: sequences show their first frame, LODs keep their
-  ranges, and switches their value.
-- **Billboards**: billboard faces (OpenFlight templates 2 and 4) and pfb
-  billboards become Billboard nodes at their centers, turned to the eye.
-- **Encrypted data**: the coordinates of version 2 pfb files and the
-  textures of the F-18 demo are decrypted. Some copies of the F-18 textures
-  carry the encryption mark but are already in clear; the loader keeps the
-  smoother image.
-- **Orientation**: the Y-up formats (OBJ, libgobj, YAODL, flip, Y-up dwb)
-  turn their root node to Z-up.
+The device has **render targets**. A render target has a color texture, a depth buffer and multisampled buffers. A blit resolves the multisampled buffers into the texture. The device also has **texture updates**.
+
+`PostProcess` gives the render target for the frame. Then it applies the effects in one pass (two passes with FXAA). For the reduction to a palette, the CPU makes a table of 32 x 32 x 32 colors. Each entry is the nearest color of the palette, after an ordered dither.
+
+## Render options and measurements
+
+`Renderer::options()` sets the stages on and off at run time. Thus, you can see the effect of each stage:
+
+- frustum culling,
+- sort by state,
+- merge of equal items into instanced draws,
+- textures,
+- lighting,
+- a scale on the distances of the LODs and the instancers.
+
+**Freeze culling** keeps the frustum and the eye of that moment. Then you can move the camera out and look at the culled nodes. `stats()` gives the counters of the frame and the CPU time of each stage (cull, sort, upload, draw).
+
+## Old formats
+
+Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the original behavior and translate it into the neutral format.
+
+- **State bits (libgobj)**: the statebits of the flight objects become node masks. The `defaultState` of the model is the state of the original `drawobj` call (body, landing gear and weapons). The state filter of the root of the model applies it.
+- **Modes**: these modes are material flags: culled back faces, transparency, no depth writes (flames). Subfaces (OpenFlight) and layers (pfb, dwb) are `decal` materials. The renderer draws them with a polygon offset.
+- **YAODL execution**: the loader executes the YAODL objects as the original does. It pushes and pops the attributes for each element. It records the draw calls into meshes. It applies the matrices to the vertices.
+- **YAODL extras**: the loader tessellates the NURBS surfaces. It ignores their trimming curves. The shader makes the sphere maps. The CPU makes the linear texture coordinates.
+- **Switches and LODs**: a sequence shows its first frame. A LOD keeps its ranges. A switch keeps its value.
+- **Billboards**: the billboard faces (OpenFlight templates 2 and 4) and the pfb billboards become Billboard nodes at their centers. These nodes turn to the eye.
+- **Encrypted data**: the loaders decrypt the coordinates of the version 2 pfb files and the textures of the F-18 demo. Some copies of the F-18 textures have the encryption mark, but they are not encrypted. The loader keeps the smoother image.
+- **Orientation**: the root node of a Y-up format (OBJ, libgobj, YAODL, flip, Y-up dwb) turns to Z-up.
 
 ## Materials (lighting models)
 
-- `Unlit`: the color as is.
-- `Phong`: per-pixel Blinn-Phong with one directional light, ambient light,
-  emission and linear fog. Two-sided faces get the normal turned towards the
-  eye, whatever their winding (two-sided lighting).
-- **Common options** (all models): vertex colors (lmcolor / color material),
-  diffuse texture, alpha masks and blending, decals, sphere maps, and no
-  depth writes.
-- `PaletteRamp`: the lighting of the 8-bit games (Strike Commander...). The
-  intensity is `rampAmbient + rampLight × max(N·L, 0)`; the palette index of
-  the face, in the red of the vertex colors, and the intensity pick the shade
-  in a table of 256 colors × 32 intensities given as the image of the
-  material (made by the loader from the ramps of the palette). With
-  `rampTextured`, a texture is multiplied by the intensity instead. With
-  `indexImage`, an image of palette indices: each texel is shaded along its
-  own ramp, then filtered (bilinear, done in the shader); the intensity is
-  the red of the vertex colors with `vertexColors`, else the light.
-  With `indexAtlasColumns` and `indexAtlasRows`, `indexImage` is an atlas of
-  equal cells: the green and blue of the vertex colors give the cell, its
-  alpha the log2 of the width and height of the image in it, and the filter
-  stays inside that image.
-- **Shadow mask**: the shadow pass culls with the camera mask and
-  `RenderOptions::shadowMask`; a node whose mask shares no bit with it casts
-  no shadow, nor its children, and is not visited by that pass.
-- **Animated textures**: `frames` > 1 makes `diffuseImage` a strip of frames
-  from top to bottom, shown in turn at `framesPerSecond` by the time of the
-  environment (`Environment::time`, set by the application).
-- **Without textures** (the textures option off, and always in wireframe), a
-  texture is replaced by the mean color of its opaque texels, so the lines
-  keep the color of their faces; the layers drawn over a face of the same
-  depth (`depthEqual` decals, `indexImage`) are not drawn.
+- `Unlit`: the color without change.
+- `Phong`: per-pixel Blinn-Phong with one directional light, ambient light, emission and linear fog. On a two-sided face, the normal turns to the eye, whatever the winding (two-sided lighting).
+- **Common options** (all models): vertex colors (lmcolor or color material), diffuse texture, alpha masks and blending, decals, sphere maps, no depth writes.
+- `PaletteRamp`: the lighting of the 8-bit games (Strike Commander and others).
+  - The intensity is `rampAmbient + rampLight × max(N·L, 0)`.
+  - The red of the vertex colors gives the palette index of the face. The index and the intensity select the shade in a table of 256 colors × 32 intensities. This table is the image of the material. The loader makes it from the ramps of the palette.
+  - With `rampTextured`, the shader multiplies a texture by the intensity.
+  - With `indexImage`, the material has an image of palette indices. The shader shades each texel along its ramp. Then it filters the texels (bilinear filter in the shader). With `vertexColors`, the red of the vertex colors gives the intensity. Without `vertexColors`, the light gives the intensity.
+  - With `indexAtlasColumns` and `indexAtlasRows`, `indexImage` is an atlas of equal cells. The green and the blue of the vertex colors give the cell. The alpha gives the log2 of the width and the height of the image in the cell. The filter stays in this image.
+- **Shadow mask**: the shadow pass culls with the camera mask and `RenderOptions::shadowMask`. When the mask of a node has no bit of this mask, the node and its children cast no shadow. The shadow pass does not go into this node.
+- **Animated textures**: when `frames` is more than 1, `diffuseImage` is a strip of frames from top to bottom. The shader shows the frames one after the other at `framesPerSecond`. It uses the time of the environment (`Environment::time`). The application sets this time.
+- **No textures**: this applies when the textures option is off, and always in wireframe.
+  - The mean color of the opaque texels replaces each texture. Thus, the lines keep the color of their faces.
+  - The renderer does not draw the layers on a face at the same depth (`depthEqual` decals, `indexImage`).
 
 ## Roadmap
 
 | Step | Content | State |
 | --- | --- | --- |
-| 1 | the foundation: math, `r4::gpu` and the GL 3.3 backend, Model, OBJ/MTL, SGI and PPM loaders, scene graph with culling and LOD/Switch, Phong renderer, r4fly, tests | **done** |
-| 2 | instancing in the renderer (equal mesh and material in one draw), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG via stb_image, glTF 2.0 | **done** |
-| 3 | the old formats, ported from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
+| 1 | the base: math, `r4::gpu` and the GL 3.3 backend, Model, OBJ/MTL, SGI and PPM loaders, scene graph with culling and LOD/Switch, Phong renderer, r4fly, tests | **done** |
+| 2 | instancing in the renderer (one draw for equal mesh and material), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG with stb_image, glTF 2.0 | **done** |
+| 3 | the old formats, ports from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
 | 4 | RealSpace: IFF/RSEntity loader, `PaletteRamp` material, block terrain with LOD and seams, placement rules (forests, villages) | |
-| 5 | libRealSpace integration: a renderer derived from `SCRenderer` that delegates to R4nkine, with host interop | |
+| 5 | libRealSpace integration: a renderer from `SCRenderer` that sends the work to R4nkine, with host interop | |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | |
-| 3b | `r4::ui`, the GUI of perfly redrawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performances; render options in the renderer (culling, freeze, sorting, instancing, textures, lighting, LOD scale) and CPU timings | **done** |
-| later | threaded culling (APP/CULL/DRAW as in Performer) | |
-| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes linked to the message bus of libRealSpace, views without drawing for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | |
+| 3b | `r4::ui`, the GUI of perfly drawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performance; render options in the renderer (culling, freeze, sort, instancing, textures, lighting, LOD scale) and CPU times | **done** |
+| later | culling in threads (APP/CULL/DRAW as in Performer) | |
+| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | |
 
 ## Integration in libRealSpace
 
-`SCRenderer` already has virtual methods and a `setInstance()` hook, so a
-`R4Renderer : public SCRenderer` can replace it without the game changing:
+`SCRenderer` has virtual methods and a `setInstance()` hook. Thus, a `R4Renderer : public SCRenderer` can replace it. The game does not change.
 
-- **What it overrides**: only the high-level entry points
-  (`renderWorldSolid`, the `drawModel` overloads, `drawModelWithChilds`,
-  `renderMissionObjects` and `renderObjects`). The immediate-mode helpers
-  are not used any more.
-- **GL context**: the game keeps its compatibility context. R4nkine draws
-  between `beginHostInterop()` and `endHostInterop()`, so the cockpit, HUD
-  and 2D screens still drawn in fixed-pipeline GL keep working.
-- **Draw order**: first, `drawModel` draws immediately with the precompiled
-  meshes, which keeps the game's order. A queued draw list with sorting and
-  instancing comes after, flushed at sync points such as before the cockpit.
-- **Objects added to the map**: they live in R4nkine's graph (forests,
-  villages) and are drawn with the terrain. The game can query them for
-  collisions through an intersection call.
+- **Overridden functions**: only the high-level entry points: `renderWorldSolid`, the `drawModel` overloads, `drawModelWithChilds`, `renderMissionObjects` and `renderObjects`. The immediate-mode helpers are not necessary after this change.
+- **GL context**: the game keeps its compatibility context. R4nkine draws between `beginHostInterop()` and `endHostInterop()`. Thus, the cockpit, the HUD and the 2D screens continue to draw with fixed-pipeline GL.
+- **Draw order**: first, `drawModel` draws immediately with the precompiled meshes. Thus, the order of the game stays the same. After this step, a draw list with sort and instancing comes. The renderer sends this list at synchronization points, for example before the cockpit.
+- **Objects added to the map**: they are in the graph of R4nkine (forests, villages). The renderer draws them with the terrain. The game can do collision queries on them with an intersection call.
