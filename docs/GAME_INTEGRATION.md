@@ -1,97 +1,90 @@
 # Game integration: traversals, intersections, triggers
 
-The scene graph of R4nkine is meant to serve the game, not only the
-renderer: the same graph, walked by several traversals, each with its own
-masks and callbacks, as in IRIS Performer (APP, CULL, DRAW, ISECT). This
-note keeps the design until it is built.
+This document gives the design for the use of the R4nkine scene graph by the game. The design is not done yet.
 
-## Why
+The scene graph is not only for the renderer. The game also uses it. Different traversals go through the same graph. Each traversal has its own mask and its own callbacks. IRIS Performer uses the same model (APP, CULL, DRAW, ISECT).
 
-- `RSArea::getY` is wrong: it takes the nearest vertex, then interpolates in
-  the cell that starts at that vertex even when the point lies on the other
-  side, and adds 5 at the edges of the blocks (up to 86 units off on
-  ARENAMIS). `r4bridge::groundHeight` already computes the height on the
-  LVL0 triangles as they are drawn; the game should ask the graph instead.
-- libRealSpace tracks its entities and finds by hand the area the player is
-  in. The areas exist in the graph with their bounds; entering one should be
-  an event.
-- libRealSpace has a message bus. Events raised by the graph (an entity
-  entering an area, a ray hitting an object) can be posted on that bus, and
-  the game logic stays where it is.
-- A network game: a server and its clients follow the same game through the
-  same graph, each with its own views (a server without rendering, clients
-  with their cameras).
+## Reasons
 
-## The traversals
+- `RSArea::getY` gives incorrect heights:
+  - It finds the nearest vertex. Then it interpolates in the cell that starts at this vertex. The point is not always in this cell.
+  - It adds 5 units at the edges of the blocks.
+  - On ARENAMIS, the error is up to 86 units.
+- `r4bridge::groundHeight` calculates the height on the LVL0 triangles. These are the triangles that the renderer shows. The game must get the height from the graph.
+- libRealSpace finds the area of the player with its own code. The graph has the areas and their bounds. Thus, the graph can send an event when the player goes into an area.
+- libRealSpace has a message bus. The graph sends its events to this bus. The game logic stays in libRealSpace.
+- A network game is possible in the future. The server and the clients use the same graph. Each one has its own views. The server has no renderer. Each client has its cameras.
 
-| Traversal | Driven by | Purpose |
+## Traversals
+
+| Traversal | Start | Function |
 | --- | --- | --- |
-| APP | the game's simulation step (fixed time step) | update callbacks of the nodes, positions pushed by the game, trigger volumes |
-| CULL | a camera | what one view draws; never used by the game logic |
-| DRAW | the renderer | drawing |
-| ISECT | a query | segments and rays against the graph: ground height, collisions, landing, lines of sight, shots |
+| APP | the simulation step of the game (fixed time step) | It runs the update callbacks of the nodes. It sets the positions from the game. It does a check of the trigger volumes. |
+| CULL | a camera | It finds the nodes that a view shows. The game logic does not use it. |
+| DRAW | the renderer | It draws the nodes. |
+| ISECT | a query | It finds the intersections of segments and rays with the graph: ground height, collisions, lines of sight, shots. |
 
-Each traversal has its own mask, as the shadow pass already has
-`RenderOptions::shadowMask`: a node can be drawn but not hit (clouds), hit
-but not drawn (a collision hull), or ignored by APP (pure decoration).
+Each traversal has its own mask. The shadow pass has this mask now (`RenderOptions::shadowMask`). With the masks, a node can be:
+
+- shown but not touched by the queries (a cloud),
+- touched by the queries but not shown (a collision hull),
+- ignored by APP (a decoration).
 
 ## Intersections (ISECT)
 
-- `intersect(root, segment or ray, mask)`: the hit point, its normal, the
-  node and the triangle hit, the nearest first or all of them.
-- The ground height is a vertical segment against the terrain mask; it
-  replaces `RSArea::getY` for the placement of the objects, the physics, the
-  AI and the landing.
-- The terrain is tested on its finest level (LVL0), whatever level is drawn,
-  so the result does not depend on the camera.
-- The quadtree of the terrain and the bounds of the nodes prune the search.
+- `intersect(root, segment or ray, mask)` gives these results:
+  - the point of the hit,
+  - the normal at this point,
+  - the node and the triangle that the segment hits.
+- The query gives the nearest hit or all the hits.
+- The ground height is the intersection of a vertical segment with the terrain mask. It replaces `RSArea::getY` for these functions:
+  - the placement of the objects,
+  - the physics,
+  - the AI,
+  - the landing.
+- The query uses the LVL0 triangles of the terrain, whatever level the renderer shows. Thus, the result is the same for all the cameras.
+- The quadtree of the terrain and the bounds of the nodes make the search faster.
 
 ## APP traversal and node callbacks
 
-- A node may carry callbacks run before and after the APP traversal of its
-  children; they update animations, positions and states.
-- APP runs in the simulation step of the game, at its fixed rate, never in
-  the drawing of a frame: the result must not depend on the frame rate.
-- The game pushes the positions of its entities into the graph in APP; the
-  graph only answers queries and raises events, the game decides.
+- A node can have callbacks. One callback runs before the APP traversal of the children. One callback runs after it.
+- The callbacks update the animations, the positions and the states.
+- APP runs in the simulation step of the game, at a fixed rate. It does not run when the renderer draws a frame. Thus, the result does not change with the frame rate.
+- During APP, the game sets the positions of its entities in the graph.
+- The graph gives the results of the queries and sends the events. The game makes all the decisions.
 
 ## Trigger volumes
 
-- A trigger node holds a volume: the box of an `AREA` (position, width,
-  height), a sphere, or the bounds of its children.
-- The game registers trackers (the player, an AI aircraft, a missile).
-- In APP, the graph compares the trackers with the volumes and raises
-  `onEnter` and `onLeave`; the bridge posts them on the message bus of
-  libRealSpace, which starts the scenes of the area as `SCMission` does.
-- Visibility is not presence: a trigger never depends on CULL. The player
-  can look at a base 20 km away without being in its area.
+- A trigger node has a volume. The volume is one of these:
+  - the box of an `AREA` (position, width, height),
+  - a sphere,
+  - the bounds of the children of the node.
+- The game registers the trackers. Examples: the player, an AI aircraft, a missile.
+- During APP, the graph compares the positions of the trackers with the volumes. It sends `onEnter` and `onLeave`.
+- The bridge puts these events on the message bus of libRealSpace. Then the game starts the scenes of the area, as `SCMission` does now.
+- A trigger does not use the result of CULL. The player can see a base at 20 km, but the player is not in the area of this base.
 
 ## Graph layout for the missions
 
-- Spatial: each map object and mission part under the area where it really
-  stands (not the area of the scene that brings it); the area nodes then have
-  tight bounds, usable for culling, occlusion culling, HLOD of a base, the
-  shadow pass and the triggers.
-- Scenes are not a level of the graph: they show or hide parts. Each part
-  carries a Switch or a mask bit for its scene; APP sets them when the game
-  activates a scene.
+- Put each map object and each mission part below the node of the area where it is. Do not use the area of the scene that adds the part. Then the area nodes have small bounds. The bounds are correct for these functions:
+  - culling,
+  - occlusion culling,
+  - HLOD of a base,
+  - shadow pass,
+  - triggers.
+- A scene is not a level of the graph. A scene shows or hides parts. Each part has a Switch or a mask bit for its scene. During APP, the game sets them when it starts a scene.
 
 ## Network
 
-- The server runs APP and ISECT only, with no CULL nor DRAW, on the same
-  graph and the same data.
-- Each client runs its own APP for prediction, then CULL and DRAW for its
-  cameras; the server's state corrects the positions in APP.
-- Events of the triggers are raised on the server, the authority, and sent
-  to the clients through the message bus.
-- Several views of one graph are already the model of the renderer (a camera
-  and its mask per view); a network game adds views that never draw.
+- The server runs APP and ISECT only. It does not run CULL or DRAW. It uses the same graph and the same data as the clients.
+- Each client runs its own APP to predict the positions. Then it runs CULL and DRAW for its cameras. The state of the server corrects the positions during APP.
+- The server is the authority for the trigger events. The message bus sends these events to the clients.
+- The renderer has one camera and one mask for each view now. A network game adds views that do not draw.
 
-## Order of work
+## Sequence of work
 
-1. ISECT: segment and ray queries, the ground height, with a mask. Useful at
-   once (placement, physics) and independent of the rest.
-2. The APP traversal with node callbacks and the per-traversal masks.
-3. Trigger volumes and their link to the message bus of libRealSpace.
-4. The spatial layout of the missions (areas as nodes, scenes as switches).
-5. Views without drawing, for a server.
+1. ISECT: segment and ray queries, ground height, mask. This step is useful immediately (placement, physics). It does not need the other steps.
+2. APP traversal: node callbacks and one mask for each traversal.
+3. Trigger volumes and their connection to the message bus of libRealSpace.
+4. Spatial layout of the missions: areas as nodes, scenes as switches.
+5. Views that do not draw, for a server.
