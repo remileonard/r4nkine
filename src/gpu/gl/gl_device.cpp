@@ -150,11 +150,11 @@ GLint wrapMode(Wrap w) {
 
 class GLDevice final : public Device {
 public:
-    bool init(void *(*getProc)(const char *), std::string *error) {
+    bool init(void *(*getProc)(const char *), std::string *errorOut) {
         const char *missing = nullptr;
         if (!gl.load(getProc, &missing)) {
-            if (error) {
-                *error = std::string("OpenGL 3.3 function missing: ") + (missing ? missing : "?");
+            if (errorOut) {
+                *errorOut = std::string("OpenGL 3.3 function missing: ") + (missing ? missing : "?");
             }
             return false;
         }
@@ -692,7 +692,7 @@ public:
         }
         setCap(DEPTH_TEST, d.depthTest, depthEnabled);
         if (depthWrite != d.depthWrite) {
-            gl.DepthMask(d.depthWrite ? TRUE_ : FALSE_);
+            gl.DepthMask(GLboolean(d.depthWrite));
             depthWrite = d.depthWrite;
         }
         GLenum func = compareOp(d.depthCompare);
@@ -785,7 +785,7 @@ public:
             gl.BindBuffer(ARRAY_BUFFER, b->name);
             const VertexStream &st = layout.streams[s];
             for (const VertexAttrib &a : st.attribs) {
-                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type), a.normalized ? TRUE_ : FALSE_, (GLsizei)st.stride, reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
+                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type), GLboolean(a.normalized), (GLsizei)st.stride, reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
             }
             p->streamBuffer[s] = streams[s];
             p->streamOffset[s] = streamOffsets[s];
@@ -1018,7 +1018,7 @@ public:
         host.scissor ? gl.Enable(SCISSOR_TEST) : gl.Disable(SCISSOR_TEST);
         gl.CullFace(host.cullMode);
         gl.FrontFace(host.frontFace);
-        gl.DepthMask(host.depthMask ? TRUE_ : FALSE_);
+        gl.DepthMask(GLboolean(host.depthMask));
         gl.DepthFunc(host.depthFunc);
         gl.BlendFunc(host.blendSrc, host.blendDst);
         gl.PolygonMode(FRONT_AND_BACK, host.polygonMode);

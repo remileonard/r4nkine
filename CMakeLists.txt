@@ -64,6 +64,8 @@ target_link_libraries(r4nkine PUBLIC glm::glm)
 target_compile_definitions(r4nkine PUBLIC GLM_FORCE_CTOR_INIT)
 if(MSVC)
     target_compile_options(r4nkine PRIVATE /W4)
+    # fopen and sscanf are the portable C functions: not the fopen_s of MSVC
+    target_compile_definitions(r4nkine PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(r4nkine PRIVATE -Wall -Wextra)
 endif()

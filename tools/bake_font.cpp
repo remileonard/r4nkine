@@ -8,7 +8,18 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
+
+// a float literal for C++: %g, with the f suffix when it has a decimal point
+// (an integer such as 3 stays 3, since 3f is not a literal)
+static std::string lit(float v, const char *fmt = "%g") {
+    char b[32];
+    std::snprintf(b, sizeof b, fmt, v);
+    std::string s = b;
+    if (s.find('.') != std::string::npos) s += 'f';
+    return s;
+}
 
 struct Face {
     int file;
@@ -81,7 +92,8 @@ int main(int argc, char **argv) {
         int g;
         stbtt_GetFontVMetrics(&info, &a, &d, &g);
         float s = stbtt_ScaleForPixelHeight(&info, faces[f].px);
-        std::printf("    {%g, %.3f, %.3f, %.3f}, // %s\n", faces[f].px, a * s, d * s, g * s, faces[f].name);
+        std::printf("    {%s, %s, %s, %s}, // %s\n", lit(faces[f].px).c_str(), lit(a * s, "%.3f").c_str(),
+                    lit(d * s, "%.3f").c_str(), lit(g * s, "%.3f").c_str(), faces[f].name);
     }
     std::printf("};\n");
     std::printf("// per font, 191 glyphs (32-126 then 160-255): x0 y0 x1 y1 (atlas, rows from the top), xoff yoff xadvance\n");
@@ -100,7 +112,7 @@ int main(int argc, char **argv) {
         std::printf("{");
         for (int r = 0; r < 2; r++) {
             for (auto &c : chars[f][r]) {
-                std::printf("{%g,%g,%g},", c.xoff, c.yoff, c.xadvance);
+                std::printf("{%s,%s,%s},", lit(c.xoff).c_str(), lit(c.yoff).c_str(), lit(c.xadvance).c_str());
             }
         }
         std::printf("},\n");
