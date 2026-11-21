@@ -107,6 +107,8 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 
 **Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
 
+**APP traversal**: a node can have two APP callbacks. `before` runs before the traversal of the children. `after` runs when the children are done. A callback can change its node and add or remove its children. `app(root, mask)` runs the callbacks in depth first order. Each node has an APP mask, different from the mask of the camera. Thus, a node that is not drawn is still updated.
+
 **Triggers**: a `Trigger` node is a volume: a sphere, a cylinder about the Z axis or a box, in the space of the node. It is not drawn and it has no bounds. `checkTriggers(root, trackers, mask)` is an APP traversal. It compares the positions of the trackers with the volumes below `root`. It calls `onEnter` when a tracker comes into a volume and `onLeave` when it goes out or when it is not in the list.
 
 **Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.

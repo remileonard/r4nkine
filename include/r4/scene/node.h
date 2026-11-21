@@ -20,6 +20,8 @@ namespace r4::scene {
 
 class Node;
 using NodePtr = std::shared_ptr<Node>;
+// a callback of the APP traversal: it can change the node and its children
+using AppCallback = std::function<void(Node &)>;
 
 enum class NodeType {
     GROUP,
@@ -89,6 +91,17 @@ public:
 
     void markDirty();
 
+    // the APP traversal: before runs before the traversal of the children, after once they are done; null for none
+    void setAppCallbacks(AppCallback before, AppCallback after = nullptr);
+    // the APP traversal skips the node and its children when (appMask & mask) == 0; the camera mask is not used, so a hidden
+    // node is still updated
+    uint32_t appMask() const {
+        return appMask_;
+    }
+    void setAppMask(uint32_t m) {
+        appMask_ = m;
+    }
+
 protected:
     // in the node's own space
     virtual Sphere contentBounds() const {
@@ -109,7 +122,19 @@ private:
     bool dirty_ = true;
     uint32_t mask_ = 0xffffffffu;
     uint32_t filter_ = 0xffffffffu;
+    uint32_t appMask_ = 0xffffffffu;
+    // most nodes have none
+    struct AppCallbacks {
+        AppCallback before;
+        AppCallback after;
+    };
+    std::unique_ptr<AppCallbacks> app_;
+    friend void app(Node &root, uint32_t mask);
 };
+
+// the APP traversal: the callbacks of the nodes below root whose app mask has a bit of mask, in depth first order; a callback can
+// add or remove the children of its node
+void app(Node &root, uint32_t mask = 0xffffffffu);
 
 class Group : public Node {
 public:

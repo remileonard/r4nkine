@@ -290,4 +290,31 @@ void checkTriggers(Node &root, const std::vector<Tracker> &trackers, uint32_t ma
     visitTriggers(root, Mat4(1.0f), trackers, mask);
 }
 
+void Node::setAppCallbacks(AppCallback before, AppCallback after) {
+    if (!before && !after) {
+        app_.reset();
+        return;
+    }
+    app_ = std::make_unique<AppCallbacks>();
+    app_->before = std::move(before);
+    app_->after = std::move(after);
+}
+
+void app(Node &root, uint32_t mask) {
+    if ((root.appMask() & mask) == 0) {
+        return;
+    }
+    if (root.app_ && root.app_->before) {
+        root.app_->before(root);
+    }
+    // by index: a callback below can change this list
+    for (size_t i = 0; i < root.children().size(); i++) {
+        NodePtr child = root.children()[i];
+        app(*child, mask);
+    }
+    if (root.app_ && root.app_->after) {
+        root.app_->after(root);
+    }
+}
+
 } // namespace r4::scene

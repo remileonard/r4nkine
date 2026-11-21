@@ -107,6 +107,26 @@ static void testScene() {
     box.setBox({{-1, -2, 0}, {3, 4, 5}});
     CHECK(box.contains({2, -1, 4}) && !box.contains({2, -3, 4}));
     root->removeChild(area.get());
+    std::vector<std::string> order;
+    a->setAppCallbacks(
+        [&](scene::Node &n) {
+            order.push_back("before " + n.name());
+        },
+        [&](scene::Node &n) {
+            order.push_back("after " + n.name());
+        });
+    a->setName("a");
+    b->setAppCallbacks([&](scene::Node &n) {
+        order.push_back("b");
+        n.setMatrix(translate({1, 0, 0}));
+    });
+    scene::app(*root);
+    CHECK(order.size() == 3 && order[0] == "before a" && order[1] == "b" && order[2] == "after a");
+    CHECK(near(b->matrix()[3].x, 1));
+    b->setAppMask(2);
+    order.clear();
+    scene::app(*root, 1);
+    CHECK(order.size() == 2);
     CHECK(root->findChild("x") == nullptr);
     b->setName("x");
     CHECK(root->findChild("x") == b);
