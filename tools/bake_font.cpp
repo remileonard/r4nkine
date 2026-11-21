@@ -17,7 +17,9 @@ static std::string lit(float v, const char *fmt = "%g") {
     char b[32];
     std::snprintf(b, sizeof b, fmt, v);
     std::string s = b;
-    if (s.find('.') != std::string::npos) s += 'f';
+    if (s.find('.') != std::string::npos) {
+        s += 'f';
+    }
     return s;
 }
 
@@ -92,8 +94,7 @@ int main(int argc, char **argv) {
         int g;
         stbtt_GetFontVMetrics(&info, &a, &d, &g);
         float s = stbtt_ScaleForPixelHeight(&info, faces[f].px);
-        std::printf("    {%s, %s, %s, %s}, // %s\n", lit(faces[f].px).c_str(), lit(a * s, "%.3f").c_str(),
-                    lit(d * s, "%.3f").c_str(), lit(g * s, "%.3f").c_str(), faces[f].name);
+        std::printf("    {%s, %s, %s, %s}, // %s\n", lit(faces[f].px).c_str(), lit(a * s, "%.3f").c_str(), lit(d * s, "%.3f").c_str(), lit(g * s, "%.3f").c_str(), faces[f].name);
     }
     std::printf("};\n");
     std::printf("// per font, 191 glyphs (32-126 then 160-255): x0 y0 x1 y1 (atlas, rows from the top), xoff yoff xadvance\n");

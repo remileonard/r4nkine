@@ -164,6 +164,7 @@ mode (`vcpkg.json`):
 | stb | the PNG, JPEG, BMP, TGA and GIF images | always |
 | cgltf | glTF 2.0 | always |
 | SDL2 | r4fly, the viewer | `viewer` (default) |
+| OpenXR loader | `r4nkine_xr`, virtual reality (`r4/xr/xr.h`) | `xr` (default on Windows) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:

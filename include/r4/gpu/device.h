@@ -169,6 +169,9 @@ struct RenderTargetDesc {
     Filter filter = Filter::LINEAR;
     // depth only, its texture sampled compared (sampler2DShadow)
     bool shadow = false;
+    // not 0: the color is this texture of the API (a GL texture name), made by another library, as an image of an OpenXR swapchain.
+    // The target draws into it and does not free it. samples is then 1.
+    uint64_t externalColor = 0;
 };
 
 struct ClearValues {
@@ -218,6 +221,8 @@ public:
     // its color, or its depth for a shadow map; a multisampled target is resolved into it by resolveRenderTarget
     virtual TextureHandle renderTargetTexture(RenderTargetHandle r) = 0;
     virtual void resolveRenderTarget(RenderTargetHandle r) = 0;
+    // the color of src (resolved first when it is multisampled) into dst, scaled to its size; dst is single sampled
+    virtual void copyRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) = 0;
 
     // null handle on error, the log in lastError()
     virtual ShaderHandle createShader(const ShaderDesc &desc) = 0;

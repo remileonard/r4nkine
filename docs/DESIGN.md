@@ -46,6 +46,7 @@ The dependencies come from vcpkg in manifest mode. The manifest is `vcpkg.json`.
 - **stb**: the usual image formats.
 - **cgltf**: glTF 2.0.
 - **SDL2**: only for r4fly (the `viewer` feature).
+- **OpenXR loader**: only for `r4nkine_xr` (the `xr` feature, default on Windows). Refer to "Virtual reality (`r4::xr`)".
 
 The GUI (`r4::ui`) is a part of the library. It draws through `r4::gpu`. `tools/bake_font.cpp` makes its font in `src/ui/font_data.inc`.
 
@@ -199,6 +200,19 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 - **No textures**: this applies when the textures option is off, and always in wireframe.
   - The mean color of the opaque texels replaces each texture. Thus, the lines keep the color of their faces.
   - The renderer does not draw the layers on a face at the same depth (`depthEqual` decals, `indexImage`).
+
+## Virtual reality (`r4::xr`)
+
+`r4nkine_xr` is a separate library. Only the programs that show VR link the OpenXR loader.
+
+- `xr::Session::create` uses the GL context of the device. The binding is `XR_KHR_opengl_enable` on Windows (WGL). The other systems are not done.
+- Each eye has its own swapchain. The renderer draws the eye into a target of R4nkine (MSAA, `Settings::samples`). `endFrame` resolves it and copies it into the image of the swapchain (`Device::copyRenderTarget`). The images of the swapchain are render targets with `RenderTargetDesc::externalColor`.
+- The swapchain is sRGB when the runtime has it. The renderer writes the colors of the screen, and the GL backend does not enable `FRAMEBUFFER_SRGB`. Thus, the headset shows the same colors as the window.
+- The reference space is STAGE (origin on the floor) or else LOCAL. `Session::setOrigin` puts the tracking space (Y up) in the world. The default is `axes::fromYUpMatrix()`.
+- The projection of each eye is the asymmetric frustum of the runtime. The renderer culls and makes the shadows for each eye.
+- The controllers are OpenXR actions on the two hands: the grip and aim poses, the trigger, the squeeze, the thumbstick, the primary and secondary buttons, the click of the thumbstick, the menu, and the vibration. Bindings are suggested for the Khronos simple controller, Oculus Touch, Valve Index, HTC Vive and Windows Mixed Reality. `Session::controller` gives their state at each `beginFrame`, `Session::vibrate` a pulse.
+- In r4fly, the left thumbstick walks in the direction of the head (the left trigger makes it faster). The right thumbstick turns by steps of 30 degrees and moves up or down. B or Y goes back to the start. A line shows the ray of each controller.
+- In r4fly, `-vr` or the `v` key starts the headset. The viewer stands at the eye of the trackball. The mouse moves the viewer in the world. The window keeps its own view and the GUI.
 
 ## Roadmap
 

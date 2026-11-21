@@ -76,7 +76,8 @@ struct GLRenderTarget {
     GLuint msaaFbo = 0; // multisampled: where the passes draw
     GLuint colorRb = 0;
     GLuint depthRb = 0;
-    uint32_t texture = 0; // a handle in the textures
+    uint32_t texture = 0;  // a handle in the textures
+    bool external = false; // its color texture belongs to another library
 };
 struct GLShader {
     GLuint program = 0;
@@ -349,6 +350,9 @@ public:
         if (d.shadow) {
             return createShadowTarget(r);
         }
+        if (d.externalColor) {
+            return createExternalTarget(r);
+        }
         r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
         TextureDesc td;
         td.width = d.width;
@@ -388,6 +392,36 @@ public:
         uint32_t id = targets.add(r);
         if (!ok) {
             error = "render target incomplete";
+            destroyRenderTarget({id});
+            return {};
+        }
+        return {id};
+    }
+
+    RenderTargetHandle createExternalTarget(GLRenderTarget &r) {
+        r.desc.samples = 1;
+        r.external = true;
+        GLTexture t;
+        t.name = (GLuint)r.desc.externalColor;
+        t.format = RGBA;
+        t.owned = false;
+        r.texture = textures.add(t);
+        gl.GenFramebuffers(1, &r.fbo);
+        gl.BindFramebuffer(FRAMEBUFFER, r.fbo);
+        gl.FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, t.name, 0);
+        if (r.desc.depth) {
+            gl.GenRenderbuffers(1, &r.depthRb);
+            gl.BindRenderbuffer(RENDERBUFFER, r.depthRb);
+            gl.RenderbufferStorageMultisample(RENDERBUFFER, 0, DEPTH24_STENCIL8, r.desc.width, r.desc.height);
+            gl.FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, r.depthRb);
+            gl.BindRenderbuffer(RENDERBUFFER, 0);
+        }
+        bool ok = gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
+        gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
+        boundFbo = windowFbo;
+        uint32_t id = targets.add(r);
+        if (!ok) {
+            error = "external render target incomplete";
             destroyRenderTarget({id});
             return {};
         }
@@ -447,7 +481,7 @@ public:
         if (r->depthRb) {
             gl.DeleteRenderbuffers(1, &r->depthRb);
         }
-        if (GLTexture *t = textures.get(r->texture)) {
+        if (GLTexture *t = textures.get(r->texture); t && !r->external) {
             t->owned = true;
         }
         destroyTexture({r->texture});
@@ -472,6 +506,22 @@ public:
         gl.BindFramebuffer(DRAW_FRAMEBUFFER, r->fbo);
         setCap(SCISSOR_TEST, false, scissorEnabled);
         gl.BlitFramebuffer(0, 0, r->desc.width, r->desc.height, 0, 0, r->desc.width, r->desc.height, COLOR_BUFFER_BIT, NEAREST);
+        gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
+    }
+
+    void copyRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) override {
+        GLRenderTarget *s = targets.get(src.id);
+        GLRenderTarget *d = targets.get(dst.id);
+        if (!s || !d || d->msaaFbo || s->desc.shadow || d->desc.shadow) {
+            return;
+        }
+        // a multisampled blit needs the same format at both ends: resolved first into the texture of src
+        resolveRenderTarget(src);
+        gl.BindFramebuffer(READ_FRAMEBUFFER, s->fbo);
+        gl.BindFramebuffer(DRAW_FRAMEBUFFER, d->fbo);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+        bool same = s->desc.width == d->desc.width && s->desc.height == d->desc.height;
+        gl.BlitFramebuffer(0, 0, s->desc.width, s->desc.height, 0, 0, d->desc.width, d->desc.height, COLOR_BUFFER_BIT, same ? NEAREST : LINEAR);
         gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
     }
 

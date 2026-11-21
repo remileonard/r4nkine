@@ -15,11 +15,17 @@
 //     -state MASK      the state of the models (their default otherwise)
 //     -F dir:dir...    the folders where the textures and references are searched
 //     -forest N[,F]    N copies of the files planted on a square: the first file near, the next ones beyond F, 2F... units
+//     -vr              the views in a headset, with OpenXR (Windows)
 //
-// The files are loaded side by side under one root. Mouse: left turns, wheel zooms, right moves. Keys: F1 the GUI, w wireframe, r reset, s statistics, Esc quit.
+// The files are loaded side by side under one root. Mouse: left turns, wheel zooms, right moves. Keys: F1 the GUI, w wireframe, r reset, s statistics,
+// v the headset on or off, Esc quit. In the headset, the viewer stands at the eye of the trackball, on a floor under the center of the view.
 #include "app.h"
 
 #include "r4/ui/controls.h"
+
+#ifdef R4FLY_XR
+#include "r4/xr/xr.h"
+#endif
 
 #include <chrono>
 #include <cstdio>
@@ -60,7 +66,7 @@ constexpr int kCoreMinor = 3;
 
 void usage() {
     std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-shadows] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
-                         "[-state MASK] [-F dirs] [-forest N[,F]] file ...\n");
+                         "[-state MASK] [-F dirs] [-forest N[,F]] [-vr] file ...\n");
     std::exit(1);
 }
 
@@ -112,6 +118,51 @@ void applyPostList(render::PostSettings &s, const std::string &list) {
     }
 }
 
+#ifdef R4FLY_XR
+// the tracking space under the eye of the trackball, turned to its heading; the center of the view at the height of the eyes
+Mat4 vrOrigin(const Trackball &ball, bool floorLevel) {
+    constexpr float kEyeHeight = 1.6f;
+    Vec3 forward = ball.orbit.forward();
+    float heading = axes::headingOf(forward);
+    Vec3 flat = forward - axes::kUp * axes::heightOf(forward);
+    flat = length(flat) > 1e-4f ? normalize(flat) : axes::kForward;
+    Vec3 target = ball.target();
+    Vec3 place = target - flat * ball.distance;
+    place -= axes::kUp * (axes::heightOf(place) - axes::heightOf(target) + (floorLevel ? kEyeHeight : 0));
+    return translate(place) * rotate(radians(heading), axes::kUp) * axes::fromYUpMatrix();
+}
+
+// a controller: its ray (half a meter along -Z) and a small cross, in the axes of OpenXR
+std::shared_ptr<scene::Geode> makeHandMarker(render::Renderer &renderer) {
+    assets::Mesh m;
+    m.name = "hand";
+    m.primitive = assets::Primitive::LINES;
+    auto line = [&](Vec3 a, Vec3 b, uint32_t color) {
+        for (Vec3 p : {a, b}) {
+            assets::Vertex v;
+            v.position = p;
+            v.color = color;
+            m.indices.push_back((uint32_t)m.vertices.size());
+            m.vertices.push_back(v);
+        }
+    };
+    const float k = 0.03f;
+    line({0, 0, 0}, {0, 0, -0.5f}, 0xffffffffu);
+    line({-k, 0, 0}, {k, 0, 0}, 0xff4040ffu);
+    line({0, -k, 0}, {0, k, 0}, 0xff40ff40u);
+    line({0, 0, -k}, {0, 0, k}, 0xffff4040u);
+    m.computeBounds();
+    assets::Material mat;
+    mat.name = "hand";
+    mat.shading = assets::Shading::UNLIT;
+    mat.vertexColors = true;
+    auto g = scene::make<scene::Geode>();
+    g->setName("hand marker");
+    g->addDrawable({renderer.uploadMesh(m), renderer.createMaterial(mat)});
+    return g;
+}
+#endif
+
 double now() {
     using namespace std::chrono;
     return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
@@ -144,6 +195,7 @@ int main(int argc, char **argv) {
     long state = -1;
     int forest = 0;
     float forestFar = 0;
+    bool vr = false;
     std::vector<std::string> files;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -188,6 +240,8 @@ int main(int argc, char **argv) {
             if (std::sscanf(argv[++i], "%d,%f", &forest, &forestFar) < 1) {
                 usage();
             }
+        } else if (a == "-vr") {
+            vr = true;
         } else if (a == "-stats") {
             app.printStats = true;
         } else if (!a.empty() && a[0] == '-') {
@@ -342,6 +396,78 @@ int main(int argc, char **argv) {
     app.resetView();
     app.ui = std::make_unique<ui::Context>(*app.device);
 
+#ifdef R4FLY_XR
+    std::unique_ptr<xr::Session> headset;
+    // the walk of the viewer with the controllers, on top of the place given by the trackball
+    Mat4 vrMove(1.0f);
+    double lastMove = now();
+    bool snapArmed = true;
+    std::shared_ptr<scene::Geode> hands[xr::kHands];
+    for (auto &hand : hands) {
+        hand = makeHandMarker(renderer);
+        hand->setMask(0);
+        app.top->addChild(hand);
+    }
+    // left stick: walk where the head looks (faster with the left trigger); right stick: turn by steps, up and down; B or Y: back to the start
+    auto moveVR = [&](const Mat4 &head, float dt) {
+        const xr::Controller &left = headset->controller(xr::Hand::LEFT);
+        const xr::Controller &right = headset->controller(xr::Hand::RIGHT);
+        float speed = 1.5f * std::max(app.ball.radius, 1.0f) * (1 + 4 * left.trigger);
+        Vec3 forward = -Vec3(head[2]);
+        Vec3 side = Vec3(head[0]);
+        forward -= axes::kUp * axes::heightOf(forward);
+        side -= axes::kUp * axes::heightOf(side);
+        forward = length(forward) > 1e-4f ? normalize(forward) : axes::kForward;
+        side = length(side) > 1e-4f ? normalize(side) : axes::kRight;
+        Vec3 step = (side * left.stick.x + forward * left.stick.y) * (speed * dt);
+        if (std::abs(right.stick.y) > 0.2f) {
+            step += axes::kUp * (right.stick.y * speed * dt);
+        }
+        vrMove = translate(step) * vrMove;
+        if (std::abs(right.stick.x) > 0.7f && snapArmed) {
+            Vec3 pivot = Vec3(head[3]);
+            float angle = right.stick.x > 0 ? -30.0f : 30.0f;
+            vrMove = translate(pivot) * rotate(radians(angle), axes::kUp) * translate(-pivot) * vrMove;
+            snapArmed = false;
+            headset->vibrate(xr::Hand::RIGHT, 0.3f, 0.03f);
+        } else if (std::abs(right.stick.x) < 0.3f) {
+            snapArmed = true;
+        }
+        for (int i = 0; i < xr::kHands; i++) {
+            if (headset->controller((xr::Hand)i).secondary.pressed) {
+                vrMove = Mat4(1.0f);
+                headset->vibrate((xr::Hand)i, 0.6f, 0.1f);
+            }
+        }
+    };
+    auto startVR = [&]() {
+        xr::Settings xs;
+        xs.appName = "r4fly";
+        headset = xr::Session::create(*app.device, xs, &error);
+        if (!headset) {
+            std::fprintf(stderr, "r4fly: VR: %s\n", error.c_str());
+            return;
+        }
+        std::printf("r4fly: VR: %s, %s, %d eyes of %dx%d\n", headset->runtimeName().c_str(), headset->systemName().c_str(), headset->eyeCount(), headset->eye(0).width, headset->eye(0).height);
+        // the headset gives the pace: the window does not wait for the screen
+        SDL_GL_SetSwapInterval(0);
+    };
+    auto stopVR = [&]() {
+        headset.reset();
+        for (auto &hand : hands) {
+            hand->setMask(0);
+        }
+        SDL_GL_SetSwapInterval(app.vsync ? 1 : 0);
+    };
+    if (vr) {
+        startVR();
+    }
+#else
+    if (vr) {
+        std::fprintf(stderr, "r4fly: VR: built without OpenXR (the xr feature of vcpkg.json)\n");
+    }
+#endif
+
     bool running = true;
     int frame = 0;
     double lastStats = now();
@@ -380,10 +506,22 @@ int main(int argc, char **argv) {
                     break;
                 case SDLK_r:
                     app.resetView();
+#ifdef R4FLY_XR
+                    vrMove = Mat4(1.0f);
+#endif
                     break;
                 case SDLK_s:
                     app.printStats = !app.printStats;
                     break;
+#ifdef R4FLY_XR
+                case SDLK_v:
+                    if (headset) {
+                        stopVR();
+                    } else {
+                        startVR();
+                    }
+                    break;
+#endif
                 }
                 break;
             case SDL_MOUSEBUTTONDOWN:
@@ -452,6 +590,37 @@ int main(int argc, char **argv) {
             app.boundsMarker->setMask(0);
         }
 
+#ifdef R4FLY_XR
+        if (headset && !headset->pollEvents()) {
+            std::printf("r4fly: VR: the session is finished\n");
+            stopVR();
+        }
+        if (headset && headset->running()) {
+            double tv = now();
+            float dt = std::min(0.1f, (float)(tv - lastMove) / 1000.0f);
+            lastMove = tv;
+            moveVR(headset->head(), dt);
+            headset->setOrigin(vrMove * vrOrigin(app.ball, headset->floorLevel()));
+            bool draw = headset->beginFrame();
+            for (int i = 0; i < xr::kHands; i++) {
+                const xr::Controller &c = headset->controller((xr::Hand)i);
+                hands[i]->setMask(c.active ? ~0u : 0u);
+                if (c.active) {
+                    hands[i]->setMatrix(c.aim);
+                }
+            }
+            if (draw) {
+                for (int i = 0; i < headset->eyeCount(); i++) {
+                    const xr::Eye &eye = headset->eye(i);
+                    renderer.setTarget(eye.target);
+                    renderer.render(*app.top, eye.camera, 0, 0, eye.width, eye.height);
+                }
+                renderer.setTarget({});
+            }
+            headset->endFrame();
+        }
+#endif
+
         guiFrame(app, ww, wh, pixelScale);
         gpu::RenderTargetHandle target = app.post->begin(vw, h);
         renderer.setTarget(target);
@@ -499,6 +668,12 @@ int main(int argc, char **argv) {
             running = false;
         }
     }
+#ifdef R4FLY_XR
+    headset.reset();
+    for (auto &hand : hands) {
+        hand.reset();
+    }
+#endif
     app.ui.reset();
     app.selected = nullptr;
     app.boundsMarker.reset();
