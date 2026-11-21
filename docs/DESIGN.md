@@ -112,7 +112,10 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 
 **Triggers**: a `Trigger` node is a volume: a sphere, a cylinder about the Z axis or a box, in the space of the node. It is not drawn and it has no bounds. `checkTriggers(root, trackers, mask)` is an APP traversal. It compares the positions of the trackers with the volumes below `root`. It calls `onEnter` when a tracker comes into a volume and `onLeave` when it goes out or when it is not in the list.
 
-**Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
+**Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix.
+- The placements are in cells of 256 units across the up axis, each with its bounds. The renderer culls a cell first, on its distance and on the frustum. When a cell is fully in the view, the renderer does not test its instances. When a cell is fully in one level, the renderer does not select the level of its instances.
+- The renderer tests an instance on a sphere from its position and its scale. It makes the matrix of the instance only when the instance is drawn.
+- The visible instances of a part of a level become one item, with all their matrices. Thus, the sort and the draw do not see each instance.
 
 An instance is a matrix or a `Placement`. A `Placement` is a position, a heading, a scale and a vertical scale: 24 bytes instead of 64. The forests use placements. `Instancer::setUp` sets the up axis of the placements.
 

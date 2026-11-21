@@ -107,6 +107,23 @@ static void testScene() {
     box.setBox({{-1, -2, 0}, {3, 4, 5}});
     CHECK(box.contains({2, -1, 4}) && !box.contains({2, -3, 4}));
     root->removeChild(area.get());
+    scene::Instancer trees;
+    std::vector<scene::Placement> placed;
+    for (int i = 0; i < 6; i++) {
+        scene::Placement p;
+        p.position = {(float)(i % 2) * 1000 + 10, (float)(i / 2) * 1000 + 20, 5};
+        p.scale = 1 + (float)i;
+        placed.push_back(p);
+    }
+    trees.setPlacements(placed);
+    const auto &cells = trees.cells();
+    CHECK(cells.size() == 6 && trees.placements().size() == 6);
+    uint32_t inCells = 0;
+    for (const auto &c : cells) {
+        inCells += c.end - c.begin;
+        CHECK(c.end - c.begin == 1 && near(c.maxScale, trees.placements()[c.begin].scale));
+    }
+    CHECK(inCells == 6);
     std::vector<std::string> order;
     a->setAppCallbacks(
         [&](scene::Node &n) {

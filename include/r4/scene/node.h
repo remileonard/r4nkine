@@ -289,6 +289,7 @@ public:
     // the up axis of the placements: R4nkine's by default, (0, 1, 0) in a subgraph of Y-up data
     void setPlacements(std::vector<Placement> p) {
         placements_ = std::move(p);
+        cellsMade_ = false;
         markDirty();
     }
     const std::vector<Placement> &placements() const {
@@ -296,6 +297,7 @@ public:
     }
     void setUp(Vec3 up) {
         up_ = normalize(up);
+        cellsMade_ = false;
         markDirty();
     }
     Vec3 up() const {
@@ -308,6 +310,18 @@ public:
     // -1: farther than the last
     int select(float distance) const;
 
+    // the placements in cells of kCellSize across the up axis: the renderer culls a cell before its placements
+    static constexpr float kCellSize = 256;
+    struct Cell {
+        // of the positions of its placements
+        Box box;
+        float maxScale = 0;
+        uint32_t begin = 0;
+        uint32_t end = 0;
+    };
+    // made at the first call after a change of the placements, which it sorts by cell
+    const std::vector<Cell> &cells();
+
 protected:
     Sphere contentBounds() const override;
 
@@ -316,6 +330,8 @@ private:
     std::vector<Mat4> instances_;
     std::vector<Placement> placements_;
     Vec3 up_ = axes::kUp;
+    std::vector<Cell> cells_;
+    bool cellsMade_ = false;
 };
 
 // a point that the triggers follow: its id and its position in the space of the parent of the root of checkTriggers

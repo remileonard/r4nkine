@@ -141,6 +141,42 @@ int Instancer::select(float distance) const {
     return -1;
 }
 
+const std::vector<Instancer::Cell> &Instancer::cells() {
+    if (cellsMade_) {
+        return cells_;
+    }
+    cellsMade_ = true;
+    cells_.clear();
+    // the two axes across the up axis
+    int u = 0;
+    for (int i = 1; i < 3; i++) {
+        if (std::abs(up_[i]) > std::abs(up_[u])) {
+            u = i;
+        }
+    }
+    const int a = (u + 1) % 3;
+    const int b = (u + 2) % 3;
+    auto cellOf = [&](const Placement &p) {
+        return std::make_pair((int)std::floor(p.position[a] / kCellSize), (int)std::floor(p.position[b] / kCellSize));
+    };
+    std::sort(placements_.begin(), placements_.end(), [&](const Placement &x, const Placement &y) {
+        return cellOf(x) < cellOf(y);
+    });
+    for (uint32_t i = 0; i < (uint32_t)placements_.size(); i++) {
+        const Placement &p = placements_[i];
+        if (cells_.empty() || cellOf(placements_[cells_.back().begin]) != cellOf(p)) {
+            Cell c;
+            c.begin = i;
+            cells_.push_back(c);
+        }
+        Cell &c = cells_.back();
+        c.box.extend(p.position);
+        c.maxScale = std::max({c.maxScale, p.scale, p.scaleUp});
+        c.end = i + 1;
+    }
+    return cells_;
+}
+
 Mat4 Instancer::matrixOf(const Placement &p) const {
     Mat4 s(1.0f);
     for (int i = 0; i < 3; i++) {
