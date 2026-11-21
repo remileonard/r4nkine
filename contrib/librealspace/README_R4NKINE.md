@@ -241,6 +241,9 @@ lod_scale = 1
 ; distance (par la distance), fine, medium ou coarse (Terrain Detail)
 terrain_lod = distance
 vsync = true
+; le dôme du jeu (ciel et sol) ; sans lui, le fond du monde est sky_color, comme dans r4objviewer, et le brouillard prend cette couleur
+sky = true
+sky_color = 0.30, 0.42, 0.60
 
 ; le post-process de r4objviewer ; chaque clé présente remplace le réglage du jeu (fx_* de [video], msaa de [Video])
 ; msaa = 1               ; 1, 2, 4 ou 8
@@ -276,7 +279,7 @@ Les réglages de r4objviewer qui ne sont pas ici : **Textures** et **Gouraud by 
 **Le panneau R4nkine (F12).** `R4Panel` (dans `src/r4game`) est le GUI de R4nkine par-dessus l'image du jeu, après le post-process. F12 le montre ou le cache. Il lit la souris et le clavier de SDL à chaque image, et la molette par un `SDL_AddEventWatch` : les événements restent au jeu, donc un clic sur le panneau va aussi au jeu. Tant qu'il est affiché, le curseur est visible et la souris n'est pas relative (le jeu cache le curseur dans sa fenêtre, et ses menus utilisent la souris relative) ; F12 rend ensuite l'état du jeu.
 - **Performance** : FPS et temps moyen sur 240 images, courbes de l'image, du cull et du draw, puis, par image et pour toutes les passes du renderer : passes, draw calls, triangles, changements de pipeline et de texture, nœuds visités et éliminés, drawables, instances, items opaques et transparents, objets qui projettent une ombre, temps de l'ombre, du tri et de l'envoi. Le dessin du panneau n'est pas compté.
 - **Area** : ce que `useArea` a fait pour la zone (temps, arbres, bâtiments, nuages), et les options de `config.ini` qui ne changent qu'avec une nouvelle zone (forêts, bâtiments, upscale, mipmaps, anisotrope, terrain éclairé, relief, niveau du terrain, lumière).
-- **Render** : les réglages que la passe suivante lit, changés en direct : fil de fer, rendu plat, textures, Gouraud, brouillard, nuages, ombres, ombres des arbres, LOD Scale, distance et force des ombres, soleil et brouillard des réglages, VSync.
+- **Render** : les réglages que la passe suivante lit, changés en direct : fil de fer, rendu plat, textures, Gouraud, brouillard, nuages, ciel et couleur du fond sans ciel, ombres, ombres des arbres, LOD Scale, distance et force des ombres, soleil et brouillard des réglages, VSync.
 - **Post Process** : les contrôles de r4objviewer (`r4::ui::postProcessControls`), en direct.
 
 ## Ce qu'il faut regarder pour apprendre R4nkine
