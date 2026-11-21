@@ -187,6 +187,7 @@ public:
     }
 
     ~GLDevice() override {
+        releaseReadbacks();
         for (size_t i = 0; i < pipelines.items.size(); i++) {
             if (pipelines.used[i]) {
                 gl.DeleteVertexArrays(1, &pipelines.items[i].vao);
@@ -824,6 +825,58 @@ public:
         return gl.GetError() == NO_ERROR_;
     }
 
+    bool readPixelsAsync(int x, int y, int width, int height, void *rgba) override {
+        const size_t size = (size_t)width * height * 4;
+        if (size != readbackSize) {
+            releaseReadbacks();
+            for (Readback &r : readbacks) {
+                gl.GenBuffers(1, &r.buffer);
+                gl.BindBuffer(PIXEL_PACK_BUFFER, r.buffer);
+                gl.BufferData(PIXEL_PACK_BUFFER, (GLsizeiptr)size, nullptr, STREAM_READ);
+            }
+            readbackSize = size;
+        }
+        Readback &start = readbacks[readbackNext];
+        if (start.fence) {
+            gl.DeleteSync(start.fence);
+        }
+        gl.BindBuffer(PIXEL_PACK_BUFFER, start.buffer);
+        gl.PixelStorei(PACK_ALIGNMENT, 1);
+        gl.ReadPixels(x, y, width, height, RGBA, UNSIGNED_BYTE, nullptr);
+        gl.PixelStorei(PACK_ALIGNMENT, 4);
+        start.fence = gl.FenceSync(SYNC_GPU_COMMANDS_COMPLETE, 0);
+        start.order = ++readbackOrder;
+        readbackNext = (readbackNext + 1) % kReadbacks;
+        // the newest copy that is done, other than the one just started; the older ones are not needed any more
+        Readback *done = nullptr;
+        for (Readback &r : readbacks) {
+            if (&r == &start || !r.fence || (done && r.order < done->order)) {
+                continue;
+            }
+            const GLenum state = gl.ClientWaitSync(r.fence, 0, 0);
+            if (state == ALREADY_SIGNALED || state == CONDITION_SATISFIED) {
+                done = &r;
+            }
+        }
+        bool read = false;
+        if (done) {
+            gl.BindBuffer(PIXEL_PACK_BUFFER, done->buffer);
+            if (const void *p = gl.MapBufferRange(PIXEL_PACK_BUFFER, 0, (GLsizeiptr)size, MAP_READ_BIT)) {
+                std::memcpy(rgba, p, size);
+                read = true;
+            }
+            gl.UnmapBuffer(PIXEL_PACK_BUFFER);
+            for (Readback &r : readbacks) {
+                if (r.fence && r.order <= done->order) {
+                    gl.DeleteSync(r.fence);
+                    r.fence = nullptr;
+                }
+            }
+        }
+        gl.BindBuffer(PIXEL_PACK_BUFFER, 0);
+        return read;
+    }
+
     FrameStats takeStats() override {
         FrameStats s = stats;
         stats = {};
@@ -908,6 +961,19 @@ private:
         }
     }
 
+    void releaseReadbacks() {
+        for (Readback &r : readbacks) {
+            if (r.fence) {
+                gl.DeleteSync(r.fence);
+            }
+            if (r.buffer) {
+                gl.DeleteBuffers(1, &r.buffer);
+            }
+            r = {};
+        }
+        readbackSize = 0;
+    }
+
     void forgetCaches() {
         current = 0;
         currentProgram = (GLuint)-1;
@@ -943,6 +1009,16 @@ private:
     Pool<GLRenderTarget> targets;
     GLuint windowFbo = 0;
     GLuint boundFbo = 0;
+    // the copies of readPixelsAsync: started in turn, read when their fence is signaled
+    static constexpr int kReadbacks = 3;
+    struct Readback {
+        GLuint buffer = 0;
+        GLsync fence = nullptr;
+        uint64_t order = 0;
+    } readbacks[kReadbacks];
+    size_t readbackSize = 0;
+    int readbackNext = 0;
+    uint64_t readbackOrder = 0;
 
     uint32_t current = 0;
     GLuint currentProgram = 0;

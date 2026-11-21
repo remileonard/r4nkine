@@ -247,6 +247,11 @@ public:
 
     // RGBA8 from the bottom row
     virtual bool readPixels(int x, int y, int width, int height, void *rgba) = 0;
+    // as readPixels, without waiting for the GPU: the copy of the pass starts now, and rgba receives the last copy that the GPU has done,
+    // usually the one of the frame before; false when no copy is done yet. One reader at a time.
+    virtual bool readPixelsAsync(int x, int y, int width, int height, void *rgba) {
+        return readPixels(x, y, width, height, rgba);
+    }
 
     // since the last call, then reset
     virtual FrameStats takeStats() = 0;
