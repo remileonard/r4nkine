@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace r4::scene {
 
@@ -139,6 +140,29 @@ int Instancer::select(float distance) const {
         }
     }
     return -1;
+}
+
+void Instancer::placementsChanged() {
+    cellsMade_ = false;
+    version_++;
+    placementBox_ = Box();
+    maxPlacementScale_ = 0;
+    for (const Placement &p : placements_) {
+        placementBox_.extend(p.position);
+        maxPlacementScale_ = std::max({maxPlacementScale_, p.scale, p.scaleUp});
+    }
+    if (static_) {
+        // a fixed random order: the first ones are spread over the whole instancer
+        std::mt19937 random(0x52344e4bu);
+        std::shuffle(placements_.begin(), placements_.end(), random);
+    }
+    markDirty();
+}
+
+void Instancer::setStatic(float thinFrom) {
+    static_ = true;
+    thinFrom_ = thinFrom;
+    placementsChanged();
 }
 
 const std::vector<Instancer::Cell> &Instancer::cells() {

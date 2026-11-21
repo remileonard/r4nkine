@@ -289,16 +289,14 @@ public:
     // the up axis of the placements: R4nkine's by default, (0, 1, 0) in a subgraph of Y-up data
     void setPlacements(std::vector<Placement> p) {
         placements_ = std::move(p);
-        cellsMade_ = false;
-        markDirty();
+        placementsChanged();
     }
     const std::vector<Placement> &placements() const {
         return placements_;
     }
     void setUp(Vec3 up) {
         up_ = normalize(up);
-        cellsMade_ = false;
-        markDirty();
+        placementsChanged();
     }
     Vec3 up() const {
         return up_;
@@ -322,6 +320,30 @@ public:
     // made at the first call after a change of the placements, which it sorts by cell
     const std::vector<Cell> &cells();
 
+    // Static: the placements go once to the GPU, in a fixed random order, and the renderer draws them all in one call for each
+    // part, with the level of the nearest point of the instancer: no work for each placement in a frame. Beyond thinFrom
+    // (0: never), it draws only the first ones, fewer with the distance, grown to keep the cover.
+    void setStatic(float thinFrom);
+    bool isStatic() const {
+        return static_;
+    }
+    float thinFrom() const {
+        return thinFrom_;
+    }
+    // changed with the placements: the renderer sends them again
+    uint64_t version() const {
+        return version_;
+    }
+    // of the positions of the placements, and their largest scale
+    const Box &placementBox() const {
+        return placementBox_;
+    }
+    float maxPlacementScale() const {
+        return maxPlacementScale_;
+    }
+    // the data of the renderer for this instancer (its GPU buffer), freed with it
+    std::shared_ptr<void> renderData;
+
 protected:
     Sphere contentBounds() const override;
 
@@ -332,6 +354,12 @@ private:
     Vec3 up_ = axes::kUp;
     std::vector<Cell> cells_;
     bool cellsMade_ = false;
+    bool static_ = false;
+    float thinFrom_ = 0;
+    uint64_t version_ = 0;
+    Box placementBox_;
+    float maxPlacementScale_ = 0;
+    void placementsChanged();
 };
 
 // a point that the triggers follow: its id and its position in the space of the parent of the root of checkTriggers
