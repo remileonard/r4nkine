@@ -169,7 +169,7 @@ private:
     void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state, Vec3 eye);
     void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye);
     void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
-    gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
+    gpu::PipelineHandle pipelineFor(const MaterialInstance &mat, assets::Primitive primitive);
     bool createShaders();
     // false: no shadow
     bool shadowView(const Camera &camera, Mat4 &lightViewProj, float &texel);
@@ -187,6 +187,8 @@ private:
     std::string error_;
     bool wireframe_ = false;
     gpu::ShaderHandle shader_;
+    // the same shader without discard: a GPU that removes the hidden fragments (Apple, tilers) does it only without discard
+    gpu::ShaderHandle opaqueShader_;
     std::unordered_map<uint32_t, gpu::PipelineHandle> pipelines_;
     gpu::BufferHandle frameUniforms_;
     gpu::BufferHandle instanceBuffer_;

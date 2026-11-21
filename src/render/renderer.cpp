@@ -421,6 +421,7 @@ Renderer::~Renderer() {
     device_.destroyBuffer(frameUniforms_);
     device_.destroyBuffer(instanceBuffer_);
     device_.destroyShader(shader_);
+    device_.destroyShader(opaqueShader_);
     device_.destroyPipeline(shadowPipeline_);
     device_.destroyShader(shadowShader_);
     device_.destroyRenderTarget(shadowMap_);
@@ -438,6 +439,13 @@ bool Renderer::createShaders() {
         error_ = device_.lastError();
         return false;
     }
+    std::string opaque = kFragmentShader;
+    for (size_t at = opaque.find("discard;"); at != std::string::npos; at = opaque.find("discard;", at)) {
+        opaque.replace(at, 8, ";");
+    }
+    d.fragment = opaque;
+    d.debugName = "phong without discard";
+    opaqueShader_ = device_.createShader(d);
     gpu::ShaderDesc sd;
     sd.vertex = kShadowVertex;
     sd.fragment = kShadowFragment;
@@ -459,16 +467,19 @@ bool Renderer::createShaders() {
     return true;
 }
 
-gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
+gpu::PipelineHandle Renderer::pipelineFor(const MaterialInstance &mat, assets::Primitive primitive) {
+    const assets::Material &m = mat.params;
+    // the discards of the shader: the alpha test, and the layers on a face that are not drawn without textures
+    const bool discards = m.alpha == assets::AlphaMode::MASK || m.alphaTest > 0 || m.depthEqual || mat.indexTexture || !opaqueShader_;
     bool blend = m.alpha == assets::AlphaMode::BLEND;
     bool additive = m.alpha == assets::AlphaMode::ADDITIVE;
-    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8 | (m.depthTest ? 0u : 1u << 16);
+    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8 | (m.depthTest ? 0u : 1u << 16) | (discards ? 1u << 17 : 0u);
     auto it = pipelines_.find(key);
     if (it != pipelines_.end()) {
         return it->second;
     }
     gpu::PipelineDesc d;
-    d.shader = shader_;
+    d.shader = discards ? shader_ : opaqueShader_;
     d.layout = vertexLayout();
     d.primitive = primitive == assets::Primitive::LINES ? gpu::Primitive::LINES : primitive == assets::Primitive::POINTS ? gpu::Primitive::POINTS : gpu::Primitive::TRIANGLES;
     bool tris = primitive == assets::Primitive::TRIANGLES;
@@ -678,7 +689,7 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     Vec3 c = transformPoint(world, d.mesh->bounds.center);
     item.depth = length(c - eye);
     item.order = mat->params.drawOrder;
-    item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
+    item.pipeline = pipelineFor(*mat, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
     bool behind = (mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE) && mat->params.drawOrder >= 0;
     (behind ? transparent_ : opaque_).push_back(item);
