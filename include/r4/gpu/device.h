@@ -256,6 +256,22 @@ public:
     // since the last call, then reset
     virtual FrameStats takeStats() = 0;
 
+    // GPU times in slots: the commands between beginGpuTimer and endGpuTimer (one interval at a time, not nested) add to their slot.
+    // endGpuFrame closes the frame. gpuTimes gives the milliseconds of each slot in the last frame that the GPU completed, without
+    // waiting for the GPU; false while no frame is completed, or without timers.
+    static constexpr int kGpuTimers = 8;
+    virtual void beginGpuTimer(int slot) {
+        (void)slot;
+    }
+    virtual void endGpuTimer() {
+    }
+    virtual void endGpuFrame() {
+    }
+    virtual bool gpuTimes(double ms[kGpuTimers]) const {
+        (void)ms;
+        return false;
+    }
+
     // the state of a host drawing with the same API, saved before and given back after
     virtual void beginHostInterop() {
     }

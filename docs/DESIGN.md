@@ -75,6 +75,7 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 - **Uniforms**: they are in uniform buffers. The device binds a uniform buffer by slot and by range. The object matrices of a frame go into one buffer. Each draw binds its range.
 - **Shaders**: the GL backend uses GLSL 330. GLSL 330 has no `binding` qualifier. Thus, `ShaderDesc` binds the uniform blocks and the samplers to slots by name. The other backends will use the same sources, compiled to SPIR-V and then cross-compiled.
 - **Readback**: `readPixels` waits until the GPU completes the frame. `readPixelsAsync` does not wait. It starts the copy of the pass into a pixel buffer. Then it gives the last copy that the GPU completed, usually the copy of the frame before. The GL backend uses three pixel buffers and a fence for each copy.
+- **GPU times**: `beginGpuTimer` and `endGpuTimer` measure the GPU time of the commands between them, in a slot. The intervals do not overlap. A slot can have many intervals in a frame. `endGpuFrame` closes the frame. `gpuTimes` gives the time of each slot in the last frame that the GPU completed. It does not wait. The GL backend uses `GL_TIME_ELAPSED` queries.
 - **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes.
 
 ### OpenGL 3.3 backend

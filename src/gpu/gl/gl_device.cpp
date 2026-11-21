@@ -4,6 +4,7 @@
 #include "r4/gpu/device.h"
 
 #include <cstring>
+#include <deque>
 
 namespace r4::gl {
 
@@ -188,6 +189,17 @@ public:
 
     ~GLDevice() override {
         releaseReadbacks();
+        for (const GpuFrame &f : gpuFrames) {
+            for (const GpuInterval &i : f) {
+                gl.DeleteQueries(1, &i.query);
+            }
+        }
+        for (const GpuInterval &i : gpuOpen) {
+            gl.DeleteQueries(1, &i.query);
+        }
+        if (!gpuFree.empty()) {
+            gl.DeleteQueries((GLsizei)gpuFree.size(), gpuFree.data());
+        }
         for (size_t i = 0; i < pipelines.items.size(); i++) {
             if (pipelines.used[i]) {
                 gl.DeleteVertexArrays(1, &pipelines.items[i].vao);
@@ -877,6 +889,69 @@ public:
         return read;
     }
 
+    void beginGpuTimer(int slot) override {
+        if (gpuActive || slot < 0 || slot >= kGpuTimers) {
+            return;
+        }
+        GLuint query = 0;
+        if (gpuFree.empty()) {
+            gl.GenQueries(1, &query);
+        } else {
+            query = gpuFree.back();
+            gpuFree.pop_back();
+        }
+        gl.BeginQuery(TIME_ELAPSED, query);
+        gpuOpen.push_back({slot, query});
+        gpuActive = true;
+    }
+
+    void endGpuTimer() override {
+        if (gpuActive) {
+            gl.EndQuery(TIME_ELAPSED);
+            gpuActive = false;
+        }
+    }
+
+    void endGpuFrame() override {
+        endGpuTimer();
+        gpuFrames.push_back(std::move(gpuOpen));
+        gpuOpen.clear();
+        // the frames that the GPU completed, oldest first; a frame left too long is dropped
+        while (!gpuFrames.empty()) {
+            GpuFrame &f = gpuFrames.front();
+            bool done = true;
+            for (const GpuInterval &i : f) {
+                GLint available = 0;
+                gl.GetQueryObjectiv(i.query, QUERY_RESULT_AVAILABLE, &available);
+                done = done && available != 0;
+            }
+            if (!done && gpuFrames.size() <= kGpuFramesKept) {
+                break;
+            }
+            if (done) {
+                double ms[kGpuTimers] = {};
+                for (const GpuInterval &i : f) {
+                    GLuint64 ns = 0;
+                    gl.GetQueryObjectui64v(i.query, QUERY_RESULT, &ns);
+                    ms[i.slot] += (double)ns / 1e6;
+                }
+                std::memcpy(gpuLast, ms, sizeof ms);
+                gpuKnown = true;
+            }
+            for (const GpuInterval &i : f) {
+                gpuFree.push_back(i.query);
+            }
+            gpuFrames.pop_front();
+        }
+    }
+
+    bool gpuTimes(double ms[kGpuTimers]) const override {
+        if (gpuKnown) {
+            std::memcpy(ms, gpuLast, sizeof gpuLast);
+        }
+        return gpuKnown;
+    }
+
     FrameStats takeStats() override {
         FrameStats s = stats;
         stats = {};
@@ -1019,6 +1094,19 @@ private:
     size_t readbackSize = 0;
     int readbackNext = 0;
     uint64_t readbackOrder = 0;
+    // the queries of the GPU timers, by frame until the GPU completes it
+    struct GpuInterval {
+        int slot = 0;
+        GLuint query = 0;
+    };
+    using GpuFrame = std::vector<GpuInterval>;
+    static constexpr size_t kGpuFramesKept = 8;
+    GpuFrame gpuOpen;
+    std::deque<GpuFrame> gpuFrames;
+    std::vector<GLuint> gpuFree;
+    double gpuLast[kGpuTimers] = {};
+    bool gpuKnown = false;
+    bool gpuActive = false;
 
     uint32_t current = 0;
     GLuint currentProgram = 0;
