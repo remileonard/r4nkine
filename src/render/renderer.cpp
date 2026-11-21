@@ -515,13 +515,13 @@ bool Renderer::createShaders() {
     sd.debugName = "shadow";
     shadowShader_ = device_.createShader(sd);
     if (shadowShader_) {
-        gpu::PipelineDesc pd;
-        pd.shader = shadowShader_;
-        pd.layout = vertexLayout();
-        pd.cull = gpu::CullMode::NONE;
-        pd.polygonOffsetFactor = 2;
-        pd.polygonOffsetUnits = 4;
-        shadowPipeline_ = device_.createPipeline(pd);
+        gpu::PipelineDesc sp;
+        sp.shader = shadowShader_;
+        sp.layout = vertexLayout();
+        sp.cull = gpu::CullMode::NONE;
+        sp.polygonOffsetFactor = 2;
+        sp.polygonOffsetUnits = 4;
+        shadowPipeline_ = device_.createPipeline(sp);
     }
     if (!shadowPipeline_) {
         error_ = device_.lastError();

@@ -525,6 +525,20 @@ public:
         gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
     }
 
+    void copyRenderTargetToWindow(RenderTargetHandle src, int x, int y, int width, int height) override {
+        GLRenderTarget *s = targets.get(src.id);
+        if (!s || s->desc.shadow || width <= 0 || height <= 0) {
+            return;
+        }
+        resolveRenderTarget(src);
+        gl.BindFramebuffer(READ_FRAMEBUFFER, s->fbo);
+        gl.BindFramebuffer(DRAW_FRAMEBUFFER, 0);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+        bool same = s->desc.width == width && s->desc.height == height;
+        gl.BlitFramebuffer(0, 0, s->desc.width, s->desc.height, x, y, x + width, y + height, COLOR_BUFFER_BIT, same ? NEAREST : LINEAR);
+        gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
+    }
+
     void destroyTexture(TextureHandle h) override {
         if (GLTexture *t = textures.get(h.id); t && t->owned) {
             gl.DeleteTextures(1, &t->name);

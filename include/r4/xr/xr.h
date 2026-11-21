@@ -32,6 +32,21 @@ struct Settings {
     float renderScale = 1;
     float znear = 0.05f;
     float zfar = 1000;
+    // the LOCAL space even when the runtime has a STAGE: its origin is the head when the session starts, as in a cockpit
+    bool seated = false;
+};
+
+// a flat screen in front of the eyes, as a quad layer of OpenXR: the menus of a game, a film
+struct Screen {
+    // its color; sourceWidth x sourceHeight is the size of the target, and of the swapchain of the screen
+    gpu::RenderTargetHandle source;
+    int sourceWidth = 0;
+    int sourceHeight = 0;
+    // its center and its axes in the tracking space (OpenXR: Y up, -Z forward); the screen faces +Z
+    Mat4 pose;
+    // in meters
+    float width = 2;
+    float height = 1.5f;
 };
 
 // an eye of the frame: draw its camera into its target, from (0, 0) to (width, height)
@@ -106,8 +121,10 @@ public:
     bool beginFrame();
     int eyeCount() const;
     const Eye &eye(int index) const;
-    // gives the targets of the eyes to the headset
-    void endFrame();
+    // gives the targets of the eyes to the headset, and the screen of showScreen over them. With eyes false, the screen only.
+    void endFrame(bool eyes = true);
+    // shows this screen in the frame that beginFrame started; endFrame copies its source
+    void showScreen(const Screen &screen);
 
     // the input is read in beginFrame, when the session is focused
     const Controller &controller(Hand hand) const;
@@ -126,7 +143,7 @@ public:
     const Mat4 &head() const {
         return head_;
     }
-    // the tracking space has its origin on the floor (STAGE); else at the first position of the head (LOCAL)
+    // the tracking space has its origin on the floor (STAGE); else at the first position of the head (LOCAL, or Settings::seated)
     bool floorLevel() const;
     const std::string &runtimeName() const;
     const std::string &systemName() const;

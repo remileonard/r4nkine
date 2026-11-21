@@ -13,8 +13,12 @@
 #include <vector>
 
 #if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <unknwn.h>
 #define XR_USE_PLATFORM_WIN32
@@ -197,6 +201,14 @@ struct Session::Impl {
     Controller controllers[kHands];
     std::vector<XrView> views;
     std::vector<EyeChain> eyes;
+    int64_t format = 0;
+    // the swapchain of the screen, made at the size of its source
+    XrSwapchain screenChain = XR_NULL_HANDLE;
+    std::vector<gpu::RenderTargetHandle> screenImages;
+    int screenWidth = 0;
+    int screenHeight = 0;
+    Screen screen;
+    bool screenShown = false;
     std::string runtime;
     std::string systemName;
     std::string error;
@@ -205,6 +217,7 @@ struct Session::Impl {
     }
 
     ~Impl() {
+        destroyScreenChain();
         for (EyeChain &e : eyes) {
             for (gpu::RenderTargetHandle h : e.images) {
                 device.destroyRenderTarget(h);
@@ -332,6 +345,7 @@ struct Session::Impl {
         xrEnumerateReferenceSpaces(session, spaceCount, &spaceCount, spaces.data());
         stage = std::find(spaces.begin(), spaces.end(), XR_REFERENCE_SPACE_TYPE_STAGE) != spaces.end();
         XrReferenceSpaceCreateInfo rci{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+        stage = stage && !settings.seated;
         rci.referenceSpaceType = stage ? XR_REFERENCE_SPACE_TYPE_STAGE : XR_REFERENCE_SPACE_TYPE_LOCAL;
         rci.poseInReferenceSpace.orientation.w = 1;
         r = xrCreateReferenceSpace(session, &rci, &space);
@@ -510,7 +524,7 @@ struct Session::Impl {
         xrEnumerateSwapchainFormats(session, 0, &formatCount, nullptr);
         std::vector<int64_t> formats(formatCount);
         xrEnumerateSwapchainFormats(session, formatCount, &formatCount, formats.data());
-        int64_t format = 0;
+        format = 0;
         for (int64_t wanted : {SRGB8_ALPHA8, RGBA8}) {
             if (!format && std::find(formats.begin(), formats.end(), wanted) != formats.end()) {
                 format = wanted;
@@ -576,6 +590,78 @@ struct Session::Impl {
         return true;
     }
 
+    void destroyScreenChain() {
+        for (gpu::RenderTargetHandle h : screenImages) {
+            device.destroyRenderTarget(h);
+        }
+        screenImages.clear();
+        if (screenChain != XR_NULL_HANDLE) {
+            xrDestroySwapchain(screenChain);
+            screenChain = XR_NULL_HANDLE;
+        }
+        screenWidth = 0;
+        screenHeight = 0;
+    }
+
+    bool makeScreenChain(int w, int h) {
+        if (screenChain != XR_NULL_HANDLE && screenWidth == w && screenHeight == h) {
+            return true;
+        }
+        destroyScreenChain();
+        XrSwapchainCreateInfo ci{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+        ci.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT | XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+        ci.format = format;
+        ci.sampleCount = 1;
+        ci.width = (uint32_t)w;
+        ci.height = (uint32_t)h;
+        ci.faceCount = 1;
+        ci.arraySize = 1;
+        ci.mipCount = 1;
+        if (XR_FAILED(xrCreateSwapchain(session, &ci, &screenChain))) {
+            screenChain = XR_NULL_HANDLE;
+            return false;
+        }
+        uint32_t imageCount = 0;
+        xrEnumerateSwapchainImages(screenChain, 0, &imageCount, nullptr);
+        std::vector<XrSwapchainImageOpenGLKHR> images(imageCount, {XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_KHR});
+        if (XR_FAILED(xrEnumerateSwapchainImages(screenChain, imageCount, &imageCount, reinterpret_cast<XrSwapchainImageBaseHeader *>(images.data())))) {
+            destroyScreenChain();
+            return false;
+        }
+        for (const XrSwapchainImageOpenGLKHR &image : images) {
+            gpu::RenderTargetDesc d;
+            d.width = w;
+            d.height = h;
+            d.depth = false;
+            d.externalColor = image.image;
+            screenImages.push_back(device.createRenderTarget(d));
+        }
+        screenWidth = w;
+        screenHeight = h;
+        return true;
+    }
+
+    // the source of the screen into the next image of its swapchain
+    bool copyScreen() {
+        if (!screen.source || screen.sourceWidth <= 0 || screen.sourceHeight <= 0 || !makeScreenChain(screen.sourceWidth, screen.sourceHeight)) {
+            return false;
+        }
+        uint32_t index = 0;
+        XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        if (XR_FAILED(xrAcquireSwapchainImage(screenChain, &ai, &index))) {
+            return false;
+        }
+        XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        wi.timeout = XR_INFINITE_DURATION;
+        bool ok = XR_SUCCEEDED(xrWaitSwapchainImage(screenChain, &wi)) && index < screenImages.size() && screenImages[index];
+        if (ok) {
+            device.copyRenderTarget(screen.source, screenImages[index]);
+        }
+        XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        xrReleaseSwapchainImage(screenChain, &ri);
+        return ok;
+    }
+
     void setState(XrSessionState s) {
         switch (s) {
         case XR_SESSION_STATE_READY: {
@@ -637,6 +723,7 @@ struct Session::Impl {
     bool beginFrame(const Mat4 &origin, Mat4 &head) {
         drawn = false;
         frameBegun = false;
+        screenShown = false;
         if (!running) {
             return false;
         }
@@ -682,13 +769,13 @@ struct Session::Impl {
         return true;
     }
 
-    void endFrame() {
+    void endFrame(bool showEyes) {
         if (!frameBegun) {
             return;
         }
         frameBegun = false;
         std::vector<XrCompositionLayerProjectionView> layerViews;
-        if (drawn) {
+        if (drawn && showEyes) {
             for (size_t i = 0; i < eyes.size(); i++) {
                 EyeChain &e = eyes[i];
                 uint32_t index = 0;
@@ -723,14 +810,35 @@ struct Session::Impl {
         layer.space = space;
         layer.viewCount = (uint32_t)layerViews.size();
         layer.views = layerViews.data();
-        const XrCompositionLayerBaseHeader *layers[] = {reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer)};
+        const XrCompositionLayerBaseHeader *layers[2] = {};
+        uint32_t layerCount = 0;
+        if (!layerViews.empty()) {
+            layers[layerCount] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&layer);
+            layerCount++;
+        }
+        XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+        if (screenShown && frame.shouldRender && copyScreen()) {
+            const glm::quat q = glm::quat_cast(glm::mat3(screen.pose));
+            quad.space = space;
+            quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+            quad.subImage.swapchain = screenChain;
+            quad.subImage.imageRect.offset = {0, 0};
+            quad.subImage.imageRect.extent = {screenWidth, screenHeight};
+            quad.subImage.imageArrayIndex = 0;
+            quad.pose.orientation = {q.x, q.y, q.z, q.w};
+            quad.pose.position = {screen.pose[3].x, screen.pose[3].y, screen.pose[3].z};
+            quad.size = {screen.width, screen.height};
+            layers[layerCount] = reinterpret_cast<const XrCompositionLayerBaseHeader *>(&quad);
+            layerCount++;
+        }
         XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};
         ei.displayTime = frame.predictedDisplayTime;
         ei.environmentBlendMode = blend;
-        ei.layerCount = layerViews.empty() ? 0 : 1;
+        ei.layerCount = layerCount;
         ei.layers = layers;
         xrEndFrame(session, &ei);
         drawn = false;
+        screenShown = false;
     }
 };
 
@@ -766,8 +874,14 @@ int Session::eyeCount() const {
 const Eye &Session::eye(int index) const {
     return index >= 0 && index < (int)impl_->eyes.size() ? impl_->eyes[(size_t)index].eye : kNoEye;
 }
-void Session::endFrame() {
-    impl_->endFrame();
+void Session::endFrame(bool eyes) {
+    impl_->endFrame(eyes);
+}
+void Session::showScreen(const Screen &screen) {
+    if (impl_->frameBegun) {
+        impl_->screen = screen;
+        impl_->screenShown = true;
+    }
 }
 bool Session::floorLevel() const {
     return impl_->stage;
@@ -824,7 +938,9 @@ int Session::eyeCount() const {
 const Eye &Session::eye(int) const {
     return kNoEye;
 }
-void Session::endFrame() {
+void Session::endFrame(bool) {
+}
+void Session::showScreen(const Screen &) {
 }
 bool Session::floorLevel() const {
     return false;

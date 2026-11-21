@@ -223,6 +223,8 @@ public:
     virtual void resolveRenderTarget(RenderTargetHandle r) = 0;
     // the color of src (resolved first when it is multisampled) into dst, scaled to its size; dst is single sampled
     virtual void copyRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) = 0;
+    // the color of src into the rectangle x, y, width, height of the window (from the bottom left), scaled
+    virtual void copyRenderTargetToWindow(RenderTargetHandle src, int x, int y, int width, int height) = 0;
 
     // null handle on error, the log in lastError()
     virtual ShaderHandle createShader(const ShaderDesc &desc) = 0;
