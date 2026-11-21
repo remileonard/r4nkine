@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace r4::render {
@@ -26,7 +27,8 @@ enum class NodeType {
     SWITCH,
     LOD,
     BILLBOARD,
-    INSTANCER
+    INSTANCER,
+    TRIGGER
 };
 
 struct Drawable {
@@ -290,6 +292,52 @@ private:
     std::vector<Placement> placements_;
     Vec3 up_ = axes::kUp;
 };
+
+// a point that the triggers follow: its id and its position in the space of the parent of the root of checkTriggers
+struct Tracker {
+    uint32_t id = 0;
+    Vec3 position;
+};
+
+// A volume that tells when a tracked point goes in or out. It is not drawn and has no bounds. In its own space, Z up:
+// a sphere about the origin, a cylinder about the Z axis from 0 to height, or a box.
+class Trigger : public Node {
+public:
+    enum class Shape {
+        SPHERE,
+        CYLINDER,
+        BOX
+    };
+    Trigger() : Node(NodeType::TRIGGER) {
+    }
+    void setSphere(float radius);
+    void setCylinder(float radius, float height);
+    void setBox(const Box &box);
+    Shape shape() const {
+        return shape_;
+    }
+    // a point in the space of the node
+    bool contains(Vec3 p) const;
+    // the trackers inside, by their id
+    const std::unordered_set<uint32_t> &inside() const {
+        return inside_;
+    }
+    // the trackers now, toLocal from their space to the one of the node: onEnter and onLeave for the changes
+    void update(const std::vector<Tracker> &trackers, const Mat4 &toLocal);
+    std::function<void(uint32_t)> onEnter;
+    std::function<void(uint32_t)> onLeave;
+
+private:
+    Shape shape_ = Shape::SPHERE;
+    float radius_ = 0;
+    float height_ = 0;
+    Box box_;
+    std::unordered_set<uint32_t> inside_;
+};
+
+// the APP check of the triggers below root, in the nodes whose mask has a bit of mask: onEnter for a tracker that comes in,
+// onLeave for one that goes out or is not in the list any more
+void checkTriggers(Node &root, const std::vector<Tracker> &trackers, uint32_t mask = 0xffffffffu);
 
 // the drawables under a node with their matrices, as the renderer draws them in this state: what an Instancer draws of a model
 std::vector<InstancePart> collectParts(Node &node, uint32_t state = 0xffffffffu);

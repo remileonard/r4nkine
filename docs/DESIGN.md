@@ -107,6 +107,8 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 
 **Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
 
+**Triggers**: a `Trigger` node is a volume: a sphere, a cylinder about the Z axis or a box, in the space of the node. It is not drawn and it has no bounds. `checkTriggers(root, trackers, mask)` is an APP traversal. It compares the positions of the trackers with the volumes below `root`. It calls `onEnter` when a tracker comes into a volume and `onLeave` when it goes out or when it is not in the list.
+
 **Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
 
 An instance is a matrix or a `Placement`. A `Placement` is a position, a heading, a scale and a vertical scale: 24 bytes instead of 64. The forests use placements. `Instancer::setUp` sets the up axis of the placements.

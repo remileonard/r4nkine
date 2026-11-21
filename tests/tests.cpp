@@ -82,6 +82,31 @@ static void testScene() {
     CHECK(!sw.isActive(0) && sw.isActive(1));
     sw.setValue(scene::Switch::kAll);
     CHECK(sw.isActive(0));
+    auto area = scene::make<scene::Trigger>();
+    area->setCylinder(10, 5);
+    area->setMatrix(translate({100, 0, 0}));
+    root->addChild(area);
+    std::vector<uint32_t> entered;
+    std::vector<uint32_t> left;
+    area->onEnter = [&](uint32_t id) {
+        entered.push_back(id);
+    };
+    area->onLeave = [&](uint32_t id) {
+        left.push_back(id);
+    };
+    scene::checkTriggers(*root, {{1, {105, 0, 2}}, {2, {100, 0, 6}}});
+    CHECK(entered.size() == 1 && entered[0] == 1 && left.empty());
+    scene::checkTriggers(*root, {{1, {120, 0, 2}}, {2, {100, 0, 4}}});
+    CHECK(entered.size() == 2 && entered[1] == 2 && left.size() == 1 && left[0] == 1);
+    scene::checkTriggers(*root, {});
+    CHECK(left.size() == 2 && area->inside().empty());
+    scene::Trigger sphere;
+    sphere.setSphere(2);
+    CHECK(sphere.contains({1, 1, 1}) && !sphere.contains({2, 2, 0}));
+    scene::Trigger box;
+    box.setBox({{-1, -2, 0}, {3, 4, 5}});
+    CHECK(box.contains({2, -1, 4}) && !box.contains({2, -3, 4}));
+    root->removeChild(area.get());
     CHECK(root->findChild("x") == nullptr);
     b->setName("x");
     CHECK(root->findChild("x") == b);

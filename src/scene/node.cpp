@@ -221,4 +221,73 @@ int LOD::select(float distance) const {
     return -1;
 }
 
+void Trigger::setSphere(float radius) {
+    shape_ = Shape::SPHERE;
+    radius_ = radius;
+}
+
+void Trigger::setCylinder(float radius, float height) {
+    shape_ = Shape::CYLINDER;
+    radius_ = radius;
+    height_ = height;
+}
+
+void Trigger::setBox(const Box &box) {
+    shape_ = Shape::BOX;
+    box_ = box;
+}
+
+bool Trigger::contains(Vec3 p) const {
+    switch (shape_) {
+    case Shape::SPHERE:
+        return length(p) <= radius_;
+    case Shape::CYLINDER:
+        return p.z >= 0 && p.z <= height_ && length(Vec2(p.x, p.y)) <= radius_;
+    case Shape::BOX:
+        return p.x >= box_.min.x && p.x <= box_.max.x && p.y >= box_.min.y && p.y <= box_.max.y && p.z >= box_.min.z && p.z <= box_.max.z;
+    }
+    return false;
+}
+
+void Trigger::update(const std::vector<Tracker> &trackers, const Mat4 &toLocal) {
+    std::unordered_set<uint32_t> now;
+    for (const Tracker &t : trackers) {
+        if (contains(transformPoint(toLocal, t.position))) {
+            now.insert(t.id);
+        }
+    }
+    for (uint32_t id : now) {
+        if (!inside_.count(id) && onEnter) {
+            onEnter(id);
+        }
+    }
+    for (uint32_t id : inside_) {
+        if (!now.count(id) && onLeave) {
+            onLeave(id);
+        }
+    }
+    inside_ = std::move(now);
+}
+
+namespace {
+
+void visitTriggers(Node &node, const Mat4 &parent, const std::vector<Tracker> &trackers, uint32_t mask) {
+    if ((node.mask() & mask) == 0) {
+        return;
+    }
+    const Mat4 world = parent * node.matrix();
+    if (node.type() == NodeType::TRIGGER) {
+        static_cast<Trigger &>(node).update(trackers, inverse(world));
+    }
+    for (const NodePtr &c : node.children()) {
+        visitTriggers(*c, world, trackers, mask);
+    }
+}
+
+} // namespace
+
+void checkTriggers(Node &root, const std::vector<Tracker> &trackers, uint32_t mask) {
+    visitTriggers(root, Mat4(1.0f), trackers, mask);
+}
+
 } // namespace r4::scene

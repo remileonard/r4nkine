@@ -28,6 +28,8 @@ const char *typeName(scene::NodeType t) {
         return "Billboard";
     case scene::NodeType::INSTANCER:
         return "Instancer";
+    case scene::NodeType::TRIGGER:
+        return "Trigger";
     }
     return "?";
 }
@@ -46,6 +48,8 @@ const char *typeTag(scene::NodeType t) {
         return "BB";
     case scene::NodeType::INSTANCER:
         return "INST";
+    case scene::NodeType::TRIGGER:
+        return "TRIG";
     }
     return "?";
 }
