@@ -36,6 +36,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/r4game/R4Loader.h/.cpp` | L'écran de chargement affiché par un overlay de R4nkine |
 | `src/r4game/R4Renderer.h/.cpp` | Le rendu de libRealSpace sur R4nkine, sans aucun appel GL : sa pile de matrices, les modèles et les effets du jeu gardés puis dessinés en une passe, le ciel, la caméra de cible |
 | `src/r4game/R4Panel.h/.cpp` | Le panneau de R4nkine sur le jeu (F12) : performance et réglages du rendu |
+| `src/r4game/R4Timer.h/.cpp` | Le temps du jeu : la durée de chaque image mesurée, à toutes les fréquences |
 | `src/r4game/R4Strike.h/.cpp` | Le vol sur le graphe de scène : le graphe du vol, l'APP qui le met à jour depuis le jeu, son dessin |
 | `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA`, `R4Loader`, `R4Renderer` et `R4Strike` |
 | `patches/r4-hooks.patch` | Le patch de libRealSpace que demande `neosc_r4` |
@@ -276,6 +277,14 @@ Les réglages de r4objviewer qui ne sont pas ici : **Textures** et **Gouraud by 
 - Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
 - Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.
 - Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, une vue proche où le F-16 et le char projettent leur ombre sur le terrain, puis le post-process (MSAA 4x, FXAA, palette EGA tramée, scanlines, courbure, vignette, aberration ; luminosité, contraste, saturation, gamma, fondu), le fil de fer, le rendu plat avec une autre lumière, le terrain grossier avec `lod_scale` 0,2 et un brouillard de 0,2 à 1,5 km.
+**Le timer (`R4Timer`).** `neosc_r4` remplace `DesktopTimer` par `R4Timer` (`GameTimer::setTimer`, dans le `main`). La physique, l'IA et la mission avancent de `getDeltaTime()` à chaque image. `DesktopTimer` ne donnait pas le temps réel :
+- après 90 images, il arrondit la fréquence mesurée à 60 au plus (`snapToStandardFPS`) ;
+- il ne suit ensuite la fréquence que si elle reste entre 10 et 200 images par seconde ;
+- au-delà de 200 (sans vsync), chaque image compte donc 1/60 s : à 300 images par seconde, le jeu va 5 fois trop vite ;
+- il mesure en millisecondes (`SDL_GetTicks64`) : à 3,3 ms par image, chaque mesure vaut 3 ou 4 ms.
+
+`R4Timer` donne la durée mesurée de chaque image avec `SDL_GetPerformanceCounter`, sans lissage. Une image plus longue que 0,1 s (un chargement) compte pour 0,1 s. `shouldSimulate` garde le pas fixe de 1/30 s.
+
 **Le panneau R4nkine (F12).** `R4Panel` (dans `src/r4game`) est le GUI de R4nkine par-dessus l'image du jeu, après le post-process. F12 le montre ou le cache. Il lit la souris et le clavier de SDL à chaque image, et la molette par un `SDL_AddEventWatch` : les événements restent au jeu, donc un clic sur le panneau va aussi au jeu. Tant qu'il est affiché, le curseur est visible et la souris n'est pas relative (le jeu cache le curseur dans sa fenêtre, et ses menus utilisent la souris relative) ; F12 rend ensuite l'état du jeu.
 - **Performance** : FPS et temps moyen sur 240 images, courbes de l'image, du cull et du draw, puis, par image et pour toutes les passes du renderer : passes, draw calls, triangles, changements de pipeline et de texture, nœuds visités et éliminés, drawables, instances, items opaques et transparents, objets qui projettent une ombre, temps de l'ombre, du tri et de l'envoi. Le dessin du panneau n'est pas compté.
 - **Area** : ce que `useArea` a fait pour la zone (temps, arbres, bâtiments, nuages), et les options de `config.ini` qui ne changent qu'avec une nouvelle zone (forêts, bâtiments, upscale, mipmaps, anisotrope, terrain éclairé, relief, niveau du terrain, lumière).
