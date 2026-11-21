@@ -35,6 +35,7 @@ TOBIGTRE.TRE ──AssetManager──▶ TreEntry ──RSEntity::InitFromRAM─
 | `src/r4game/R4VGA.h/.cpp` | L'écran 320 x 200 (menus, conversations, films, cockpit 2D) affiché par les overlays de R4nkine, par-dessus ce que le jeu a dessiné |
 | `src/r4game/R4Loader.h/.cpp` | L'écran de chargement affiché par un overlay de R4nkine |
 | `src/r4game/R4Renderer.h/.cpp` | Le rendu de libRealSpace sur R4nkine, sans aucun appel GL : sa pile de matrices, les modèles et les effets du jeu gardés puis dessinés en une passe, le ciel, la caméra de cible |
+| `src/r4game/R4Panel.h/.cpp` | Le panneau de R4nkine sur le jeu (F12) : performance et réglages du rendu |
 | `src/r4game/R4Strike.h/.cpp` | Le vol sur le graphe de scène : le graphe du vol, l'APP qui le met à jour depuis le jeu, son dessin |
 | `src/executables/neosc_r4/main.cpp` | `neosc_r4` : le `main` de neosc avec `R4Screen`, `R4VGA`, `R4Loader`, `R4Renderer` et `R4Strike` |
 | `patches/r4-hooks.patch` | Le patch de libRealSpace que demande `neosc_r4` |
@@ -272,6 +273,12 @@ Les réglages de r4objviewer qui ne sont pas ici : **Textures** et **Gouraud by 
 - Au chargement d'une zone, la console donne le nombre d'arbres et de bâtiments.
 - Mesuré ici sur ARENA (rendu logiciel, donc seulement pour comparer) : chargement de la zone 1,0 s sans option ; `forests=noise` 5,3 s pour 8,7 millions d'arbres et environ 320 Mo de plus ; `forest_density=0.4` 2,8 s pour 3,5 millions ; `forests=textures` 1,8 s pour 3,0 millions ; `buildings=true` 1,1 s pour 6 838 bâtiments.
 - Testé ici sans erreur GL, en contexte core : MISN-1A et ARENA avec toutes les options, une vue proche où le F-16 et le char projettent leur ombre sur le terrain, puis le post-process (MSAA 4x, FXAA, palette EGA tramée, scanlines, courbure, vignette, aberration ; luminosité, contraste, saturation, gamma, fondu), le fil de fer, le rendu plat avec une autre lumière, le terrain grossier avec `lod_scale` 0,2 et un brouillard de 0,2 à 1,5 km.
+**Le panneau R4nkine (F12).** `R4Panel` (dans `src/r4game`) est le GUI de R4nkine par-dessus l'image du jeu, après le post-process. F12 le montre ou le cache. Il lit la souris et le clavier de SDL à chaque image, sans les événements du jeu : un clic sur le panneau va aussi au jeu.
+- **Performance** : FPS et temps moyen sur 240 images, courbes de l'image, du cull et du draw, puis, par image et pour toutes les passes du renderer : passes, draw calls, triangles, changements de pipeline et de texture, nœuds visités et éliminés, drawables, instances, items opaques et transparents, objets qui projettent une ombre, temps de l'ombre, du tri et de l'envoi. Le dessin du panneau n'est pas compté.
+- **Area** : ce que `useArea` a fait pour la zone (temps, arbres, bâtiments, nuages), et les options de `config.ini` qui ne changent qu'avec une nouvelle zone (forêts, bâtiments, upscale, mipmaps, anisotrope, terrain éclairé, relief, niveau du terrain, lumière).
+- **Render** : les réglages que la passe suivante lit, changés en direct : fil de fer, rendu plat, textures, Gouraud, brouillard, nuages, ombres, ombres des arbres, LOD Scale, distance et force des ombres, soleil et brouillard des réglages, VSync.
+- **Post Process** : les contrôles de r4objviewer (`r4::ui::postProcessControls`), en direct.
+
 ## Ce qu'il faut regarder pour apprendre R4nkine
 
 Le viewer suit les étapes d'un programme R4nkine, numérotées dans `main.cpp`.
