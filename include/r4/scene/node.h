@@ -8,6 +8,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace r4::render {
@@ -19,6 +20,8 @@ namespace r4::scene {
 
 class Node;
 using NodePtr = std::shared_ptr<Node>;
+// a callback of the APP traversal: it can change the node and its children
+using AppCallback = std::function<void(Node &)>;
 
 enum class NodeType {
     GROUP,
@@ -26,7 +29,8 @@ enum class NodeType {
     SWITCH,
     LOD,
     BILLBOARD,
-    INSTANCER
+    INSTANCER,
+    TRIGGER
 };
 
 struct Drawable {
@@ -87,6 +91,17 @@ public:
 
     void markDirty();
 
+    // the APP traversal: before runs before the traversal of the children, after once they are done; null for none
+    void setAppCallbacks(AppCallback before, AppCallback after = nullptr);
+    // the APP traversal skips the node and its children when (appMask & mask) == 0; the camera mask is not used, so a hidden
+    // node is still updated
+    uint32_t appMask() const {
+        return appMask_;
+    }
+    void setAppMask(uint32_t m) {
+        appMask_ = m;
+    }
+
 protected:
     // in the node's own space
     virtual Sphere contentBounds() const {
@@ -107,7 +122,19 @@ private:
     bool dirty_ = true;
     uint32_t mask_ = 0xffffffffu;
     uint32_t filter_ = 0xffffffffu;
+    uint32_t appMask_ = 0xffffffffu;
+    // most nodes have none
+    struct AppCallbacks {
+        AppCallback before;
+        AppCallback after;
+    };
+    std::unique_ptr<AppCallbacks> app_;
+    friend void app(Node &root, uint32_t mask);
 };
+
+// the APP traversal: the callbacks of the nodes below root whose app mask has a bit of mask, in depth first order; a callback can
+// add or remove the children of its node
+void app(Node &root, uint32_t mask = 0xffffffffu);
 
 class Group : public Node {
 public:
@@ -290,6 +317,52 @@ private:
     std::vector<Placement> placements_;
     Vec3 up_ = axes::kUp;
 };
+
+// a point that the triggers follow: its id and its position in the space of the parent of the root of checkTriggers
+struct Tracker {
+    uint32_t id = 0;
+    Vec3 position;
+};
+
+// A volume that tells when a tracked point goes in or out. It is not drawn and has no bounds. In its own space, Z up:
+// a sphere about the origin, a cylinder about the Z axis from 0 to height, or a box.
+class Trigger : public Node {
+public:
+    enum class Shape {
+        SPHERE,
+        CYLINDER,
+        BOX
+    };
+    Trigger() : Node(NodeType::TRIGGER) {
+    }
+    void setSphere(float radius);
+    void setCylinder(float radius, float height);
+    void setBox(const Box &box);
+    Shape shape() const {
+        return shape_;
+    }
+    // a point in the space of the node
+    bool contains(Vec3 p) const;
+    // the trackers inside, by their id
+    const std::unordered_set<uint32_t> &inside() const {
+        return inside_;
+    }
+    // the trackers now, toLocal from their space to the one of the node: onEnter and onLeave for the changes
+    void update(const std::vector<Tracker> &trackers, const Mat4 &toLocal);
+    std::function<void(uint32_t)> onEnter;
+    std::function<void(uint32_t)> onLeave;
+
+private:
+    Shape shape_ = Shape::SPHERE;
+    float radius_ = 0;
+    float height_ = 0;
+    Box box_;
+    std::unordered_set<uint32_t> inside_;
+};
+
+// the APP check of the triggers below root, in the nodes whose mask has a bit of mask: onEnter for a tracker that comes in,
+// onLeave for one that goes out or is not in the list any more
+void checkTriggers(Node &root, const std::vector<Tracker> &trackers, uint32_t mask = 0xffffffffu);
 
 // the drawables under a node with their matrices, as the renderer draws them in this state: what an Instancer draws of a model
 std::vector<InstancePart> collectParts(Node &node, uint32_t state = 0xffffffffu);

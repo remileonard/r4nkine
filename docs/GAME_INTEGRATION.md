@@ -83,6 +83,9 @@ Each traversal has its own mask. The shadow pass has this mask now (`RenderOptio
 
 ## Status
 
+- The APP traversal is done: `Node::setAppCallbacks` (before and after the children), `Node::setAppMask`, `scene::app(root, mask)`.
+- `r4::scene::Trigger` and `checkTriggers` are done: the three volumes of the areas of a mission (sphere, cylinder, box), the trackers and the enter and leave callbacks.
+
 - `R4Strike` (in `contrib/librealspace/src/r4game`) keeps the graph of a flight. The graph has the terrain, a node for each actor and a node for each simulated object. Each layer has a mask (`LAYER_TERRAIN`, `LAYER_ACTORS`, `LAYER_SHOTS`, `LAYER_PLAYER`).
 - `R4Strike::app` is the first form of APP. It runs one time in each frame, before the draw. It sets the matrices and the masks of the nodes from the state of the game. It adds and removes the nodes. It has no node callbacks yet.
 - One pass draws the graph with the camera of the game.

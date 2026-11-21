@@ -282,6 +282,11 @@ public:
     }
     virtual void endHostInterop() {
     }
+    // false: the host does not draw with the API (a core context where only R4nkine draws); beginHostInterop and endHostInterop
+    // do nothing, and the caches of the device stay valid
+    virtual void setHostInterop(bool enabled) {
+        (void)enabled;
+    }
     // the host draws into target as into its window, until it binds another framebuffer; a null target is the window
     virtual void bindForHost(RenderTargetHandle target) {
         (void)target;

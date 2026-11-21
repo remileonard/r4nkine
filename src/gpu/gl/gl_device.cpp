@@ -1009,7 +1009,14 @@ public:
     }
 
     // the host draws with the same context: its state is saved and the caches of the device forgotten
+    void setHostInterop(bool enabled) override {
+        hostInterop = enabled;
+    }
+
     void beginHostInterop() override {
+        if (!hostInterop) {
+            return;
+        }
         GLint v;
         gl.GetIntegerv(CURRENT_PROGRAM, &v);
         host.program = v;
@@ -1053,6 +1060,9 @@ public:
     }
 
     void endHostInterop() override {
+        if (!hostInterop) {
+            return;
+        }
         gl.UseProgram(host.program);
         gl.BindVertexArray(host.vao);
         gl.BindBuffer(ARRAY_BUFFER, host.arrayBuffer);
@@ -1134,6 +1144,7 @@ private:
     Pool<GLRenderTarget> targets;
     GLuint windowFbo = 0;
     GLuint boundFbo = 0;
+    bool hostInterop = true;
     // the copies of readPixelsAsync: started in turn, read when their fence is signaled
     static constexpr int kReadbacks = 3;
     struct Readback {

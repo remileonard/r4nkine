@@ -77,7 +77,7 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 - **Shaders**: the GL backend uses GLSL 330. GLSL 330 has no `binding` qualifier. Thus, `ShaderDesc` binds the uniform blocks and the samplers to slots by name. The other backends will use the same sources, compiled to SPIR-V and then cross-compiled.
 - **Readback**: `readPixels` waits until the GPU completes the frame. `readPixelsAsync` does not wait. It starts the copy of the pass into a pixel buffer. Then it gives the last copy that the GPU completed, usually the copy of the frame before. The GL backend uses three pixel buffers and a fence for each copy.
 - **GPU times**: `beginGpuTimer` and `endGpuTimer` measure the GPU time of the commands between them, in a slot. The intervals do not overlap. A slot can have many intervals in a frame. `endGpuFrame` closes the frame. `gpuTimes` gives the time of each slot in the last frame that the GPU completed. It does not wait. The GL backend uses `GL_TIME_ELAPSED` queries.
-- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes.
+- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes. `setHostInterop(false)` turns them off when the host does not draw with the API (a core context where only R4nkine draws): the device keeps its caches and makes no GL query.
 
 ### OpenGL 3.3 backend
 
@@ -107,6 +107,10 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 6. **Draw**: consecutive items with the same mesh, material and pipeline become one instanced draw. The draw starts at their offset in the matrix buffer. The device does not bind again a binding that did not change.
 
 **Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
+
+**APP traversal**: a node can have two APP callbacks. `before` runs before the traversal of the children. `after` runs when the children are done. A callback can change its node and add or remove its children. `app(root, mask)` runs the callbacks in depth first order. Each node has an APP mask, different from the mask of the camera. Thus, a node that is not drawn is still updated.
+
+**Triggers**: a `Trigger` node is a volume: a sphere, a cylinder about the Z axis or a box, in the space of the node. It is not drawn and it has no bounds. `checkTriggers(root, trackers, mask)` is an APP traversal. It compares the positions of the trackers with the volumes below `root`. It calls `onEnter` when a tracker comes into a volume and `onLeave` when it goes out or when it is not in the list.
 
 **Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
 
