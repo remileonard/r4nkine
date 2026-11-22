@@ -1048,7 +1048,8 @@ void Context::beginBox(const char *id, float height) {
     }
     const float x = s.panel.x + kMargin;
     const float w = s.panel.w - 2 * kMargin - (s.barRoom ? kBarW : 0.0f);
-    const float h = height > 0 ? height : std::max(kRowH, s.clip.y + s.clip.h - y - kMargin);
+    // the rest of the panel: down to its margin, less the gap that endBox puts after it, so that the panel needs no scroll bar
+    const float h = height > 0 ? height : std::max(kRowH, s.clip.y + s.clip.h - y - kMargin - kGap);
     Rect r{std::floor(x), std::floor(y), std::floor(w), std::floor(h)};
     s.outers.push_back({s.panel, s.clip, r, s.cursorY, s.cols, s.ps, s.panelId, s.barRoom});
     // the frame: light on the top and the left, dark on the bottom and the right, open under the selected tab
