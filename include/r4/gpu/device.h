@@ -169,6 +169,9 @@ struct RenderTargetDesc {
     Filter filter = Filter::LINEAR;
     // depth only, its texture sampled compared (sampler2DShadow)
     bool shadow = false;
+    // not 0: the color is this texture of the API (a GL texture name), made by another library, as an image of an OpenXR swapchain.
+    // The target draws into it and does not free it. samples is then 1.
+    uint64_t externalColor = 0;
 };
 
 struct ClearValues {
@@ -218,6 +221,10 @@ public:
     // its color, or its depth for a shadow map; a multisampled target is resolved into it by resolveRenderTarget
     virtual TextureHandle renderTargetTexture(RenderTargetHandle r) = 0;
     virtual void resolveRenderTarget(RenderTargetHandle r) = 0;
+    // the color of src (resolved first when it is multisampled) into dst, scaled to its size; dst is single sampled
+    virtual void copyRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) = 0;
+    // the color of src into the rectangle x, y, width, height of the window (from the bottom left), scaled
+    virtual void copyRenderTargetToWindow(RenderTargetHandle src, int x, int y, int width, int height) = 0;
 
     // null handle on error, the log in lastError()
     virtual ShaderHandle createShader(const ShaderDesc &desc) = 0;
@@ -247,14 +254,40 @@ public:
 
     // RGBA8 from the bottom row
     virtual bool readPixels(int x, int y, int width, int height, void *rgba) = 0;
+    // as readPixels, without waiting for the GPU: the copy of the pass starts now, and rgba receives the last copy that the GPU has done,
+    // usually the one of the frame before; false when no copy is done yet. One reader at a time.
+    virtual bool readPixelsAsync(int x, int y, int width, int height, void *rgba) {
+        return readPixels(x, y, width, height, rgba);
+    }
 
     // since the last call, then reset
     virtual FrameStats takeStats() = 0;
+
+    // GPU times in slots: the commands between beginGpuTimer and endGpuTimer (one interval at a time, not nested) add to their slot.
+    // endGpuFrame closes the frame. gpuTimes gives the milliseconds of each slot in the last frame that the GPU completed, without
+    // waiting for the GPU; false while no frame is completed, or without timers.
+    static constexpr int kGpuTimers = 8;
+    virtual void beginGpuTimer(int slot) {
+        (void)slot;
+    }
+    virtual void endGpuTimer() {
+    }
+    virtual void endGpuFrame() {
+    }
+    virtual bool gpuTimes(double ms[kGpuTimers]) const {
+        (void)ms;
+        return false;
+    }
 
     // the state of a host drawing with the same API, saved before and given back after
     virtual void beginHostInterop() {
     }
     virtual void endHostInterop() {
+    }
+    // false: the host does not draw with the API (a core context where only R4nkine draws); beginHostInterop and endHostInterop
+    // do nothing, and the caches of the device stay valid
+    virtual void setHostInterop(bool enabled) {
+        (void)enabled;
     }
     // the host draws into target as into its window, until it binds another framebuffer; a null target is the window
     virtual void bindForHost(RenderTargetHandle target) {

@@ -134,8 +134,8 @@ int result2(Pixel a, Pixel b, Pixel c, Pixel d) {
 Image sai2x(const Image &img) {
     Source s = sourceOf(img);
     const int W = s.w * 2;
-    const int H = s.h * 2;
-    std::vector<Pixel> out((size_t)W * H);
+    const int outH = s.h * 2;
+    std::vector<Pixel> out((size_t)W * outH);
     for (int y = 0; y < s.h; y++) {
         for (int x = 0; x < s.w; x++) {
             Pixel I = s.at(x - 1, y - 1);
@@ -201,7 +201,7 @@ Image sai2x(const Image &img) {
             out[o + W + 1] = diagonal;
         }
     }
-    return imageOf(img, W, H, out);
+    return imageOf(img, W, outH, out);
 }
 
 // in YUV weighted as xBR and hqx, the alpha as strong as the luma

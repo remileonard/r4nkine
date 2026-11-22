@@ -36,7 +36,7 @@ gpu       Device: buffers, textures, shaders, pipelines, draws
 core      math: glm (Vec3, Mat4, column-major), Box, Sphere, Frustum
 ```
 
-The RealSpace data (Strike Commander, Tactical Operations) is not in these layers. libRealSpace reads it. `contrib/librealspace` converts it into R4nkine models (r4bridge) and shows it (r4objviewer). Refer to "RealSpace (`contrib/librealspace`)".
+The RealSpace data (Strike Commander, Tactical Operations) is not in these layers. libRealSpace reads it. Code in libRealSpace converts it into R4nkine models (r4bridge) and shows it (r4objviewer, neosc_r4). Refer to "RealSpace (libRealSpace)".
 
 ## Dependencies
 
@@ -46,6 +46,7 @@ The dependencies come from vcpkg in manifest mode. The manifest is `vcpkg.json`.
 - **stb**: the usual image formats.
 - **cgltf**: glTF 2.0.
 - **SDL2**: only for r4fly (the `viewer` feature).
+- **OpenXR loader**: only for `r4nkine_xr` (the `xr` feature, default on Windows). Refer to "Virtual reality (`r4::xr`)".
 
 The GUI (`r4::ui`) is a part of the library. It draws through `r4::gpu`. `tools/bake_font.cpp` makes its font in `src/ui/font_data.inc`.
 
@@ -74,7 +75,9 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 - **States**: the pipelines contain the states. The program makes the pipelines before it uses them. A pipeline contains the vertex layout, the blending, the depth, the culling, the polygon mode and the polygon offset.
 - **Uniforms**: they are in uniform buffers. The device binds a uniform buffer by slot and by range. The object matrices of a frame go into one buffer. Each draw binds its range.
 - **Shaders**: the GL backend uses GLSL 330. GLSL 330 has no `binding` qualifier. Thus, `ShaderDesc` binds the uniform blocks and the samplers to slots by name. The other backends will use the same sources, compiled to SPIR-V and then cross-compiled.
-- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes.
+- **Readback**: `readPixels` waits until the GPU completes the frame. `readPixelsAsync` does not wait. It starts the copy of the pass into a pixel buffer. Then it gives the last copy that the GPU completed, usually the copy of the frame before. The GL backend uses three pixel buffers and a fence for each copy.
+- **GPU times**: `beginGpuTimer` and `endGpuTimer` measure the GPU time of the commands between them, in a slot. The intervals do not overlap. A slot can have many intervals in a frame. `endGpuFrame` closes the frame. `gpuTimes` gives the time of each slot in the last frame that the GPU completed. It does not wait. The GL backend uses `GL_TIME_ELAPSED` queries.
+- **Host interop**: `beginHostInterop()` and `endHostInterop()` save and restore the GL state of a host that uses the same context. With these functions, R4nkine draws in libRealSpace between its fixed-pipeline passes. `setHostInterop(false)` turns them off when the host does not draw with the API (a core context where only R4nkine draws): the device keeps its caches and makes no GL query.
 
 ### OpenGL 3.3 backend
 
@@ -105,7 +108,15 @@ The interface uses the model of the explicit APIs (Vulkan, Metal, D3D12). Thus, 
 
 **Billboards**: a billboard turns about the origin of its node. Its -Y axis points to the eye. An axis billboard turns about Z only. A point billboard turns about Z and X. Its bounds are around its origin. Thus, the bounds stay correct for all the turns.
 
-**Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix. The renderer culls each instance on its sphere and selects the level for its distance. After the sort, all the visible instances of a part become one draw call.
+**APP traversal**: a node can have two APP callbacks. `before` runs before the traversal of the children. `after` runs when the children are done. A callback can change its node and add or remove its children. `app(root, mask)` runs the callbacks in depth first order. Each node has an APP mask, different from the mask of the camera. Thus, a node that is not drawn is still updated.
+
+**Triggers**: a `Trigger` node is a volume: a sphere, a cylinder about the Z axis or a box, in the space of the node. It is not drawn and it has no bounds. `checkTriggers(root, trackers, mask)` is an APP traversal. It compares the positions of the trackers with the volumes below `root`. It calls `onEnter` when a tracker comes into a volume and `onLeave` when it goes out or when it is not in the list.
+
+**Instancers**: an instancer has levels and a list of instances. Each level has parts and a maximum distance. Each part is a drawable at a matrix.
+- The placements are in cells of 256 units across the up axis, each with its bounds. The renderer culls a cell first, on its distance and on the frustum. When a cell is fully in the view, the renderer does not test its instances. When a cell is fully in one level, the renderer does not select the level of its instances.
+- The renderer tests an instance on a sphere from its position and its scale. It makes the matrix of the instance only when the instance is drawn.
+- The visible instances of a part of a level become one item, with all their matrices. Thus, the sort and the draw do not see each instance.
+- A static instancer (`setStatic`) keeps its placements in a GPU buffer, in a fixed random order. The vertex shader makes the matrix of each placement. For each frame, the renderer does no work for each placement: it selects one level for the nearest point of the instancer and draws all its placements with one call for each part. Beyond `thinFrom`, it draws only the first placements, (thinFrom / distance)² of them, and they grow to keep the cover. The placements of a static instancer cast no shadow.
 
 An instance is a matrix or a `Placement`. A `Placement` is a position, a heading, a scale and a vertical scale: 24 bytes instead of 64. The forests use placements. `Instancer::setUp` sets the up axis of the placements.
 
@@ -126,7 +137,9 @@ The GUI looks like the GUI of IRIS Performer (libpfutil), as the perfly port in 
 
 The model is immediate. Each frame, the program calls the widgets with its own variables. The widgets tell the changes.
 
-The CPU builds a frame into one vertex buffer. The buffer contains rectangles, triangles and glyphs. They all use one texture: the font atlas and a white texel. The GPU draws the frame with one pipeline and a small number of draws. The scissor clips the draws to the panels. When the widgets of a panel are taller than the panel, the wheel scrolls the panel.
+The widgets for forms: `tabs` (a row of tabs over the width of the panel, in the colors of the headers of the sections; the selected tab has the color of the panel and opens on it), `select` (the label on the left, a list on the right) and `inputText` (the label on the left, a text field on the right). A click on a text field gives it the focus. The application gives the typed text (UTF-8) and the edit keys in `Input`. Enter or a click out of the field keeps the text, and Escape gives back the text from before. `wantsKeyboard()` tells the application that a text field has the focus. With the `open` argument, `beginPanel` puts a cross at the right of the title: a click on it sets `open` to false. The font draws Latin-1: the field keeps UTF-8, and its caret moves by characters.
+
+The CPU builds a frame into one vertex buffer. The buffer contains rectangles, triangles and glyphs. They all use one texture: the font atlas and a white texel. The GPU draws the frame with one pipeline and a small number of draws. The scissor clips the draws to the panels. When the widgets of a panel are taller than the panel, the wheel and a scroll bar scroll the panel. The thumb of the bar follows the mouse, and a click on its track moves it there. `beginBox` and `endBox` put widgets in a framed area of the panel, with its own scroll and scroll bar. Just under `tabs`, the box opens on the selected tab: the tabs stay at their place, and only the page scrolls.
 
 ## Texture quality
 
@@ -191,11 +204,26 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
   - With `rampTextured`, the shader multiplies a texture by the intensity.
   - With `indexImage`, the material has an image of palette indices. The shader shades each texel along its ramp. Then it filters the texels (bilinear filter in the shader). With `vertexColors`, the red of the vertex colors gives the intensity. Without `vertexColors`, the light gives the intensity.
   - With `indexAtlasColumns` and `indexAtlasRows`, `indexImage` is an atlas of equal cells. The green and the blue of the vertex colors give the cell. The alpha gives the log2 of the width and the height of the image in the cell. The filter stays in this image.
+- **Two shaders**: the renderer compiles its shader two times. The second shader has no `discard`. The materials that can discard a fragment use the first shader: alpha test, alpha mask, a layer on a face (`depthEqual`), a palette index texture. All the other materials use the second shader. A GPU that removes the hidden fragments before the shader (Apple, other tile GPUs) does it only for a shader without `discard`.
 - **Shadow mask**: the shadow pass culls with the camera mask and `RenderOptions::shadowMask`. When the mask of a node has no bit of this mask, the node and its children cast no shadow. The shadow pass does not go into this node.
 - **Animated textures**: when `frames` is more than 1, `diffuseImage` is a strip of frames from top to bottom. The shader shows the frames one after the other at `framesPerSecond`. It uses the time of the environment (`Environment::time`). The application sets this time.
 - **No textures**: this applies when the textures option is off, and always in wireframe.
   - The mean color of the opaque texels replaces each texture. Thus, the lines keep the color of their faces.
   - The renderer does not draw the layers on a face at the same depth (`depthEqual` decals, `indexImage`).
+
+## Virtual reality (`r4::xr`)
+
+`r4nkine_xr` is a separate library. Only the programs that show VR link the OpenXR loader.
+
+- `xr::Session::create` uses the GL context of the device. The binding is `XR_KHR_opengl_enable` on Windows (WGL). The other systems are not done.
+- Each eye has its own swapchain. The renderer draws the eye into a target of R4nkine (MSAA, `Settings::samples`). `endFrame` resolves it and copies it into the image of the swapchain (`Device::copyRenderTarget`). The images of the swapchain are render targets with `RenderTargetDesc::externalColor`.
+- The swapchain is sRGB when the runtime has it. The renderer writes the colors of the screen, and the GL backend does not enable `FRAMEBUFFER_SRGB`. Thus, the headset shows the same colors as the window.
+- The reference space is STAGE (origin on the floor) or else LOCAL. `Settings::seated` always selects LOCAL: the origin is the head when the session starts, as in a cockpit. `Session::setOrigin` puts the tracking space (Y up) in the world. The default is `axes::fromYUpMatrix()`.
+- `Session::showScreen` puts a flat screen in front of the eyes (a quad layer of OpenXR). `endFrame` copies its source target into the swapchain of the screen. `endFrame(false)` gives the screen without the eyes: the menus and the films of a game. `Device::copyRenderTargetToWindow` copies an eye into the window (a mirror).
+- The projection of each eye is the asymmetric frustum of the runtime. The renderer culls and makes the shadows for each eye.
+- The controllers are OpenXR actions on the two hands: the grip and aim poses, the trigger, the squeeze, the thumbstick, the primary and secondary buttons, the click of the thumbstick, the menu, and the vibration. Bindings are suggested for the Khronos simple controller, Oculus Touch, Valve Index, HTC Vive and Windows Mixed Reality. `Session::controller` gives their state at each `beginFrame`, `Session::vibrate` a pulse.
+- In r4fly, the left thumbstick walks in the direction of the head (the left trigger makes it faster). The right thumbstick turns by steps of 30 degrees and moves up or down. B or Y goes back to the start. A line shows the ray of each controller.
+- In r4fly, `-vr` or the `v` key starts the headset. The viewer stands at the eye of the trackball. The mouse moves the viewer in the world. The window keeps its own view and the GUI.
 
 ## Roadmap
 
@@ -205,16 +233,17 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | 2 | instancing in the renderer (one draw for equal mesh and material), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG with stb_image, glTF 2.0 | **done** |
 | 3 | the old formats, ports from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
 | 3b | `r4::ui`, the GUI of perfly drawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performance; render options in the renderer (culling, freeze, sort, instancing, textures, lighting, LOD scale) and CPU times | **done** |
-| 4 | RealSpace in `contrib/librealspace`: RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
+| 4 | RealSpace in libRealSpace (`src/r4bridge`): RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
 | 4b | renderer: shadow map, fog, texture scalers, anisotropic filter, mipmaps, palette index textures, animated textures, shadow mask, compact placements | **done** |
 | 5 | libRealSpace integration: `neosc_r4`, the game drawn only by R4nkine in a core context: screen, 320 x 200 screen, renderer, flight on the scene graph | **done** |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | not done |
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
-| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | not done |
+| game | APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, areas as nodes and scenes as switches: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | **done** |
+| game 2 | ISECT queries (segments and rays: ground height, collisions), APP at the fixed time step, views that do not draw, for a server | not done |
 
-## RealSpace (`contrib/librealspace`)
+## RealSpace (libRealSpace)
 
-libRealSpace reads the data of the game. The code in `contrib/librealspace` goes into the source tree of libRealSpace. It does not change the code of libRealSpace.
+libRealSpace reads the data of the game. The code that connects it to R4nkine is in libRealSpace, on its `r4nkine` branch: `src/r4bridge`, `src/r4game`, `src/executables/r4objviewer` and `src/executables/neosc_r4`. `cmake/R4nkine.cmake` adds R4nkine from a local folder (`R4NKINE_DIR`) or from GitHub (FetchContent).
 
 **r4bridge** converts the data of libRealSpace into R4nkine models:
 
@@ -230,17 +259,20 @@ libRealSpace reads the data of the game. The code in `contrib/librealspace` goes
 - `groundHeight`: the height of the ground on the LVL0 triangles as `terrainModel` draws them. `RSArea::getY` gives incorrect heights.
 - `onGround`: it puts an object on the ground. It only raises a flying object.
 
-**r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `contrib/librealspace/README_R4NKINE.md`.
+**r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `README_R4NKINE.md` of libRealSpace.
 
 ## Integration in libRealSpace (step 5)
 
-`neosc_r4` is neosc drawn by R4nkine. The code is in `contrib/librealspace/src/r4game`. A patch adds virtual methods to libRealSpace (`contrib/librealspace/patches/r4-hooks.patch`). The behavior of neosc does not change.
+`neosc_r4` is neosc drawn by R4nkine. The code is in `src/r4game` of libRealSpace. libRealSpace has virtual methods for the display of `RSVGA`, `Loader` and `SCStrike`, a factory for `SCStrike` (`SCStrike::setFactory`) and the virtual method `SCStrike::createMission`. The behavior of neosc does not change.
 
 - **Context**: OpenGL 3.3 core (4.1 core on macOS). The game makes no GL call. Only R4nkine uses the context.
 - **Screen** (`R4Screen`, `R4VGA`, `R4Loader`): the window, the post process, the 320 x 200 screen and the loading screen. The 320 x 200 screen is an overlay over the 3D. Its index 255 is clear.
 - **Renderer** (`R4Renderer : SCRenderer`): it overrides all the methods that draw.
-  - It has its own model matrix stack (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`). The patch adds these methods. The game code that used the GL matrix stack uses them now.
+  - It has its own model matrix stack (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`). `SCRenderer` has these methods. The game code that used the GL matrix stack uses them now.
   - It keeps the calls of the game: the models with their matrix, the effects (billboards, sprites, particles, tracers, effect triangles, textured quads, clouds, lines, points) as triangles batched by state, the sky, the graphs of the scenes.
   - A pass of the renderer draws them with the camera of the game. The pass occurs before a change of view, before the 320 x 200 screen and at the end of the frame.
   - The view of the target camera has its own render target (107 x 75). The renderer reads it back for the cockpit (`readRenderToTexture`).
-- **Flight** (`R4Strike : SCStrike`): the graph of the flight lives as long as the flight. It has the terrain, a node for each plane, mission object and simulated object. The APP step sets the nodes from the game one time for each frame. The graph goes in the same pass as the effects and the cockpit. See [GAME_INTEGRATION.md](GAME_INTEGRATION.md).
+- **Mission** (`R4Mission : SCMission`): the graph of the mission lives as long as the mission. It has the terrain, the areas, the scenes, a node for each plane, mission object and simulated object, and the triggers of the areas. Its APP step sets the nodes from the game. See [GAME_INTEGRATION.md](GAME_INTEGRATION.md).
+- **Flight** (`R4Strike : SCStrike`): the view. It runs the APP step of the mission one time for each frame, after the camera. It puts the graph in the same pass as the effects and the cockpit.
+- **Timer** (`R4Timer`): the time of each frame from the high resolution counter, at all frame rates.
+- **Panels**: `R4Panel` shows the performance and the render options. `R4ConfigPanel` (Ctrl+F11) changes the options of `config.ini` and the inputs of the actions: keys, buttons and axes of the controllers and joysticks, with the deadzone, the curve and the inversion of each axis.

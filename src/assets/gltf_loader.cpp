@@ -3,7 +3,7 @@
 #include "r4/assets/model.h"
 
 #define CGLTF_IMPLEMENTATION
-#if defined(_MSC_VER)
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 #if defined(__GNUC__)
@@ -235,7 +235,7 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                     m.vertices[v].uv = {f[0], 1 - f[1]};
                 }
                 if (col && v < col->count) {
-                    int n = cgltf_num_components(col->type);
+                    int n = (int)cgltf_num_components(col->type);
                     f[3] = 1;
                     if (cgltf_accessor_read_float(col, v, f, n)) {
                         m.vertices[v].color = packColor(f, n);

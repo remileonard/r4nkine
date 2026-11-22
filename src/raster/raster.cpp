@@ -25,6 +25,12 @@ uint32_t mix(uint32_t a, uint32_t b, float t) {
     return rgba(m(0), m(8), m(16), m(24));
 }
 
+// the grey of a palette index (0..255), for an indexed source without a palette
+uint32_t greyOf(uint32_t i) {
+    const uint8_t v = (uint8_t)(i & 0xff);
+    return rgba(v, v, v);
+}
+
 } // namespace
 
 Palette Palette::vga() {
@@ -98,7 +104,7 @@ Palette Palette::vga() {
 Palette Palette::grey() {
     Palette p;
     for (int i = 0; i < 256; i++) {
-        p.colors[i] = rgba(i, i, i);
+        p.colors[i] = greyOf((uint32_t)i);
     }
     return p;
 }
@@ -589,7 +595,7 @@ void Surface::blit(const Surface &src, int dx, int dy, int sx, int sy, int sw, i
                 if (format_ == Format::INDEXED8) {
                     put(tx, ty, (c + colorOffset) & 0xff);
                 } else {
-                    put(tx, ty, palette ? palette->colors[(c + colorOffset) & 0xff] : rgba(c, c, c));
+                    put(tx, ty, palette ? palette->colors[(c + colorOffset) & 0xff] : greyOf(c));
                 }
             } else if (format_ == Format::RGBA8) {
                 put(tx, ty, c);
@@ -652,7 +658,7 @@ void Surface::blitScaled(const Surface &src, int dx, int dy, int dw, int dh, con
                 if ((int)c == src.transparentIndex) {
                     continue;
                 }
-                put(tx, ty, format_ == Format::INDEXED8 ? c : palette ? palette->colors[c] : rgba(c, c, c));
+                put(tx, ty, format_ == Format::INDEXED8 ? c : palette ? palette->colors[c] : greyOf(c));
             } else if (format_ == Format::RGBA8) {
                 put(tx, ty, c);
             } else if (palette && alpha(c) >= 128) {

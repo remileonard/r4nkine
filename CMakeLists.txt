@@ -18,6 +18,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(R4_BUILD_APPS "Build r4fly (needs SDL2)" ON)
 option(R4_BUILD_EXAMPLES "Build the examples (with R4_BUILD_APPS)" ON)
 option(R4_BUILD_TESTS "Build the tests" ON)
+option(R4_BUILD_XR "Build r4nkine_xr, virtual reality with OpenXR (the xr feature of the manifest)" ON)
 
 # the library: the GL functions are loaded at run time; glm (the math), stb
 # (the images) and cgltf (glTF) are header-only libraries of vcpkg
@@ -64,8 +65,32 @@ target_link_libraries(r4nkine PUBLIC glm::glm)
 target_compile_definitions(r4nkine PUBLIC GLM_FORCE_CTOR_INIT)
 if(MSVC)
     target_compile_options(r4nkine PRIVATE /W4)
+    # fopen and sscanf are the portable C functions: not the fopen_s of MSVC
+    target_compile_definitions(r4nkine PRIVATE _CRT_SECURE_NO_WARNINGS)
 else()
     target_compile_options(r4nkine PRIVATE -Wall -Wextra)
+endif()
+
+# r4::xr in its own library: only the programs that show VR need the OpenXR loader
+if(R4_BUILD_XR)
+    find_package(OpenXR CONFIG QUIET)
+endif()
+if(R4_BUILD_XR AND OpenXR_FOUND)
+    add_library(r4nkine_xr src/xr/xr_session.cpp)
+    add_library(r4nkine::r4nkine_xr ALIAS r4nkine_xr)
+    target_link_libraries(r4nkine_xr PUBLIC r4nkine PRIVATE OpenXR::headers OpenXR::openxr_loader)
+    if(WIN32)
+        # wglGetCurrentContext, for the binding of the session
+        target_link_libraries(r4nkine_xr PRIVATE opengl32)
+    endif()
+    if(MSVC)
+        target_compile_options(r4nkine_xr PRIVATE /W4)
+    else()
+        target_compile_options(r4nkine_xr PRIVATE -Wall -Wextra)
+    endif()
+    install(TARGETS r4nkine_xr EXPORT r4nkineTargets ARCHIVE DESTINATION lib LIBRARY DESTINATION lib)
+elseif(R4_BUILD_XR)
+    message(STATUS "r4nkine: OpenXR not found, no VR (the xr feature of vcpkg.json)")
 endif()
 
 if(R4_BUILD_APPS)
@@ -74,6 +99,10 @@ if(R4_BUILD_APPS)
     target_link_libraries(r4fly PRIVATE r4nkine
         $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>
         $<IF:$<TARGET_EXISTS:SDL2::SDL2>,SDL2::SDL2,SDL2::SDL2-static>)
+    if(TARGET r4nkine_xr)
+        target_link_libraries(r4fly PRIVATE r4nkine_xr)
+        target_compile_definitions(r4fly PRIVATE R4FLY_XR)
+    endif()
     # the examples of the README, built with the viewer (SDL2)
     if(R4_BUILD_EXAMPLES)
         foreach(example hello_model forest hierarchy ui_panel cockpit)

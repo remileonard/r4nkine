@@ -46,6 +46,14 @@
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
             }
+        },
+        {
+            "name": "macos-debug",
+            "displayName": "macOS, Debug",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
         }
     ],
     "buildPresets": [
@@ -70,6 +78,10 @@
         {
             "name": "macos",
             "configurePreset": "macos"
+        },
+        {
+            "name": "macos-debug",
+            "configurePreset": "macos-debug"
         }
     ],
     "testPresets": [

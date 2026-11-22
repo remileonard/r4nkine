@@ -82,6 +82,68 @@ static void testScene() {
     CHECK(!sw.isActive(0) && sw.isActive(1));
     sw.setValue(scene::Switch::kAll);
     CHECK(sw.isActive(0));
+    auto area = scene::make<scene::Trigger>();
+    area->setCylinder(10, 5);
+    area->setMatrix(translate({100, 0, 0}));
+    root->addChild(area);
+    std::vector<uint32_t> entered;
+    std::vector<uint32_t> left;
+    area->onEnter = [&](uint32_t id) {
+        entered.push_back(id);
+    };
+    area->onLeave = [&](uint32_t id) {
+        left.push_back(id);
+    };
+    scene::checkTriggers(*root, {{1, {105, 0, 2}}, {2, {100, 0, 6}}});
+    CHECK(entered.size() == 1 && entered[0] == 1 && left.empty());
+    scene::checkTriggers(*root, {{1, {120, 0, 2}}, {2, {100, 0, 4}}});
+    CHECK(entered.size() == 2 && entered[1] == 2 && left.size() == 1 && left[0] == 1);
+    scene::checkTriggers(*root, {});
+    CHECK(left.size() == 2 && area->inside().empty());
+    scene::Trigger sphere;
+    sphere.setSphere(2);
+    CHECK(sphere.contains({1, 1, 1}) && !sphere.contains({2, 2, 0}));
+    scene::Trigger box;
+    box.setBox({{-1, -2, 0}, {3, 4, 5}});
+    CHECK(box.contains({2, -1, 4}) && !box.contains({2, -3, 4}));
+    root->removeChild(area.get());
+    scene::Instancer trees;
+    std::vector<scene::Placement> placed;
+    for (int i = 0; i < 6; i++) {
+        scene::Placement p;
+        p.position = {(float)(i % 2) * 1000 + 10, (float)(i / 2) * 1000 + 20, 5};
+        p.scale = 1 + (float)i;
+        placed.push_back(p);
+    }
+    trees.setPlacements(placed);
+    const auto &cells = trees.cells();
+    CHECK(cells.size() == 6 && trees.placements().size() == 6);
+    uint32_t inCells = 0;
+    for (const auto &c : cells) {
+        inCells += c.end - c.begin;
+        CHECK(c.end - c.begin == 1 && near(c.maxScale, trees.placements()[c.begin].scale));
+    }
+    CHECK(inCells == 6);
+    std::vector<std::string> order;
+    a->setAppCallbacks(
+        [&](scene::Node &n) {
+            order.push_back("before " + n.name());
+        },
+        [&](scene::Node &n) {
+            order.push_back("after " + n.name());
+        });
+    a->setName("a");
+    b->setAppCallbacks([&](scene::Node &n) {
+        order.push_back("b");
+        n.setMatrix(translate({1, 0, 0}));
+    });
+    scene::app(*root);
+    CHECK(order.size() == 3 && order[0] == "before a" && order[1] == "b" && order[2] == "after a");
+    CHECK(near(b->matrix()[3].x, 1));
+    b->setAppMask(2);
+    order.clear();
+    scene::app(*root, 1);
+    CHECK(order.size() == 2);
     CHECK(root->findChild("x") == nullptr);
     b->setName("x");
     CHECK(root->findChild("x") == b);

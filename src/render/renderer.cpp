@@ -11,6 +11,7 @@ namespace {
 // the uniform blocks (std140): the slots and layouts the shaders share
 enum Slot : uint32_t {
     FRAME_SLOT = 0,
+    DRAW_SLOT = 1,
     MATERIAL_SLOT = 2
 };
 // the matrices of the instances: a vertex stream read once per instance
@@ -32,6 +33,13 @@ struct FrameBlock {
     float time[4];           // seconds
 };
 
+// for an item of placements: the matrices around the matrix of a placement, the up axis and the growth of the kept ones
+struct DrawBlock {
+    float world[16];
+    float local[16];
+    float up[4];
+};
+
 struct MaterialBlock {
     float diffuse[4];
     float ambient[4];
@@ -43,6 +51,26 @@ struct MaterialBlock {
     float textureMean[4];
     float animation[4]; // frames, frames per second, out of the fog
 };
+
+// the matrix of a placement in the vertex shader, as Instancer::matrixOf, grown by drawUp.w
+const char *kPlacementInputs = R"(layout(location = 4) in vec4 inPlace;
+layout(location = 5) in vec2 inScale;
+layout(std140) uniform Draw {
+    mat4 drawWorld;
+    mat4 drawLocal;
+    vec4 drawUp;
+};
+mat4 placementModel() {
+    vec3 u = drawUp.xyz;
+    float c = cos(inPlace.w);
+    float s = sin(inPlace.w);
+    mat3 r = mat3(c) + (1.0 - c) * outerProduct(u, u) + s * mat3(0.0, u.z, -u.y, -u.z, 0.0, u.x, u.y, -u.x, 0.0);
+    mat3 sc = mat3(inScale.x * drawUp.w) + (inScale.y - inScale.x) * drawUp.w * outerProduct(u, u);
+    mat4 m = mat4(r * sc);
+    m[3] = vec4(inPlace.xyz, 1.0);
+    return drawWorld * m * drawLocal;
+}
+)";
 
 const char *kVertexShader = R"(#version 330
 layout(std140) uniform Frame {
@@ -375,6 +403,16 @@ void copyVec(float *dst, Vec3 v, float w) {
     dst[3] = w;
 }
 
+// the vertex shader with the matrix of a placement instead of the stream of matrices
+std::string placementVertexShader() {
+    std::string v = kVertexShader;
+    const std::string inputs = "layout(location = 4) in vec4 inModel0;\nlayout(location = 5) in vec4 inModel1;\nlayout(location = 6) in vec4 inModel2;\nlayout(location = 7) in vec4 inModel3;\n";
+    v.replace(v.find(inputs), inputs.size(), kPlacementInputs);
+    const std::string model = "mat4 model = mat4(inModel0, inModel1, inModel2, inModel3);";
+    v.replace(v.find(model), model.size(), "mat4 model = placementModel();");
+    return v;
+}
+
 gpu::VertexLayout vertexLayout() {
     gpu::VertexStream s;
     s.stride = sizeof(assets::Vertex);
@@ -393,6 +431,19 @@ gpu::VertexLayout vertexLayout() {
     gpu::VertexLayout l;
     l.streams.push_back(s);
     l.streams.push_back(inst);
+    return l;
+}
+
+// the placements of a static instancer as the second stream: position and heading, scale and scale along the up axis
+gpu::VertexLayout placementLayout() {
+    static_assert(sizeof(scene::Placement) == 24, "the placements go to the GPU as they are");
+    gpu::VertexLayout l = vertexLayout();
+    gpu::VertexStream inst;
+    inst.stride = sizeof(scene::Placement);
+    inst.perInstance = true;
+    inst.attribs.push_back({4, 4, gpu::AttribType::FLOAT, false, 0});
+    inst.attribs.push_back({5, 2, gpu::AttribType::FLOAT, false, 16});
+    l.streams[1] = inst;
     return l;
 }
 
@@ -421,6 +472,10 @@ Renderer::~Renderer() {
     device_.destroyBuffer(frameUniforms_);
     device_.destroyBuffer(instanceBuffer_);
     device_.destroyShader(shader_);
+    device_.destroyShader(opaqueShader_);
+    device_.destroyShader(placementShader_);
+    device_.destroyShader(placementOpaqueShader_);
+    device_.destroyBuffer(drawUniforms_);
     device_.destroyPipeline(shadowPipeline_);
     device_.destroyShader(shadowShader_);
     device_.destroyRenderTarget(shadowMap_);
@@ -438,6 +493,21 @@ bool Renderer::createShaders() {
         error_ = device_.lastError();
         return false;
     }
+    std::string opaque = kFragmentShader;
+    for (size_t at = opaque.find("discard;"); at != std::string::npos; at = opaque.find("discard;", at)) {
+        opaque.replace(at, 8, ";");
+    }
+    d.fragment = opaque;
+    d.debugName = "phong without discard";
+    opaqueShader_ = device_.createShader(d);
+    gpu::ShaderDesc pd = d;
+    pd.vertex = placementVertexShader();
+    pd.uniformBlocks.push_back({"Draw", DRAW_SLOT});
+    pd.debugName = "placements without discard";
+    placementOpaqueShader_ = device_.createShader(pd);
+    pd.fragment = kFragmentShader;
+    pd.debugName = "placements";
+    placementShader_ = device_.createShader(pd);
     gpu::ShaderDesc sd;
     sd.vertex = kShadowVertex;
     sd.fragment = kShadowFragment;
@@ -445,13 +515,13 @@ bool Renderer::createShaders() {
     sd.debugName = "shadow";
     shadowShader_ = device_.createShader(sd);
     if (shadowShader_) {
-        gpu::PipelineDesc pd;
-        pd.shader = shadowShader_;
-        pd.layout = vertexLayout();
-        pd.cull = gpu::CullMode::NONE;
-        pd.polygonOffsetFactor = 2;
-        pd.polygonOffsetUnits = 4;
-        shadowPipeline_ = device_.createPipeline(pd);
+        gpu::PipelineDesc sp;
+        sp.shader = shadowShader_;
+        sp.layout = vertexLayout();
+        sp.cull = gpu::CullMode::NONE;
+        sp.polygonOffsetFactor = 2;
+        sp.polygonOffsetUnits = 4;
+        shadowPipeline_ = device_.createPipeline(sp);
     }
     if (!shadowPipeline_) {
         error_ = device_.lastError();
@@ -459,17 +529,20 @@ bool Renderer::createShaders() {
     return true;
 }
 
-gpu::PipelineHandle Renderer::pipelineFor(const assets::Material &m, assets::Primitive primitive) {
+gpu::PipelineHandle Renderer::pipelineFor(const MaterialInstance &mat, assets::Primitive primitive, bool placements) {
+    const assets::Material &m = mat.params;
+    // the discards of the shader: the alpha test, and the layers on a face that are not drawn without textures
+    const bool discards = m.alpha == assets::AlphaMode::MASK || m.alphaTest > 0 || m.depthEqual || mat.indexTexture || !opaqueShader_;
     bool blend = m.alpha == assets::AlphaMode::BLEND;
     bool additive = m.alpha == assets::AlphaMode::ADDITIVE;
-    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8 | (m.depthTest ? 0u : 1u << 16);
+    uint32_t key = (blend ? 1u : 0u) | (additive ? 32u : 0u) | (m.depthEqual ? 64u : 0u) | (m.blendDepthWrite ? 128u : 0u) | (m.doubleSided ? 2u : 0u) | (wireframe_ ? 4u : 0u) | (m.depthWrite ? 0u : 8u) | (m.decal ? 16u : 0u) | (uint32_t)primitive << 8 | (m.depthTest ? 0u : 1u << 16) | (discards ? 1u << 17 : 0u) | (placements ? 1u << 18 : 0u);
     auto it = pipelines_.find(key);
     if (it != pipelines_.end()) {
         return it->second;
     }
     gpu::PipelineDesc d;
-    d.shader = shader_;
-    d.layout = vertexLayout();
+    d.shader = placements ? (discards ? placementShader_ : placementOpaqueShader_) : discards ? shader_ : opaqueShader_;
+    d.layout = placements ? placementLayout() : vertexLayout();
     d.primitive = primitive == assets::Primitive::LINES ? gpu::Primitive::LINES : primitive == assets::Primitive::POINTS ? gpu::Primitive::POINTS : gpu::Primitive::TRIANGLES;
     bool tris = primitive == assets::Primitive::TRIANGLES;
     d.cull = m.doubleSided || wireframe_ || !tris ? gpu::CullMode::NONE : gpu::CullMode::BACK;
@@ -666,6 +739,27 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     return nodes[0];
 }
 
+void Renderer::addBulk(const scene::Drawable &d, uint32_t first, uint32_t count, Vec3 depthAt, Vec3 eye) {
+    if (!d.mesh || !d.mesh->indexCount) {
+        return;
+    }
+    MaterialInstance *mat = d.material ? d.material.get() : defaultMaterial_.get();
+    DrawItem item;
+    item.mesh = d.mesh.get();
+    item.material = mat;
+    item.world = Mat4(1.0f);
+    item.depth = length(depthAt - eye);
+    item.order = mat->params.drawOrder;
+    item.pipeline = pipelineFor(*mat, d.mesh->primitive);
+    item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
+    item.first = first;
+    item.count = count;
+    item.bulk = true;
+    bool behind = (mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE) && mat->params.drawOrder >= 0;
+    (behind ? transparent_ : opaque_).push_back(item);
+    stats_.drawables++;
+}
+
 void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     if (!d.mesh || !d.mesh->indexCount) {
         return;
@@ -678,11 +772,86 @@ void Renderer::addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye) {
     Vec3 c = transformPoint(world, d.mesh->bounds.center);
     item.depth = length(c - eye);
     item.order = mat->params.drawOrder;
-    item.pipeline = pipelineFor(mat->params, d.mesh->primitive);
+    item.pipeline = pipelineFor(*mat, d.mesh->primitive);
     item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
     bool behind = (mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE) && mat->params.drawOrder >= 0;
     (behind ? transparent_ : opaque_).push_back(item);
     stats_.drawables++;
+}
+
+namespace {
+
+// the placements of a static instancer on the GPU
+struct StaticPlacements {
+    gpu::BufferHandle buffer;
+    uint64_t version = 0;
+};
+
+} // namespace
+
+void Renderer::cullStatic(scene::Instancer &node, const Mat4 &world, Vec3 eye) {
+    const auto &levels = node.levels();
+    const std::vector<scene::Placement> &placements = node.placements();
+    auto *data = static_cast<StaticPlacements *>(node.renderData.get());
+    if (!data || data->version != node.version()) {
+        gpu::Device *dev = &device_;
+        auto made = std::shared_ptr<StaticPlacements>(new StaticPlacements, [dev](StaticPlacements *p) {
+            dev->destroyBuffer(p->buffer);
+            delete p;
+        });
+        made->buffer = device_.createBuffer(gpu::BufferUsage::VERTEX, placements.data(), placements.size() * sizeof(scene::Placement), false);
+        made->version = node.version();
+        data = made.get();
+        node.renderData = made;
+    }
+    const uint32_t count = (uint32_t)placements.size();
+    stats_.instancesVisited += count;
+    // the level and the thinning of the nearest point of the instancer
+    Sphere one;
+    for (const auto &l : levels) {
+        one.extend(l.bounds);
+    }
+    const Box &box = node.placementBox();
+    const Vec3 boxCenter = (box.min + box.max) * 0.5f;
+    const float radius = (length(box.max - boxCenter) + (length(one.center) + one.radius) * node.maxPlacementScale()) * maxScale(world);
+    const Vec3 center = transformPoint(world, boxCenter);
+    const float nearest = std::max(0.0f, length(center - eye) - radius) * options_.lodScale;
+    const int level = node.select(nearest);
+    if (level < 0) {
+        stats_.instancesCulled += count;
+        return;
+    }
+    float keep = 1;
+    if (node.thinFrom() > 0 && nearest > node.thinFrom()) {
+        keep = node.thinFrom() / nearest;
+        keep *= keep;
+    }
+    const uint32_t drawn = std::max(1u, (uint32_t)std::lround(count * keep));
+    stats_.instancesCulled += count - drawn;
+    // the kept ones grow so that the forest keeps its cover: their area times the part they stand for
+    const Vec4 up(node.up(), 1.0f / std::sqrt((float)drawn / (float)count));
+    for (const scene::InstancePart &part : levels[level].parts) {
+        const scene::Drawable &d = part.drawable;
+        if (!d.mesh || !d.mesh->indexCount) {
+            continue;
+        }
+        MaterialInstance *mat = d.material ? d.material.get() : defaultMaterial_.get();
+        DrawItem item;
+        item.mesh = d.mesh.get();
+        item.material = mat;
+        item.world = world;
+        item.local = part.local;
+        item.up = up;
+        item.placements = data->buffer;
+        item.count = drawn;
+        item.depth = length(center - eye);
+        item.order = mat->params.drawOrder;
+        item.pipeline = pipelineFor(*mat, d.mesh->primitive, true);
+        item.key = (uint64_t)item.pipeline.id << 48 | (uint64_t)(mat->id & 0xffffff) << 24 | (uint64_t)((uintptr_t)item.mesh >> 4 & 0xffffff);
+        bool behind = (mat->params.alpha == assets::AlphaMode::BLEND || mat->params.alpha == assets::AlphaMode::ADDITIVE) && mat->params.drawOrder >= 0;
+        (behind ? transparent_ : opaque_).push_back(item);
+        stats_.drawables++;
+    }
 }
 
 void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye) {
@@ -690,38 +859,98 @@ void Renderer::cullInstancer(scene::Instancer &node, const Mat4 &world, const Fr
     if (levels.empty()) {
         return;
     }
+    if (node.isStatic() && placementOpaqueShader_ && placementShader_) {
+        if (!node.placements().empty()) {
+            cullStatic(node, world, eye);
+        }
+        return;
+    }
     Sphere one;
     for (const auto &l : levels) {
         one.extend(l.bounds);
     }
-    auto visit = [&](const Mat4 &m) {
+    const float worldScale = maxScale(world);
+    instanceScratch_.clear();
+    Vec3 kept(0.0f);
+    auto keep = [&](int level, const Mat4 &w) {
+        instanceScratch_.push_back({level, w});
+        kept += Vec3(w[3]);
+    };
+    for (const Mat4 &m : node.instances()) {
         stats_.instancesVisited++;
         Mat4 w = world * m;
         Sphere s = one.transformed(w);
         if (!inside && frustum.test(s) == Frustum::Outside) {
             stats_.instancesCulled++;
-            return;
+            continue;
         }
         int level = node.select(length(s.center - eye) * options_.lodScale);
         if (level < 0) {
             stats_.instancesCulled++;
-            return;
-        }
-        for (const scene::InstancePart &p : levels[level].parts) {
-            addItem(p.drawable, w * p.local, eye);
-        }
-    };
-    for (const Mat4 &m : node.instances()) {
-        visit(m);
-    }
-    float reach = levels.back().maxDistance / std::max(options_.lodScale, 1e-6f) + one.radius * maxScale(world) * 4;
-    for (const scene::Placement &p : node.placements()) {
-        if (length(transformPoint(world, p.position) - eye) > reach) {
-            stats_.instancesVisited++;
-            stats_.instancesCulled++;
             continue;
         }
-        visit(node.matrixOf(p));
+        keep(level, w);
+    }
+    // the placements by cell: a cell out of reach or of the view is skipped whole; in the view, its placements are not tested;
+    // in one level of detail, the level of its placements is not chosen
+    const float reach = levels.back().maxDistance / std::max(options_.lodScale, 1e-6f);
+    const float extent = length(one.center) + one.radius;
+    const std::vector<scene::Placement> &placements = node.placements();
+    for (const scene::Instancer::Cell &cell : node.cells()) {
+        const uint32_t n = cell.end - cell.begin;
+        stats_.instancesVisited += n;
+        const Vec3 boxCenter = (cell.box.min + cell.box.max) * 0.5f;
+        const float boxRadius = length(cell.box.max - boxCenter);
+        const Sphere s{transformPoint(world, boxCenter), (boxRadius + extent * cell.maxScale) * worldScale};
+        const float d = length(s.center - eye);
+        if (d - s.radius > reach) {
+            stats_.instancesCulled += n;
+            continue;
+        }
+        Frustum::Result test = inside ? Frustum::Inside : frustum.test(s);
+        if (test == Frustum::Outside) {
+            stats_.instancesCulled += n;
+            continue;
+        }
+        const int nearLevel = node.select(std::max(0.0f, d - s.radius) * options_.lodScale);
+        const int farLevel = node.select((d + s.radius) * options_.lodScale);
+        if (nearLevel < 0) {
+            stats_.instancesCulled += n;
+            continue;
+        }
+        for (uint32_t i = cell.begin; i < cell.end; i++) {
+            const scene::Placement &p = placements[i];
+            // before its matrix: its sphere from its position and its scale
+            const Vec3 at = transformPoint(world, p.position);
+            if (test != Frustum::Inside && frustum.test({at, extent * std::max(p.scale, p.scaleUp) * worldScale}) == Frustum::Outside) {
+                stats_.instancesCulled++;
+                continue;
+            }
+            const int level = nearLevel == farLevel ? nearLevel : node.select(length(at - eye) * options_.lodScale);
+            if (level < 0) {
+                stats_.instancesCulled++;
+                continue;
+            }
+            keep(level, world * node.matrixOf(p));
+        }
+    }
+    if (instanceScratch_.empty()) {
+        return;
+    }
+    // one item for each part of each level, with the matrices of its instances; their mean position for the sort
+    const Vec3 depthAt = kept / (float)instanceScratch_.size();
+    for (int level = 0; level < (int)levels.size(); level++) {
+        for (const scene::InstancePart &part : levels[level].parts) {
+            const uint32_t first = (uint32_t)bulk_.size();
+            for (const auto &[l, w] : instanceScratch_) {
+                if (l == level) {
+                    bulk_.push_back(w * part.local);
+                }
+            }
+            if (bulk_.size() > first) {
+                addBulk(part.drawable, first, (uint32_t)bulk_.size() - first, depthAt, eye);
+            }
+        }
     }
 }
 
@@ -781,6 +1010,7 @@ void Renderer::cull(scene::Node &node, const Mat4 &parent, const Frustum &frustu
 void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int width, int height) {
     stats_ = {};
     opaque_.clear();
+    bulk_.clear();
     transparent_.clear();
     if (!shader_) {
         return;
@@ -809,7 +1039,10 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         });
     }
     for (DrawItem &it : transparent_) {
-        it.depth = length(transformPoint(it.world, it.mesh->bounds.center) - cam.position);
+        // an item of instances keeps the depth of their mean position
+        if (!it.bulk && !it.placements) {
+            it.depth = length(transformPoint(it.world, it.mesh->bounds.center) - cam.position);
+        }
     }
     std::sort(transparent_.begin(), transparent_.end(), [](const DrawItem &a, const DrawItem &b) {
         return a.order != b.order ? a.order < b.order : a.depth > b.depth;
@@ -831,7 +1064,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         auto casts = [](const DrawItem &it) {
             const assets::Material &m = it.material->params;
             bool solid = m.alpha == assets::AlphaMode::NONE || m.alpha == assets::AlphaMode::MASK || (m.alpha == assets::AlphaMode::BLEND && m.blendDepthWrite);
-            return m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::TRIANGLES;
+            // the placements of the static instancers cast no shadow
+            return !it.placements && m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::TRIANGLES;
         };
         for (size_t i = o; i < opaque_.size(); i++) {
             if (casts(opaque_[i])) {
@@ -887,12 +1121,50 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.shadowParams2[0] = 1.0f / (float)std::max(1, shadowMapSize_);
     device_.updateBuffer(frameUniforms_, 0, &fb, sizeof fb);
 
-    size_t count = opaque_.size() + transparent_.size() + casters_.size();
-    instanceData_.resize(std::max<size_t>(count, 1) * 16);
-    size_t k = 0;
+    size_t count = 0;
     for (auto *list : {&opaque_, &transparent_, &casters_}) {
         for (const DrawItem &it : *list) {
-            std::memcpy(&instanceData_[16 * k++], dataOf(it.world), 64);
+            count += it.placements ? 0 : it.count;
+        }
+    }
+    instanceData_.resize(std::max<size_t>(count, 1) * 16);
+    // the Draw block of each item of placements
+    const size_t drawStride = (sizeof(DrawBlock) + device_.limits().uniformBufferAlignment - 1) / device_.limits().uniformBufferAlignment * device_.limits().uniformBufferAlignment;
+    drawData_.clear();
+    for (auto *list : {&opaque_, &transparent_}) {
+        for (DrawItem &it : *list) {
+            if (!it.placements) {
+                continue;
+            }
+            it.drawOffset = (uint32_t)drawData_.size();
+            drawData_.resize(drawData_.size() + drawStride);
+            DrawBlock *b = reinterpret_cast<DrawBlock *>(&drawData_[it.drawOffset]);
+            copyMat(b->world, it.world);
+            copyMat(b->local, it.local);
+            copyVec(b->up, Vec3(it.up), it.up.w);
+        }
+    }
+    if (!drawData_.empty()) {
+        if (drawData_.size() > drawCapacity_) {
+            device_.destroyBuffer(drawUniforms_);
+            drawCapacity_ = std::max(drawData_.size(), drawCapacity_ * 2);
+            drawUniforms_ = device_.createBuffer(gpu::BufferUsage::UNIFORM, nullptr, drawCapacity_, true);
+        }
+        device_.updateBuffer(drawUniforms_, 0, drawData_.data(), drawData_.size());
+    }
+    size_t k = 0;
+    for (auto *list : {&opaque_, &transparent_, &casters_}) {
+        for (DrawItem &it : *list) {
+            if (it.placements) {
+                continue;
+            }
+            it.offset = (uint32_t)k;
+            if (it.bulk) {
+                std::memcpy(&instanceData_[16 * k], dataOf(bulk_[it.first]), 64 * (size_t)it.count);
+            } else {
+                std::memcpy(&instanceData_[16 * k], dataOf(it.world), 64);
+            }
+            k += it.count;
         }
     }
     size_t bytes = instanceData_.size() * sizeof(float);
@@ -905,7 +1177,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     auto t3 = clock::now();
 
     if (shadows) {
-        drawShadows(opaque_.size() + transparent_.size());
+        drawShadows();
     }
     gpu::ClearValues clear;
     clear.r = env_.clearColor.x;
@@ -921,13 +1193,14 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     }
     const GpuMesh *lastMesh = nullptr;
     const MaterialInstance *lastMaterial = nullptr;
-    size_t base = 0;
     for (auto *list : {&opaque_, &transparent_}) {
         const std::vector<DrawItem> &items = *list;
         for (size_t i = 0; i < items.size();) {
             const DrawItem &it = items[i];
             size_t j = i + 1;
-            while (options_.instancing && j < items.size() && items[j].mesh == it.mesh && items[j].material == it.material && items[j].pipeline == it.pipeline) {
+            uint32_t instances = it.count;
+            while (!it.placements && options_.instancing && j < items.size() && !items[j].placements && items[j].mesh == it.mesh && items[j].material == it.material && items[j].pipeline == it.pipeline) {
+                instances += items[j].count;
                 j++;
             }
             device_.bindPipeline(it.pipeline);
@@ -944,11 +1217,15 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
                 device_.bindIndexBuffer(it.mesh->indices, gpu::IndexType::U32);
                 lastMesh = it.mesh;
             }
-            device_.bindVertexBuffer(1, instanceBuffer_, (base + i) * kInstanceStride);
-            device_.drawIndexed(it.mesh->indexCount, 0, 0, (uint32_t)(j - i));
+            if (it.placements) {
+                device_.bindUniformBuffer(DRAW_SLOT, drawUniforms_, it.drawOffset, sizeof(DrawBlock));
+                device_.bindVertexBuffer(1, it.placements, 0);
+            } else {
+                device_.bindVertexBuffer(1, instanceBuffer_, (size_t)it.offset * kInstanceStride);
+            }
+            device_.drawIndexed(it.mesh->indexCount, 0, 0, instances);
             i = j;
         }
-        base += items.size();
     }
     device_.endPass();
     stats_.gpu = device_.takeStats();
@@ -1004,7 +1281,7 @@ bool Renderer::shadowView(const Camera &cam, Mat4 &lightViewProj, float &texel) 
     return true;
 }
 
-void Renderer::drawShadows(size_t base) {
+void Renderer::drawShadows() {
     gpu::ClearValues clear;
     clear.color = false;
     device_.beginPass(shadowMap_, 0, 0, shadowMapSize_, shadowMapSize_, clear);
@@ -1014,7 +1291,9 @@ void Renderer::drawShadows(size_t base) {
     for (size_t i = 0; i < casters_.size();) {
         const DrawItem &it = casters_[i];
         size_t j = i + 1;
+        uint32_t instances = it.count;
         while (options_.instancing && j < casters_.size() && casters_[j].mesh == it.mesh) {
+            instances += casters_[j].count;
             j++;
         }
         if (it.mesh != lastMesh) {
@@ -1022,8 +1301,8 @@ void Renderer::drawShadows(size_t base) {
             device_.bindIndexBuffer(it.mesh->indices, gpu::IndexType::U32);
             lastMesh = it.mesh;
         }
-        device_.bindVertexBuffer(1, instanceBuffer_, (base + i) * kInstanceStride);
-        device_.drawIndexed(it.mesh->indexCount, 0, 0, (uint32_t)(j - i));
+        device_.bindVertexBuffer(1, instanceBuffer_, (size_t)it.offset * kInstanceStride);
+        device_.drawIndexed(it.mesh->indexCount, 0, 0, instances);
         i = j;
     }
     device_.endPass();
