@@ -18,6 +18,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(R4_BUILD_APPS "Build r4fly (needs SDL2)" ON)
 option(R4_BUILD_EXAMPLES "Build the examples (with R4_BUILD_APPS)" ON)
 option(R4_BUILD_TESTS "Build the tests" ON)
+option(R4_WITH_ASSIMP "Read the other model formats with Assimp (FBX, COLLADA, 3DS, LWO, PLY, STL...)" ON)
 option(R4_BUILD_XR "Build r4nkine_xr, virtual reality with OpenXR (the xr feature of the manifest)" ON)
 
 # the library: the GL functions are loaded at run time; glm (the math), stb
@@ -46,6 +47,7 @@ add_library(r4nkine
     src/assets/image_stb.cpp
     src/assets/upscale.cpp
     src/assets/gltf_loader.cpp
+    src/assets/assimp_loader.cpp
     src/scene/node.cpp
     src/render/renderer.cpp
     src/ui/ui.cpp
@@ -63,6 +65,17 @@ target_include_directories(r4nkine PRIVATE ${Stb_INCLUDE_DIR} ${CGLTF_INCLUDE_DI
 # glm in the interface; its vectors at zero and matrices at the identity
 target_link_libraries(r4nkine PUBLIC glm::glm)
 target_compile_definitions(r4nkine PUBLIC GLM_FORCE_CTOR_INIT)
+# Assimp, a vcpkg port (the feature "assimp" of the manifest); without it, loadModel reads only the formats of R4nkine
+if(R4_WITH_ASSIMP)
+    find_package(assimp CONFIG QUIET)
+    if(assimp_FOUND)
+        target_link_libraries(r4nkine PRIVATE assimp::assimp)
+        target_compile_definitions(r4nkine PRIVATE R4_HAVE_ASSIMP)
+        message(STATUS "r4nkine: Assimp ${assimp_VERSION} for the other model formats")
+    else()
+        message(STATUS "r4nkine: Assimp not found, the other model formats are not read (vcpkg feature assimp)")
+    endif()
+endif()
 if(MSVC)
     target_compile_options(r4nkine PRIVATE /W4)
     # fopen and sscanf are the portable C functions: not the fopen_s of MSVC

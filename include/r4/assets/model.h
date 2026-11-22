@@ -178,5 +178,9 @@ std::shared_ptr<Model> loadGSet(const std::string &path, std::string *error);
 std::shared_ptr<Model> loadFLT(const std::string &path, std::string *error);
 // glTF 2.0 (.gltf, .glb)
 std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error);
+// the other formats, read by Assimp when R4nkine is built with it (R4_WITH_ASSIMP); loadModel uses it for the extensions without a loader
+std::shared_ptr<Model> loadAssimp(const std::string &path, std::string *error);
+// the extensions Assimp reads; empty without Assimp
+std::vector<std::string> assimpExtensions();
 
 } // namespace r4::assets

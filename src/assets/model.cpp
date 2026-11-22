@@ -184,7 +184,14 @@ static std::string extensionOf(const std::string &path) {
 }
 
 std::vector<std::string> modelExtensions() {
-    return {"obj", "d", "ydl", "defs", "bin", "pfb", "dwb", "gset", "flt", "gltf", "glb"};
+    std::vector<std::string> own{"obj", "d", "ydl", "defs", "bin", "pfb", "dwb", "gset", "flt", "gltf", "glb"};
+    std::vector<std::string> all = own;
+    for (const std::string &e : assimpExtensions()) {
+        if (std::find(own.begin(), own.end(), e) == own.end()) {
+            all.push_back(e);
+        }
+    }
+    return all;
 }
 
 std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
@@ -216,10 +223,8 @@ std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
     if (ext == "gltf" || ext == "glb") {
         return loadGLTF(path, error);
     }
-    if (error) {
-        *error = "unknown model format: " + path;
-    }
-    return nullptr;
+    // the formats without a loader of R4nkine
+    return loadAssimp(path, error);
 }
 
 static bool readFile(const std::string &path, std::vector<uint8_t> &data) {

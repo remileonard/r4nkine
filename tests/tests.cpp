@@ -222,7 +222,8 @@ static void testLoaders(const std::string &dir) {
 static void testLegacyFormats(const std::string &dir) {
     std::string err;
     auto ext = assets::modelExtensions();
-    CHECK(ext.size() == 11);
+    // the 11 formats of R4nkine first, then those of Assimp when it is there
+    CHECK(ext.size() >= 11 && ext[0] == "obj" && ext[10] == "glb");
 
     auto d = assets::loadModel(dir + "/plane.d", &err);
     CHECK(d != nullptr);
@@ -530,6 +531,32 @@ static void testPlacements() {
     CHECK(inst.count() == 2);
 }
 
+// the other formats, when R4nkine is built with Assimp
+static void testAssimp(const std::string &dir) {
+    std::vector<std::string> ext = assets::assimpExtensions();
+    if (ext.empty()) {
+        std::string err;
+        CHECK(!assets::loadModel(dir + "/quad.ply", &err) && !err.empty());
+        return;
+    }
+    CHECK(std::find(ext.begin(), ext.end(), "fbx") != ext.end());
+    std::vector<std::string> all = assets::modelExtensions();
+    CHECK(std::count(all.begin(), all.end(), "obj") == 1);
+    std::string err;
+    auto m = assets::loadModel(dir + "/quad.ply", &err);
+    CHECK(m != nullptr);
+    if (!m) {
+        std::printf("  %s\n", err.c_str());
+        return;
+    }
+    CHECK(m->meshes.size() == 1 && m->meshes[0].vertices.size() == 4 && m->meshes[0].indices.size() == 6);
+    CHECK(m->meshes[0].material >= 0 && m->materials[m->meshes[0].material].vertexColors);
+    CHECK(m->meshes[0].vertices[0].color == 0xff0000ffu);
+    // Y up turned to Z up at the root: the quad in the XY plane of the file stands in the XZ plane
+    Box b = m->bounds();
+    CHECK(near(b.min, {0, 0, 0}) && near(b.max, {1, 0, 1}));
+}
+
 int main(int argc, char **argv) {
     std::string dir = argc > 1 ? argv[1] : "tests/data";
     testMath();
@@ -541,6 +568,7 @@ int main(int argc, char **argv) {
     testLoaders(dir);
     testLegacyFormats(dir);
     testStep2(dir);
+    testAssimp(dir);
     testRaster();
     std::printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;

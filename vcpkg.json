@@ -10,12 +10,19 @@
   ],
   "default-features": [
     "viewer",
+    "assimp",
     {
       "name": "xr",
       "platform": "windows"
     }
   ],
   "features": {
+    "assimp": {
+      "description": "the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL...) read by Assimp",
+      "dependencies": [
+        "assimp"
+      ]
+    },
     "viewer": {
       "description": "r4fly, the model viewer (SDL2)",
       "dependencies": [

@@ -31,6 +31,7 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   | OpenFlight | `.flt` | 11, 12 and 14.2: palettes, subfaces, LOD, external references, `.attr` |
   | line drawings | `.gset` | the head-up display of Mekton |
   | glTF 2.0 | `.gltf`, `.glb` | today's assets (cgltf) |
+  | the others | `.fbx`, `.dae`, `.3ds`, `.lwo`, `.ply`, `.stl`, `.x`, `.blend`, `.ac`, `.md2`... | every format of [Assimp](https://github.com/assimp/assimp) that R4nkine does not read itself (`assimp` feature) |
 
   The image formats are **SGI** (`.rgb`, `.rgba`, `.bw`, `.int`, `.inta`; RLE
   or verbatim, 8 or 16 bits), **PPM/PGM**, the scrambled **5551E**
@@ -165,6 +166,7 @@ mode (`vcpkg.json`):
 | stb | the PNG, JPEG, BMP, TGA and GIF images | always |
 | cgltf | glTF 2.0 | always |
 | SDL2 | r4fly, the viewer | `viewer` (default) |
+| Assimp | the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL, X, Blender...) | `assimp` (default); without it, `loadModel` reads only the formats above |
 | OpenXR loader | `r4nkine_xr`, virtual reality (`r4/xr/xr.h`) | `xr` (default on Windows) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
