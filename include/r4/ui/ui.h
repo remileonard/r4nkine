@@ -86,7 +86,8 @@ public:
     bool wantsKeyboard() const;
 
     // a column of widgets with a title bar, scrolled by the wheel
-    void beginPanel(const char *id, Rect r, const char *title = nullptr);
+    // open: with a title, a cross at its right sets it to false
+    void beginPanel(const char *id, Rect r, const char *title = nullptr, bool *open = nullptr);
     void endPanel();
     // n widgets per row
     void columns(int n);

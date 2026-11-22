@@ -41,6 +41,9 @@ const Color kTextOff = Color::rgb(0.45f, 0.45f, 0.45f);
 const Color kWhite = Color::rgb(1, 1, 1);
 const Color kHeader = Color::rgb(0.42f, 0.42f, 0.5f);
 const Color kMenuFace = Color::rgb(0.85f, 0.85f, 0.88f);
+// the tabs: the selected one in the color of the panel, open on it; the others as the headers of the sections
+const Color kTabOff = Color::rgb(0.36f, 0.36f, 0.44f);
+const Color kTabHot = Color::rgb(0.48f, 0.48f, 0.57f);
 
 constexpr float kRowH = 21;
 constexpr float kGap = 3;
@@ -262,6 +265,16 @@ struct Context::Impl {
         verts.push_back({x1, y1, whiteU, whiteV, c});
         verts.push_back({x2, y2, whiteU, whiteV, c});
         cmds.back().count += 3;
+    }
+    // a line of one point from (x0, y0) to (x1, y1)
+    void quadAlong(float x0, float y0, float x1, float y1, Color c) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float len = std::max(1e-3f, std::sqrt(dx * dx + dy * dy));
+        float nx = -dy / len * 0.5f;
+        float ny = dx / len * 0.5f;
+        triangle(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c);
+        triangle(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c);
     }
     // the relief of pfuGUI: light top and left, dark bottom and right
     void bevel(Rect r, bool sunken) {
@@ -609,7 +622,7 @@ bool Context::wantsMouse() const {
     return false;
 }
 
-void Context::beginPanel(const char *id, Rect r, const char *title) {
+void Context::beginPanel(const char *id, Rect r, const char *title, bool *open) {
     Impl &s = *d;
     s.panelId = hashOf(id, 2166136261u);
     s.ps = &s.panels[s.panelId];
@@ -624,6 +637,35 @@ void Context::beginPanel(const char *id, Rect r, const char *title) {
         s.box(t, kDark, true);
         s.textIn(t, 6, title, kYellow, Font::BOLD);
         top = t.y + t.h + 1;
+        if (open) {
+            // the cross: closes on a click released over it
+            Rect x{t.x + t.w - t.h + 2, t.y + 2, t.h - 4, t.h - 4};
+            uint32_t closeId = hashOf("close", s.panelId);
+            bool over = s.menuId == 0 && x.contains(s.in.mouseX, s.in.mouseY);
+            if (over) {
+                s.hot = closeId;
+            }
+            if (over && s.pressed && s.active == 0) {
+                s.active = closeId;
+                s.pressed = false;
+            }
+            if (s.active == closeId && s.released) {
+                s.active = 0;
+                if (over) {
+                    *open = false;
+                }
+            }
+            s.box(x, over ? kFaceHot : kFace, s.active == closeId && over);
+            const float m = std::floor(x.h * 0.3f);
+            const float x0 = x.x + m;
+            const float y0 = x.y + m;
+            const float x1 = x.x + x.w - m;
+            const float y1 = x.y + x.h - m;
+            for (float k = 0; k < 2; k += 1) {
+                s.quadAlong(x0 + k, y0, x1 + k, y1, kText);
+                s.quadAlong(x1 + k - 1, y0, x0 + k - 1, y1, kText);
+            }
+        }
     }
     s.clip = {r.x + 1, top, r.w - 2, r.y + r.h - 1 - top};
     if (s.menuId == 0 && s.in.wheel != 0 && s.clip.contains(s.in.mouseX, s.in.mouseY)) {
@@ -912,22 +954,33 @@ bool Context::tabs(const char *id, int &selected, const std::vector<std::string>
     Impl &s = *d;
     int saveCols = s.cols;
     columns(1);
-    Rect r = s.next(kRowH + 2);
+    Rect r = s.next(kRowH + 3);
     bool changed = false;
     const size_t n = std::max<size_t>(1, names.size());
+    const float tabH = kRowH;
     for (size_t i = 0; i < names.size(); i++) {
         float x0 = std::floor(r.x + r.w * i / n);
         float x1 = std::floor(r.x + r.w * (i + 1) / n);
-        Rect t{x0, r.y, x1 - x0 - (i + 1 < names.size() ? 1.0f : 0.0f), r.h};
+        Rect t{x0, r.y, x1 - x0 - (i + 1 < names.size() ? 1.0f : 0.0f), tabH};
         uint32_t tab = hashOf(names[i].c_str(), s.idOf(id));
         if (s.behave(tab, t, true) && selected != (int)i) {
             selected = (int)i;
             changed = true;
         }
-        if (s.visible(t)) {
+        if (s.visible(r)) {
             const bool on = selected == (int)i;
-            s.box(t, on ? kFace : s.hot == tab ? kFaceHot : kFacePressed, !on);
-            s.textIn(t, 0, names[i].c_str(), on ? kText : kTextOff, on ? Font::BOLD : Font::REGULAR, true);
+            if (on) {
+                // in the color of the panel, down to the line under the tabs: the tab opens on its widgets
+                s.fill({t.x, t.y, t.w, r.h}, kPanel);
+                s.fill({t.x, t.y, t.w, 1}, kHigh);
+                s.fill({t.x, t.y, 1, r.h}, kHigh);
+                s.fill({t.x + t.w - 1, t.y, 1, r.h}, kLow);
+                s.textIn(t, 0, names[i].c_str(), kText, Font::BOLD, true);
+            } else {
+                s.fill(t, s.hot == tab ? kTabHot : kTabOff);
+                s.fill({t.x, t.y + t.h, t.w, r.h - t.h}, kHeader);
+                s.textIn(t, 0, names[i].c_str(), kWhite, Font::REGULAR, true);
+            }
         }
     }
     columns(saveCols);
