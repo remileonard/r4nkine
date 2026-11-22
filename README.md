@@ -138,7 +138,7 @@ The code that connects
 libRealSpace, on its `r4nkine` branch: `r4bridge` (an `RSEntity` as an
 `r4::assets::Model`), `r4game` (the game drawn by R4nkine), `r4objviewer` (a
 viewer of the 3D objects of the game) and `neosc_r4`. Its README
-(`README_R4NKINE.md`, in French) is there too.
+(`README_R4NKINE.md`) is there too.
 
 The **libRealSpace viewer** workflow (on demand, or `[viewer]` in a commit
 message) builds `r4objviewer.exe` for Windows:
