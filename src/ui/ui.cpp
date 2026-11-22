@@ -161,6 +161,63 @@ struct Context::Impl {
     int menuChoice = -1; // chosen this frame, given at the next call
     uint32_t menuChoiceId = 0;
 
+    // the text field that has the focus: its text while it is edited, the caret (a byte of it), and if it was drawn this frame
+    uint32_t focus = 0;
+    std::string edit;
+    size_t caret = 0;
+    bool focusDrawn = false;
+
+    // a list that a press on r opens; the item chosen comes back at the next call; true when it changed selected
+    bool dropdown(uint32_t id, Rect r, int &selected, const std::vector<std::string> &items, bool enabled) {
+        bool changed = false;
+        if (menuChoiceId == id && menuChoice >= 0) {
+            changed = selected != menuChoice;
+            selected = menuChoice;
+            menuChoiceId = 0;
+            menuChoice = -1;
+        }
+        bool over = hover(r);
+        if (over) {
+            hot = id;
+        }
+        if (enabled && over && pressed && active == 0 && !items.empty()) {
+            // smaller items when the list is higher than the window
+            float ih = std::min(std::max(18.0f, r.h * 0.9f), (float)height / (float)items.size());
+            float h = ih * items.size();
+            float y = r.y + r.h;
+            if (y + h > height) {
+                y = std::max(0.0f, r.y - h);
+            }
+            if (y + h > height) {
+                y = 0;
+            }
+            menuId = id;
+            menuRect = {r.x, y, std::max(r.w, 120.0f), h};
+            menuItems = items;
+            menuSelected = selected;
+            pressed = false;
+        }
+        return changed;
+    }
+    // the box of a closed list: the text and the arrow
+    void dropdownBox(uint32_t id, Rect r, const std::string &t, bool enabled) {
+        bool open = menuId == id;
+        box(r, open ? kFacePressed : hot == id && enabled ? kFaceHot : kFace, open);
+        float a = std::floor(r.h * 0.2f);
+        textIn({r.x, r.y, r.w - 2 * a - 6, r.h}, 5, t.c_str(), enabled ? kText : kTextOff);
+        float cx = r.x + r.w - a - 6;
+        float cy = r.y + r.h * 0.5f;
+        triangle(cx - a, cy - a * 0.5f, cx + a, cy - a * 0.5f, cx, cy + a * 0.6f, enabled ? kText : kTextOff);
+    }
+    // the label of a row with a widget on its right
+    Rect labelled(Rect r, const char *label) {
+        Rect left{r.x, r.y, std::floor(r.w * 0.45f), r.h};
+        if (visible(r)) {
+            textIn(left, 2, shown(label).c_str(), kText);
+        }
+        return {left.x + left.w + kGap, r.y, r.w - left.w - kGap, r.h};
+    }
+
     explicit Impl(gpu::Device &dev) : device(dev) {
     }
 
@@ -440,6 +497,7 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
     s.hot = 0;
     s.lastPanelRects = s.panelRects;
     s.panelRects.clear();
+    s.focusDrawn = false;
 
     if (s.menuId) {
         bool inList = s.menuRect.contains(input.mouseX, input.mouseY);
@@ -462,6 +520,10 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
 
 void Context::endFrame() {
     Impl &s = *d;
+    // a field that is not drawn any more (a closed section, another tab) loses the focus
+    if (s.focus && !s.focusDrawn) {
+        s.focus = 0;
+    }
     if (!s.menuId) {
         return;
     }
@@ -528,6 +590,10 @@ void Context::render() {
     }
     dev.clearScissor();
     dev.endPass();
+}
+
+bool Context::wantsKeyboard() const {
+    return d->focus != 0;
 }
 
 bool Context::wantsMouse() const {
@@ -721,43 +787,150 @@ bool Context::menu(const char *label, int &selected, const std::vector<std::stri
     Impl &s = *d;
     Rect r = s.next(kRowH);
     uint32_t id = s.idOf(label);
-    bool changed = false;
-    if (s.menuChoiceId == id && s.menuChoice >= 0) {
-        changed = selected != s.menuChoice;
-        selected = s.menuChoice;
-        s.menuChoiceId = 0;
-        s.menuChoice = -1;
-    }
-    bool over = s.hover(r);
-    if (over) {
-        s.hot = id;
-    }
-    if (enabled && over && s.pressed && s.active == 0 && !items.empty()) {
-        float ih = std::max(18.0f, r.h * 0.9f);
-        float h = ih * items.size();
-        float y = r.y + r.h;
-        if (y + h > s.height) {
-            y = std::max(0.0f, r.y - h);
-        }
-        s.menuId = id;
-        s.menuRect = {r.x, y, std::max(r.w, 120.0f), h};
-        s.menuItems = items;
-        s.menuSelected = selected;
-        s.pressed = false;
-    }
+    bool changed = s.dropdown(id, r, selected, items, enabled);
     if (s.visible(r)) {
-        bool open = s.menuId == id;
-        s.box(r, open ? kFacePressed : s.hot == id && enabled ? kFaceHot : kFace, open);
         std::string t = shown(label);
         if (selected >= 0 && selected < (int)items.size()) {
             t += (t.empty() ? "" : ": ") + items[selected];
         }
-        float a = std::floor(r.h * 0.2f);
-        s.textIn({r.x, r.y, r.w - 2 * a - 6, r.h}, 5, t.c_str(), enabled ? kText : kTextOff);
-        float cx = r.x + r.w - a - 6;
-        float cy = r.y + r.h * 0.5f;
-        s.triangle(cx - a, cy - a * 0.5f, cx + a, cy - a * 0.5f, cx, cy + a * 0.6f, enabled ? kText : kTextOff);
+        s.dropdownBox(id, r, t, enabled);
     }
+    return changed;
+}
+
+bool Context::select(const char *label, int &selected, const std::vector<std::string> &items, bool enabled) {
+    Impl &s = *d;
+    Rect r = s.next(kRowH);
+    uint32_t id = s.idOf(label);
+    Rect box = s.labelled(r, label);
+    bool changed = s.dropdown(id, box, selected, items, enabled);
+    if (s.visible(r)) {
+        s.dropdownBox(id, box, selected >= 0 && selected < (int)items.size() ? items[selected] : std::string(), enabled);
+    }
+    return changed;
+}
+
+namespace {
+
+// the start of the UTF-8 character before the byte at, after it
+size_t previousChar(const std::string &t, size_t at) {
+    while (at > 0) {
+        at--;
+        if (((unsigned char)t[at] & 0xc0) != 0x80) {
+            break;
+        }
+    }
+    return at;
+}
+
+size_t nextChar(const std::string &t, size_t at) {
+    if (at < t.size()) {
+        at++;
+    }
+    while (at < t.size() && ((unsigned char)t[at] & 0xc0) == 0x80) {
+        at++;
+    }
+    return at;
+}
+
+} // namespace
+
+bool Context::inputText(const char *label, std::string &text, bool enabled) {
+    Impl &s = *d;
+    Rect r = s.next(kRowH);
+    uint32_t id = s.idOf(label);
+    Rect field = s.labelled(r, label);
+    bool over = s.hover(field);
+    if (over) {
+        s.hot = id;
+    }
+    bool changed = false;
+    if (s.focus == id) {
+        s.focusDrawn = true;
+        bool keep = s.pressed && !over;
+        bool cancel = !enabled;
+        if (!s.in.text.empty()) {
+            s.edit.insert(s.caret, s.in.text);
+            s.caret += s.in.text.size();
+        }
+        for (Key k : s.in.keys) {
+            if (k == Key::BACKSPACE && s.caret > 0) {
+                size_t from = previousChar(s.edit, s.caret);
+                s.edit.erase(from, s.caret - from);
+                s.caret = from;
+            } else if (k == Key::DELETE_FORWARD && s.caret < s.edit.size()) {
+                s.edit.erase(s.caret, nextChar(s.edit, s.caret) - s.caret);
+            } else if (k == Key::LEFT) {
+                s.caret = previousChar(s.edit, s.caret);
+            } else if (k == Key::RIGHT) {
+                s.caret = nextChar(s.edit, s.caret);
+            } else if (k == Key::HOME) {
+                s.caret = 0;
+            } else if (k == Key::END) {
+                s.caret = s.edit.size();
+            } else if (k == Key::ENTER) {
+                keep = true;
+            } else if (k == Key::ESCAPE) {
+                cancel = true;
+            }
+        }
+        if (cancel) {
+            s.focus = 0;
+        } else if (keep) {
+            s.focus = 0;
+            changed = s.edit != text;
+            text = s.edit;
+        }
+    } else if (enabled && over && s.pressed && s.active == 0) {
+        s.focus = id;
+        s.focusDrawn = true;
+        s.edit = text;
+        s.caret = text.size();
+    }
+    if (s.visible(r)) {
+        const bool editing = s.focus == id;
+        s.box(field, editing ? kWhite : enabled ? kMenuFace : kFace, true);
+        const std::string &t = editing ? s.edit : text;
+        // the end of the text when it is longer than the field, with the caret in view
+        const float room = field.w - 10;
+        size_t start = 0;
+        const size_t end = editing ? s.caret : t.size();
+        while (start < end && s.textWidth(t.substr(start, end - start).c_str(), Font::REGULAR) > room) {
+            start = nextChar(t, start);
+        }
+        const std::string seen = t.substr(start);
+        s.textIn(field, 5, seen.c_str(), enabled ? kText : kTextOff);
+        if (editing) {
+            float x = field.x + 5 + s.textWidth(t.substr(start, s.caret - start).c_str(), Font::REGULAR);
+            s.fill({std::floor(x), field.y + 3, 1, field.h - 6}, kText);
+        }
+    }
+    return changed;
+}
+
+bool Context::tabs(const char *id, int &selected, const std::vector<std::string> &names) {
+    Impl &s = *d;
+    int saveCols = s.cols;
+    columns(1);
+    Rect r = s.next(kRowH + 2);
+    bool changed = false;
+    const size_t n = std::max<size_t>(1, names.size());
+    for (size_t i = 0; i < names.size(); i++) {
+        float x0 = std::floor(r.x + r.w * i / n);
+        float x1 = std::floor(r.x + r.w * (i + 1) / n);
+        Rect t{x0, r.y, x1 - x0 - (i + 1 < names.size() ? 1.0f : 0.0f), r.h};
+        uint32_t tab = hashOf(names[i].c_str(), s.idOf(id));
+        if (s.behave(tab, t, true) && selected != (int)i) {
+            selected = (int)i;
+            changed = true;
+        }
+        if (s.visible(t)) {
+            const bool on = selected == (int)i;
+            s.box(t, on ? kFace : s.hot == tab ? kFaceHot : kFacePressed, !on);
+            s.textIn(t, 0, names[i].c_str(), on ? kText : kTextOff, on ? Font::BOLD : Font::REGULAR, true);
+        }
+    }
+    columns(saveCols);
     return changed;
 }
 
