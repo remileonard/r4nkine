@@ -4,6 +4,7 @@
 #include "r4/gpu/device.h"
 
 #include <cstring>
+#include <deque>
 
 namespace r4::gl {
 
@@ -75,7 +76,8 @@ struct GLRenderTarget {
     GLuint msaaFbo = 0; // multisampled: where the passes draw
     GLuint colorRb = 0;
     GLuint depthRb = 0;
-    uint32_t texture = 0; // a handle in the textures
+    uint32_t texture = 0;  // a handle in the textures
+    bool external = false; // its color texture belongs to another library
 };
 struct GLShader {
     GLuint program = 0;
@@ -149,11 +151,11 @@ GLint wrapMode(Wrap w) {
 
 class GLDevice final : public Device {
 public:
-    bool init(void *(*getProc)(const char *), std::string *error) {
+    bool init(void *(*getProc)(const char *), std::string *errorOut) {
         const char *missing = nullptr;
         if (!gl.load(getProc, &missing)) {
-            if (error) {
-                *error = std::string("OpenGL 3.3 function missing: ") + (missing ? missing : "?");
+            if (errorOut) {
+                *errorOut = std::string("OpenGL 3.3 function missing: ") + (missing ? missing : "?");
             }
             return false;
         }
@@ -187,6 +189,18 @@ public:
     }
 
     ~GLDevice() override {
+        releaseReadbacks();
+        for (const GpuFrame &f : gpuFrames) {
+            for (const GpuInterval &i : f) {
+                gl.DeleteQueries(1, &i.query);
+            }
+        }
+        for (const GpuInterval &i : gpuOpen) {
+            gl.DeleteQueries(1, &i.query);
+        }
+        if (!gpuFree.empty()) {
+            gl.DeleteQueries((GLsizei)gpuFree.size(), gpuFree.data());
+        }
         for (size_t i = 0; i < pipelines.items.size(); i++) {
             if (pipelines.used[i]) {
                 gl.DeleteVertexArrays(1, &pipelines.items[i].vao);
@@ -336,6 +350,9 @@ public:
         if (d.shadow) {
             return createShadowTarget(r);
         }
+        if (d.externalColor) {
+            return createExternalTarget(r);
+        }
         r.desc.samples = std::max(1, std::min(d.samples, lim.maxSamples));
         TextureDesc td;
         td.width = d.width;
@@ -375,6 +392,36 @@ public:
         uint32_t id = targets.add(r);
         if (!ok) {
             error = "render target incomplete";
+            destroyRenderTarget({id});
+            return {};
+        }
+        return {id};
+    }
+
+    RenderTargetHandle createExternalTarget(GLRenderTarget &r) {
+        r.desc.samples = 1;
+        r.external = true;
+        GLTexture t;
+        t.name = (GLuint)r.desc.externalColor;
+        t.format = RGBA;
+        t.owned = false;
+        r.texture = textures.add(t);
+        gl.GenFramebuffers(1, &r.fbo);
+        gl.BindFramebuffer(FRAMEBUFFER, r.fbo);
+        gl.FramebufferTexture2D(FRAMEBUFFER, COLOR_ATTACHMENT0, TEXTURE_2D, t.name, 0);
+        if (r.desc.depth) {
+            gl.GenRenderbuffers(1, &r.depthRb);
+            gl.BindRenderbuffer(RENDERBUFFER, r.depthRb);
+            gl.RenderbufferStorageMultisample(RENDERBUFFER, 0, DEPTH24_STENCIL8, r.desc.width, r.desc.height);
+            gl.FramebufferRenderbuffer(FRAMEBUFFER, DEPTH_STENCIL_ATTACHMENT, RENDERBUFFER, r.depthRb);
+            gl.BindRenderbuffer(RENDERBUFFER, 0);
+        }
+        bool ok = gl.CheckFramebufferStatus(FRAMEBUFFER) == FRAMEBUFFER_COMPLETE;
+        gl.BindFramebuffer(FRAMEBUFFER, windowFbo);
+        boundFbo = windowFbo;
+        uint32_t id = targets.add(r);
+        if (!ok) {
+            error = "external render target incomplete";
             destroyRenderTarget({id});
             return {};
         }
@@ -434,7 +481,7 @@ public:
         if (r->depthRb) {
             gl.DeleteRenderbuffers(1, &r->depthRb);
         }
-        if (GLTexture *t = textures.get(r->texture)) {
+        if (GLTexture *t = textures.get(r->texture); t && !r->external) {
             t->owned = true;
         }
         destroyTexture({r->texture});
@@ -459,6 +506,36 @@ public:
         gl.BindFramebuffer(DRAW_FRAMEBUFFER, r->fbo);
         setCap(SCISSOR_TEST, false, scissorEnabled);
         gl.BlitFramebuffer(0, 0, r->desc.width, r->desc.height, 0, 0, r->desc.width, r->desc.height, COLOR_BUFFER_BIT, NEAREST);
+        gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
+    }
+
+    void copyRenderTarget(RenderTargetHandle src, RenderTargetHandle dst) override {
+        GLRenderTarget *s = targets.get(src.id);
+        GLRenderTarget *d = targets.get(dst.id);
+        if (!s || !d || d->msaaFbo || s->desc.shadow || d->desc.shadow) {
+            return;
+        }
+        // a multisampled blit needs the same format at both ends: resolved first into the texture of src
+        resolveRenderTarget(src);
+        gl.BindFramebuffer(READ_FRAMEBUFFER, s->fbo);
+        gl.BindFramebuffer(DRAW_FRAMEBUFFER, d->fbo);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+        bool same = s->desc.width == d->desc.width && s->desc.height == d->desc.height;
+        gl.BlitFramebuffer(0, 0, s->desc.width, s->desc.height, 0, 0, d->desc.width, d->desc.height, COLOR_BUFFER_BIT, same ? NEAREST : LINEAR);
+        gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
+    }
+
+    void copyRenderTargetToWindow(RenderTargetHandle src, int x, int y, int width, int height) override {
+        GLRenderTarget *s = targets.get(src.id);
+        if (!s || s->desc.shadow || width <= 0 || height <= 0) {
+            return;
+        }
+        resolveRenderTarget(src);
+        gl.BindFramebuffer(READ_FRAMEBUFFER, s->fbo);
+        gl.BindFramebuffer(DRAW_FRAMEBUFFER, 0);
+        setCap(SCISSOR_TEST, false, scissorEnabled);
+        bool same = s->desc.width == width && s->desc.height == height;
+        gl.BlitFramebuffer(0, 0, s->desc.width, s->desc.height, x, y, x + width, y + height, COLOR_BUFFER_BIT, same ? NEAREST : LINEAR);
         gl.BindFramebuffer(FRAMEBUFFER, boundFbo);
     }
 
@@ -679,7 +756,7 @@ public:
         }
         setCap(DEPTH_TEST, d.depthTest, depthEnabled);
         if (depthWrite != d.depthWrite) {
-            gl.DepthMask(d.depthWrite ? TRUE_ : FALSE_);
+            gl.DepthMask(GLboolean(d.depthWrite));
             depthWrite = d.depthWrite;
         }
         GLenum func = compareOp(d.depthCompare);
@@ -772,7 +849,7 @@ public:
             gl.BindBuffer(ARRAY_BUFFER, b->name);
             const VertexStream &st = layout.streams[s];
             for (const VertexAttrib &a : st.attribs) {
-                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type), a.normalized ? TRUE_ : FALSE_, (GLsizei)st.stride, reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
+                gl.VertexAttribPointer(a.location, (GLint)a.components, attribType(a.type), GLboolean(a.normalized), (GLsizei)st.stride, reinterpret_cast<const void *>(streamOffsets[s] + a.offset));
             }
             p->streamBuffer[s] = streams[s];
             p->streamOffset[s] = streamOffsets[s];
@@ -824,6 +901,121 @@ public:
         return gl.GetError() == NO_ERROR_;
     }
 
+    bool readPixelsAsync(int x, int y, int width, int height, void *rgba) override {
+        const size_t size = (size_t)width * height * 4;
+        if (size != readbackSize) {
+            releaseReadbacks();
+            for (Readback &r : readbacks) {
+                gl.GenBuffers(1, &r.buffer);
+                gl.BindBuffer(PIXEL_PACK_BUFFER, r.buffer);
+                gl.BufferData(PIXEL_PACK_BUFFER, (GLsizeiptr)size, nullptr, STREAM_READ);
+            }
+            readbackSize = size;
+        }
+        Readback &start = readbacks[readbackNext];
+        if (start.fence) {
+            gl.DeleteSync(start.fence);
+        }
+        gl.BindBuffer(PIXEL_PACK_BUFFER, start.buffer);
+        gl.PixelStorei(PACK_ALIGNMENT, 1);
+        gl.ReadPixels(x, y, width, height, RGBA, UNSIGNED_BYTE, nullptr);
+        gl.PixelStorei(PACK_ALIGNMENT, 4);
+        start.fence = gl.FenceSync(SYNC_GPU_COMMANDS_COMPLETE, 0);
+        start.order = ++readbackOrder;
+        readbackNext = (readbackNext + 1) % kReadbacks;
+        // the newest copy that is done, other than the one just started; the older ones are not needed any more
+        Readback *done = nullptr;
+        for (Readback &r : readbacks) {
+            if (&r == &start || !r.fence || (done && r.order < done->order)) {
+                continue;
+            }
+            const GLenum state = gl.ClientWaitSync(r.fence, 0, 0);
+            if (state == ALREADY_SIGNALED || state == CONDITION_SATISFIED) {
+                done = &r;
+            }
+        }
+        bool read = false;
+        if (done) {
+            gl.BindBuffer(PIXEL_PACK_BUFFER, done->buffer);
+            if (const void *p = gl.MapBufferRange(PIXEL_PACK_BUFFER, 0, (GLsizeiptr)size, MAP_READ_BIT)) {
+                std::memcpy(rgba, p, size);
+                read = true;
+            }
+            gl.UnmapBuffer(PIXEL_PACK_BUFFER);
+            for (Readback &r : readbacks) {
+                if (r.fence && r.order <= done->order) {
+                    gl.DeleteSync(r.fence);
+                    r.fence = nullptr;
+                }
+            }
+        }
+        gl.BindBuffer(PIXEL_PACK_BUFFER, 0);
+        return read;
+    }
+
+    void beginGpuTimer(int slot) override {
+        if (gpuActive || slot < 0 || slot >= kGpuTimers) {
+            return;
+        }
+        GLuint query = 0;
+        if (gpuFree.empty()) {
+            gl.GenQueries(1, &query);
+        } else {
+            query = gpuFree.back();
+            gpuFree.pop_back();
+        }
+        gl.BeginQuery(TIME_ELAPSED, query);
+        gpuOpen.push_back({slot, query});
+        gpuActive = true;
+    }
+
+    void endGpuTimer() override {
+        if (gpuActive) {
+            gl.EndQuery(TIME_ELAPSED);
+            gpuActive = false;
+        }
+    }
+
+    void endGpuFrame() override {
+        endGpuTimer();
+        gpuFrames.push_back(std::move(gpuOpen));
+        gpuOpen.clear();
+        // the frames that the GPU completed, oldest first; a frame left too long is dropped
+        while (!gpuFrames.empty()) {
+            GpuFrame &f = gpuFrames.front();
+            bool done = true;
+            for (const GpuInterval &i : f) {
+                GLint available = 0;
+                gl.GetQueryObjectiv(i.query, QUERY_RESULT_AVAILABLE, &available);
+                done = done && available != 0;
+            }
+            if (!done && gpuFrames.size() <= kGpuFramesKept) {
+                break;
+            }
+            if (done) {
+                double ms[kGpuTimers] = {};
+                for (const GpuInterval &i : f) {
+                    GLuint64 ns = 0;
+                    gl.GetQueryObjectui64v(i.query, QUERY_RESULT, &ns);
+                    ms[i.slot] += (double)ns / 1e6;
+                }
+                std::memcpy(gpuLast, ms, sizeof ms);
+                gpuKnown = true;
+            }
+            for (const GpuInterval &i : f) {
+                gpuFree.push_back(i.query);
+            }
+            gpuFrames.pop_front();
+        }
+    }
+
+    bool gpuTimes(double ms[kGpuTimers]) const override {
+        if (gpuKnown) {
+            std::memcpy(ms, gpuLast, sizeof gpuLast);
+        }
+        return gpuKnown;
+    }
+
     FrameStats takeStats() override {
         FrameStats s = stats;
         stats = {};
@@ -831,7 +1023,14 @@ public:
     }
 
     // the host draws with the same context: its state is saved and the caches of the device forgotten
+    void setHostInterop(bool enabled) override {
+        hostInterop = enabled;
+    }
+
     void beginHostInterop() override {
+        if (!hostInterop) {
+            return;
+        }
         GLint v;
         gl.GetIntegerv(CURRENT_PROGRAM, &v);
         host.program = v;
@@ -875,6 +1074,9 @@ public:
     }
 
     void endHostInterop() override {
+        if (!hostInterop) {
+            return;
+        }
         gl.UseProgram(host.program);
         gl.BindVertexArray(host.vao);
         gl.BindBuffer(ARRAY_BUFFER, host.arrayBuffer);
@@ -890,7 +1092,7 @@ public:
         host.scissor ? gl.Enable(SCISSOR_TEST) : gl.Disable(SCISSOR_TEST);
         gl.CullFace(host.cullMode);
         gl.FrontFace(host.frontFace);
-        gl.DepthMask(host.depthMask ? TRUE_ : FALSE_);
+        gl.DepthMask(GLboolean(host.depthMask));
         gl.DepthFunc(host.depthFunc);
         gl.BlendFunc(host.blendSrc, host.blendDst);
         gl.PolygonMode(FRONT_AND_BACK, host.polygonMode);
@@ -906,6 +1108,19 @@ private:
             gl.BindVertexArray(vao);
             currentVAO = vao;
         }
+    }
+
+    void releaseReadbacks() {
+        for (Readback &r : readbacks) {
+            if (r.fence) {
+                gl.DeleteSync(r.fence);
+            }
+            if (r.buffer) {
+                gl.DeleteBuffers(1, &r.buffer);
+            }
+            r = {};
+        }
+        readbackSize = 0;
     }
 
     void forgetCaches() {
@@ -943,6 +1158,30 @@ private:
     Pool<GLRenderTarget> targets;
     GLuint windowFbo = 0;
     GLuint boundFbo = 0;
+    bool hostInterop = true;
+    // the copies of readPixelsAsync: started in turn, read when their fence is signaled
+    static constexpr int kReadbacks = 3;
+    struct Readback {
+        GLuint buffer = 0;
+        GLsync fence = nullptr;
+        uint64_t order = 0;
+    } readbacks[kReadbacks];
+    size_t readbackSize = 0;
+    int readbackNext = 0;
+    uint64_t readbackOrder = 0;
+    // the queries of the GPU timers, by frame until the GPU completes it
+    struct GpuInterval {
+        int slot = 0;
+        GLuint query = 0;
+    };
+    using GpuFrame = std::vector<GpuInterval>;
+    static constexpr size_t kGpuFramesKept = 8;
+    GpuFrame gpuOpen;
+    std::deque<GpuFrame> gpuFrames;
+    std::vector<GLuint> gpuFree;
+    double gpuLast[kGpuTimers] = {};
+    bool gpuKnown = false;
+    bool gpuActive = false;
 
     uint32_t current = 0;
     GLuint currentProgram = 0;

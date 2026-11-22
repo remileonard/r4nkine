@@ -41,11 +41,15 @@ const Color kTextOff = Color::rgb(0.45f, 0.45f, 0.45f);
 const Color kWhite = Color::rgb(1, 1, 1);
 const Color kHeader = Color::rgb(0.42f, 0.42f, 0.5f);
 const Color kMenuFace = Color::rgb(0.85f, 0.85f, 0.88f);
+// the tabs: the selected one in the color of the panel, open on it; the others as the headers of the sections
+const Color kTabOff = Color::rgb(0.36f, 0.36f, 0.44f);
+const Color kTabHot = Color::rgb(0.48f, 0.48f, 0.57f);
 
 constexpr float kRowH = 21;
 constexpr float kGap = 3;
 constexpr float kMargin = 4;
 constexpr float kTitleH = 20;
+constexpr float kBarW = 12;
 
 struct Vertex {
     float x;
@@ -161,6 +165,111 @@ struct Context::Impl {
     int menuChoice = -1; // chosen this frame, given at the next call
     uint32_t menuChoiceId = 0;
 
+    // the room of a scroll bar on the right of the widgets, when the content was higher than its area at the last frame
+    bool barRoom = false;
+    // the scroll bar dragged: the point of its thumb under the mouse
+    float dragOffset = 0;
+    // the last row of tabs: its bottom and its selected tab, for a box just under it
+    float tabsBottom = -1;
+    Rect tabOn;
+    // the panel around a box, given back by endBox
+    struct Outer {
+        Rect panel;
+        Rect clip;
+        Rect box;
+        float cursorY;
+        int cols;
+        PanelState *ps;
+        uint32_t panelId;
+        bool barRoom;
+    };
+    std::vector<Outer> outers;
+
+    // a scroll bar on the right of area for the content of st: its thumb is dragged, a click on its track moves it there
+    void scrollBar(uint32_t id, Rect area, PanelState &st) {
+        if (st.contentH <= area.h + 1) {
+            return;
+        }
+        Rect track{area.x + area.w - kBarW, area.y, kBarW, area.h};
+        const float maxScroll = st.contentH - area.h;
+        const float thumbH = std::max(16.0f, area.h * area.h / st.contentH);
+        const float travel = std::max(1.0f, area.h - thumbH);
+        const float thumbY = area.y + st.scroll / maxScroll * travel;
+        Rect thumb{track.x + 1, thumbY, kBarW - 2, thumbH};
+        const bool overTrack = menuId == 0 && track.contains(in.mouseX, in.mouseY);
+        const bool overThumb = overTrack && thumb.contains(in.mouseX, in.mouseY);
+        if (overTrack) {
+            hot = id;
+        }
+        if (overTrack && pressed && active == 0) {
+            active = id;
+            dragOffset = overThumb ? in.mouseY - thumbY : thumbH * 0.5f;
+            pressed = false;
+        }
+        if (active == id && in.left) {
+            st.scroll = std::max(0.0f, std::min(maxScroll, (in.mouseY - dragOffset - area.y) / travel * maxScroll));
+        }
+        box(track, kTrack, true);
+        box({thumb.x, area.y + st.scroll / maxScroll * travel, thumb.w, thumbH}, active == id || overThumb ? kFaceHot : kFace, false);
+    }
+
+    // the text field that has the focus: its text while it is edited, the caret (a byte of it), and if it was drawn this frame
+    uint32_t focus = 0;
+    std::string edit;
+    size_t caret = 0;
+    bool focusDrawn = false;
+
+    // a list that a press on r opens; the item chosen comes back at the next call; true when it changed selected
+    bool dropdown(uint32_t id, Rect r, int &selected, const std::vector<std::string> &items, bool enabled) {
+        bool changed = false;
+        if (menuChoiceId == id && menuChoice >= 0) {
+            changed = selected != menuChoice;
+            selected = menuChoice;
+            menuChoiceId = 0;
+            menuChoice = -1;
+        }
+        bool over = hover(r);
+        if (over) {
+            hot = id;
+        }
+        if (enabled && over && pressed && active == 0 && !items.empty()) {
+            // smaller items when the list is higher than the window
+            float ih = std::min(std::max(18.0f, r.h * 0.9f), (float)height / (float)items.size());
+            float h = ih * items.size();
+            float y = r.y + r.h;
+            if (y + h > height) {
+                y = std::max(0.0f, r.y - h);
+            }
+            if (y + h > height) {
+                y = 0;
+            }
+            menuId = id;
+            menuRect = {r.x, y, std::max(r.w, 120.0f), h};
+            menuItems = items;
+            menuSelected = selected;
+            pressed = false;
+        }
+        return changed;
+    }
+    // the box of a closed list: the text and the arrow
+    void dropdownBox(uint32_t id, Rect r, const std::string &t, bool enabled) {
+        bool open = menuId == id;
+        box(r, open ? kFacePressed : hot == id && enabled ? kFaceHot : kFace, open);
+        float a = std::floor(r.h * 0.2f);
+        textIn({r.x, r.y, r.w - 2 * a - 6, r.h}, 5, t.c_str(), enabled ? kText : kTextOff);
+        float cx = r.x + r.w - a - 6;
+        float cy = r.y + r.h * 0.5f;
+        triangle(cx - a, cy - a * 0.5f, cx + a, cy - a * 0.5f, cx, cy + a * 0.6f, enabled ? kText : kTextOff);
+    }
+    // the label of a row with a widget on its right
+    Rect labelled(Rect r, const char *label) {
+        Rect left{r.x, r.y, std::floor(r.w * 0.45f), r.h};
+        if (visible(r)) {
+            textIn(left, 2, shown(label).c_str(), kText);
+        }
+        return {left.x + left.w + kGap, r.y, r.w - left.w - kGap, r.h};
+    }
+
     explicit Impl(gpu::Device &dev) : device(dev) {
     }
 
@@ -205,6 +314,16 @@ struct Context::Impl {
         verts.push_back({x1, y1, whiteU, whiteV, c});
         verts.push_back({x2, y2, whiteU, whiteV, c});
         cmds.back().count += 3;
+    }
+    // a line of one point from (x0, y0) to (x1, y1)
+    void quadAlong(float x0, float y0, float x1, float y1, Color c) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        float len = std::max(1e-3f, std::sqrt(dx * dx + dy * dy));
+        float nx = -dy / len * 0.5f;
+        float ny = dx / len * 0.5f;
+        triangle(x0 + nx, y0 + ny, x1 + nx, y1 + ny, x1 - nx, y1 - ny, c);
+        triangle(x0 + nx, y0 + ny, x1 - nx, y1 - ny, x0 - nx, y0 - ny, c);
     }
     // the relief of pfuGUI: light top and left, dark bottom and right
     void bevel(Rect r, bool sunken) {
@@ -289,7 +408,7 @@ struct Context::Impl {
         if (!inPanel) {
             return {};
         }
-        float inner = panel.w - 2 * kMargin;
+        float inner = panel.w - 2 * kMargin - (barRoom ? kBarW : 0.0f);
         float w = (inner - (cols - 1) * kGap) / cols;
         if (col == 0) {
             rowY = cursorY;
@@ -440,6 +559,7 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
     s.hot = 0;
     s.lastPanelRects = s.panelRects;
     s.panelRects.clear();
+    s.focusDrawn = false;
 
     if (s.menuId) {
         bool inList = s.menuRect.contains(input.mouseX, input.mouseY);
@@ -462,6 +582,10 @@ void Context::beginFrame(int width, int height, const Input &input, float pixelS
 
 void Context::endFrame() {
     Impl &s = *d;
+    // a field that is not drawn any more (a closed section, another tab) loses the focus
+    if (s.focus && !s.focusDrawn) {
+        s.focus = 0;
+    }
     if (!s.menuId) {
         return;
     }
@@ -530,6 +654,10 @@ void Context::render() {
     dev.endPass();
 }
 
+bool Context::wantsKeyboard() const {
+    return d->focus != 0;
+}
+
 bool Context::wantsMouse() const {
     const Impl &s = *d;
     if (s.menuId || s.active) {
@@ -543,7 +671,7 @@ bool Context::wantsMouse() const {
     return false;
 }
 
-void Context::beginPanel(const char *id, Rect r, const char *title) {
+void Context::beginPanel(const char *id, Rect r, const char *title, bool *open) {
     Impl &s = *d;
     s.panelId = hashOf(id, 2166136261u);
     s.ps = &s.panels[s.panelId];
@@ -558,6 +686,35 @@ void Context::beginPanel(const char *id, Rect r, const char *title) {
         s.box(t, kDark, true);
         s.textIn(t, 6, title, kYellow, Font::BOLD);
         top = t.y + t.h + 1;
+        if (open) {
+            // the cross: closes on a click released over it
+            Rect x{t.x + t.w - t.h + 2, t.y + 2, t.h - 4, t.h - 4};
+            uint32_t closeId = hashOf("close", s.panelId);
+            bool over = s.menuId == 0 && x.contains(s.in.mouseX, s.in.mouseY);
+            if (over) {
+                s.hot = closeId;
+            }
+            if (over && s.pressed && s.active == 0) {
+                s.active = closeId;
+                s.pressed = false;
+            }
+            if (s.active == closeId && s.released) {
+                s.active = 0;
+                if (over) {
+                    *open = false;
+                }
+            }
+            s.box(x, over ? kFaceHot : kFace, s.active == closeId && over);
+            const float m = std::floor(x.h * 0.3f);
+            const float x0 = x.x + m;
+            const float y0 = x.y + m;
+            const float x1 = x.x + x.w - m;
+            const float y1 = x.y + x.h - m;
+            for (float k = 0; k < 2; k += 1) {
+                s.quadAlong(x0 + k, y0, x1 + k, y1, kText);
+                s.quadAlong(x1 + k - 1, y0, x0 + k - 1, y1, kText);
+            }
+        }
     }
     s.clip = {r.x + 1, top, r.w - 2, r.y + r.h - 1 - top};
     if (s.menuId == 0 && s.in.wheel != 0 && s.clip.contains(s.in.mouseX, s.in.mouseY)) {
@@ -570,6 +727,8 @@ void Context::beginPanel(const char *id, Rect r, const char *title) {
     s.cursorY = s.clip.y + kMargin - s.ps->scroll;
     s.cols = 1;
     s.col = 0;
+    s.barRoom = s.ps->contentH > s.clip.h + 1;
+    s.tabsBottom = -1;
 }
 
 void Context::endPanel() {
@@ -579,12 +738,7 @@ void Context::endPanel() {
     }
     float contentTop = s.clip.y - s.ps->scroll;
     s.ps->contentH = s.cursorY - contentTop + kMargin;
-    if (s.ps->contentH > s.clip.h + 1) {
-        float frac = s.clip.h / s.ps->contentH;
-        float pos = s.ps->scroll / s.ps->contentH;
-        Rect bar{s.clip.x + s.clip.w - 4, s.clip.y + pos * s.clip.h, 3, std::max(12.0f, frac * s.clip.h)};
-        s.fill(bar, kTrack);
-    }
+    s.scrollBar(hashOf("scroll", s.panelId), s.clip, *s.ps);
     s.inPanel = false;
     s.setClip(false, {});
 }
@@ -721,44 +875,236 @@ bool Context::menu(const char *label, int &selected, const std::vector<std::stri
     Impl &s = *d;
     Rect r = s.next(kRowH);
     uint32_t id = s.idOf(label);
-    bool changed = false;
-    if (s.menuChoiceId == id && s.menuChoice >= 0) {
-        changed = selected != s.menuChoice;
-        selected = s.menuChoice;
-        s.menuChoiceId = 0;
-        s.menuChoice = -1;
-    }
-    bool over = s.hover(r);
-    if (over) {
-        s.hot = id;
-    }
-    if (enabled && over && s.pressed && s.active == 0 && !items.empty()) {
-        float ih = std::max(18.0f, r.h * 0.9f);
-        float h = ih * items.size();
-        float y = r.y + r.h;
-        if (y + h > s.height) {
-            y = std::max(0.0f, r.y - h);
-        }
-        s.menuId = id;
-        s.menuRect = {r.x, y, std::max(r.w, 120.0f), h};
-        s.menuItems = items;
-        s.menuSelected = selected;
-        s.pressed = false;
-    }
+    bool changed = s.dropdown(id, r, selected, items, enabled);
     if (s.visible(r)) {
-        bool open = s.menuId == id;
-        s.box(r, open ? kFacePressed : s.hot == id && enabled ? kFaceHot : kFace, open);
         std::string t = shown(label);
         if (selected >= 0 && selected < (int)items.size()) {
             t += (t.empty() ? "" : ": ") + items[selected];
         }
-        float a = std::floor(r.h * 0.2f);
-        s.textIn({r.x, r.y, r.w - 2 * a - 6, r.h}, 5, t.c_str(), enabled ? kText : kTextOff);
-        float cx = r.x + r.w - a - 6;
-        float cy = r.y + r.h * 0.5f;
-        s.triangle(cx - a, cy - a * 0.5f, cx + a, cy - a * 0.5f, cx, cy + a * 0.6f, enabled ? kText : kTextOff);
+        s.dropdownBox(id, r, t, enabled);
     }
     return changed;
+}
+
+bool Context::select(const char *label, int &selected, const std::vector<std::string> &items, bool enabled) {
+    Impl &s = *d;
+    Rect r = s.next(kRowH);
+    uint32_t id = s.idOf(label);
+    Rect box = s.labelled(r, label);
+    bool changed = s.dropdown(id, box, selected, items, enabled);
+    if (s.visible(r)) {
+        s.dropdownBox(id, box, selected >= 0 && selected < (int)items.size() ? items[selected] : std::string(), enabled);
+    }
+    return changed;
+}
+
+namespace {
+
+// the start of the UTF-8 character before the byte at, after it
+size_t previousChar(const std::string &t, size_t at) {
+    while (at > 0) {
+        at--;
+        if (((unsigned char)t[at] & 0xc0) != 0x80) {
+            break;
+        }
+    }
+    return at;
+}
+
+size_t nextChar(const std::string &t, size_t at) {
+    if (at < t.size()) {
+        at++;
+    }
+    while (at < t.size() && ((unsigned char)t[at] & 0xc0) == 0x80) {
+        at++;
+    }
+    return at;
+}
+
+} // namespace
+
+bool Context::inputText(const char *label, std::string &text, bool enabled) {
+    Impl &s = *d;
+    Rect r = s.next(kRowH);
+    uint32_t id = s.idOf(label);
+    Rect field = s.labelled(r, label);
+    bool over = s.hover(field);
+    if (over) {
+        s.hot = id;
+    }
+    bool changed = false;
+    if (s.focus == id) {
+        s.focusDrawn = true;
+        bool keep = s.pressed && !over;
+        bool cancel = !enabled;
+        if (!s.in.text.empty()) {
+            s.edit.insert(s.caret, s.in.text);
+            s.caret += s.in.text.size();
+        }
+        for (Key k : s.in.keys) {
+            if (k == Key::BACKSPACE && s.caret > 0) {
+                size_t from = previousChar(s.edit, s.caret);
+                s.edit.erase(from, s.caret - from);
+                s.caret = from;
+            } else if (k == Key::DELETE_FORWARD && s.caret < s.edit.size()) {
+                s.edit.erase(s.caret, nextChar(s.edit, s.caret) - s.caret);
+            } else if (k == Key::LEFT) {
+                s.caret = previousChar(s.edit, s.caret);
+            } else if (k == Key::RIGHT) {
+                s.caret = nextChar(s.edit, s.caret);
+            } else if (k == Key::HOME) {
+                s.caret = 0;
+            } else if (k == Key::END) {
+                s.caret = s.edit.size();
+            } else if (k == Key::ENTER) {
+                keep = true;
+            } else if (k == Key::ESCAPE) {
+                cancel = true;
+            }
+        }
+        if (cancel) {
+            s.focus = 0;
+        } else if (keep) {
+            s.focus = 0;
+            changed = s.edit != text;
+            text = s.edit;
+        }
+    } else if (enabled && over && s.pressed && s.active == 0) {
+        s.focus = id;
+        s.focusDrawn = true;
+        s.edit = text;
+        s.caret = text.size();
+    }
+    if (s.visible(r)) {
+        const bool editing = s.focus == id;
+        s.box(field, editing ? kWhite : enabled ? kMenuFace : kFace, true);
+        const std::string &t = editing ? s.edit : text;
+        // the end of the text when it is longer than the field, with the caret in view
+        const float room = field.w - 10;
+        size_t start = 0;
+        const size_t end = editing ? s.caret : t.size();
+        while (start < end && s.textWidth(t.substr(start, end - start).c_str(), Font::REGULAR) > room) {
+            start = nextChar(t, start);
+        }
+        const std::string seen = t.substr(start);
+        s.textIn(field, 5, seen.c_str(), enabled ? kText : kTextOff);
+        if (editing) {
+            float x = field.x + 5 + s.textWidth(t.substr(start, s.caret - start).c_str(), Font::REGULAR);
+            s.fill({std::floor(x), field.y + 3, 1, field.h - 6}, kText);
+        }
+    }
+    return changed;
+}
+
+bool Context::tabs(const char *id, int &selected, const std::vector<std::string> &names) {
+    Impl &s = *d;
+    int saveCols = s.cols;
+    columns(1);
+    Rect r = s.next(kRowH + 3);
+    bool changed = false;
+    const size_t n = std::max<size_t>(1, names.size());
+    const float tabH = kRowH;
+    for (size_t i = 0; i < names.size(); i++) {
+        float x0 = std::floor(r.x + r.w * i / n);
+        float x1 = std::floor(r.x + r.w * (i + 1) / n);
+        Rect t{x0, r.y, x1 - x0 - (i + 1 < names.size() ? 1.0f : 0.0f), tabH};
+        uint32_t tab = hashOf(names[i].c_str(), s.idOf(id));
+        if (s.behave(tab, t, true) && selected != (int)i) {
+            selected = (int)i;
+            changed = true;
+        }
+        if (s.visible(r)) {
+            const bool on = selected == (int)i;
+            if (on) {
+                s.tabOn = t;
+                // in the color of the panel, down to the line under the tabs: the tab opens on its widgets
+                s.fill({t.x, t.y, t.w, r.h}, kPanel);
+                s.fill({t.x, t.y, t.w, 1}, kHigh);
+                s.fill({t.x, t.y, 1, r.h}, kHigh);
+                s.fill({t.x + t.w - 1, t.y, 1, r.h}, kLow);
+                s.textIn(t, 0, names[i].c_str(), kText, Font::BOLD, true);
+            } else {
+                s.fill(t, s.hot == tab ? kTabHot : kTabOff);
+                s.fill({t.x, t.y + t.h, t.w, r.h - t.h}, kHeader);
+                s.textIn(t, 0, names[i].c_str(), kWhite, Font::REGULAR, true);
+            }
+        }
+    }
+    s.tabsBottom = r.y + r.h;
+    columns(saveCols);
+    return changed;
+}
+
+void Context::beginBox(const char *id, float height) {
+    Impl &s = *d;
+    if (s.col) {
+        s.col = 0;
+    }
+    float y = s.cursorY;
+    // just under the tabs: on them, without the gap
+    const bool underTabs = s.tabsBottom >= 0 && std::abs(y - (s.tabsBottom + kGap)) < 1;
+    if (underTabs) {
+        y = s.tabsBottom;
+    }
+    const float x = s.panel.x + kMargin;
+    const float w = s.panel.w - 2 * kMargin - (s.barRoom ? kBarW : 0.0f);
+    // the rest of the panel: down to its margin, less the gap that endBox puts after it, so that the panel needs no scroll bar
+    const float h = height > 0 ? height : std::max(kRowH, s.clip.y + s.clip.h - y - kMargin - kGap);
+    Rect r{std::floor(x), std::floor(y), std::floor(w), std::floor(h)};
+    s.outers.push_back({s.panel, s.clip, r, s.cursorY, s.cols, s.ps, s.panelId, s.barRoom});
+    // the frame: light on the top and the left, dark on the bottom and the right, open under the selected tab
+    s.fill(r, kPanel);
+    if (underTabs) {
+        s.fill({r.x, r.y, std::max(0.0f, s.tabOn.x - r.x), 1}, kHigh);
+        s.fill({s.tabOn.x + s.tabOn.w, r.y, std::max(0.0f, r.x + r.w - s.tabOn.x - s.tabOn.w), 1}, kHigh);
+    } else {
+        s.fill({r.x, r.y, r.w, 1}, kHigh);
+    }
+    s.fill({r.x, r.y, 1, r.h}, kHigh);
+    s.fill({r.x, r.y + r.h - 1, r.w, 1}, kLow);
+    s.fill({r.x + r.w - 1, r.y, 1, r.h}, kLow);
+    s.panelId = hashOf(id, s.panelId);
+    s.ps = &s.panels[s.panelId];
+    const Rect outer = s.clip;
+    Rect inner{r.x + 1, r.y + 2, r.w - 2, r.h - 3};
+    const float top = std::max(inner.y, outer.y);
+    const float bottom = std::min(inner.y + inner.h, outer.y + outer.h);
+    s.clip = {inner.x, top, inner.w, std::max(0.0f, bottom - top)};
+    if (s.menuId == 0 && s.in.wheel != 0 && s.clip.contains(s.in.mouseX, s.in.mouseY)) {
+        s.ps->scroll -= s.in.wheel * 40;
+    }
+    s.ps->scroll = std::max(0.0f, std::min(s.ps->scroll, std::max(0.0f, s.ps->contentH - s.clip.h)));
+    s.setClip(true, s.clip);
+    s.panel = inner;
+    s.cursorY = inner.y + kMargin - s.ps->scroll;
+    s.cols = 1;
+    s.col = 0;
+    s.barRoom = s.ps->contentH > s.clip.h + 1;
+    s.tabsBottom = -1;
+}
+
+void Context::endBox() {
+    Impl &s = *d;
+    if (s.outers.empty()) {
+        return;
+    }
+    if (s.col) {
+        s.col = 0;
+    }
+    const Impl::Outer o = s.outers.back();
+    s.outers.pop_back();
+    const Rect inner = s.panel;
+    s.ps->contentH = s.cursorY - (inner.y - s.ps->scroll) + kMargin;
+    s.scrollBar(hashOf("scroll", s.panelId), {inner.x, inner.y, inner.w, inner.h}, *s.ps);
+    s.panel = o.panel;
+    s.clip = o.clip;
+    s.ps = o.ps;
+    s.panelId = o.panelId;
+    s.barRoom = o.barRoom;
+    s.cols = o.cols;
+    s.col = 0;
+    s.setClip(true, s.clip);
+    s.cursorY = o.box.y + o.box.h + kGap;
 }
 
 bool Context::slider(const char *label, float &value, float min, float max, const char *format, bool log, bool enabled) {

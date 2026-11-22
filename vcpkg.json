@@ -10,7 +10,11 @@
   ],
   "default-features": [
     "viewer",
-    "assimp"
+    "assimp",
+    {
+      "name": "xr",
+      "platform": "windows"
+    }
   ],
   "features": {
     "assimp": {
@@ -23,6 +27,12 @@
       "description": "r4fly, the model viewer (SDL2)",
       "dependencies": [
         "sdl2"
+      ]
+    },
+    "xr": {
+      "description": "r4::xr, virtual reality with OpenXR (the OpenGL session works on Windows)",
+      "dependencies": [
+        "openxr-loader"
       ]
     }
   }

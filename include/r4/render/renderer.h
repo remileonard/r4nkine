@@ -157,6 +157,7 @@ public:
     }
 
 private:
+    // one draw: its matrix in world, or count matrices from first in bulk_ (the instances of an Instancer)
     struct DrawItem {
         GpuMesh *mesh;
         MaterialInstance *material;
@@ -165,15 +166,28 @@ private:
         int order;
         uint64_t key;
         gpu::PipelineHandle pipeline;
+        uint32_t first = 0;
+        uint32_t count = 1;
+        bool bulk = false;
+        // the placements of a static instancer: count of them from its buffer, at world * placement * local
+        gpu::BufferHandle placements;
+        Mat4 local;
+        Vec4 up;
+        uint32_t drawOffset = 0;
+        // the first of its matrices in the buffer of the frame
+        uint32_t offset = 0;
     };
     void cull(scene::Node &node, const Mat4 &parent, const Frustum &frustum, bool inside, uint32_t state, Vec3 eye);
     void cullInstancer(scene::Instancer &node, const Mat4 &world, const Frustum &frustum, bool inside, Vec3 eye);
     void addItem(const scene::Drawable &d, const Mat4 &world, Vec3 eye);
-    gpu::PipelineHandle pipelineFor(const assets::Material &m, assets::Primitive primitive);
+    // the matrices bulk_[first, first + count) of one drawable; depthAt: a point for the sort of the transparent items
+    void addBulk(const scene::Drawable &d, uint32_t first, uint32_t count, Vec3 depthAt, Vec3 eye);
+    gpu::PipelineHandle pipelineFor(const MaterialInstance &mat, assets::Primitive primitive, bool placements = false);
+    void cullStatic(scene::Instancer &node, const Mat4 &world, Vec3 eye);
     bool createShaders();
     // false: no shadow
     bool shadowView(const Camera &camera, Mat4 &lightViewProj, float &texel);
-    void drawShadows(size_t base);
+    void drawShadows();
 
     gpu::Device &device_;
     Environment env_;
@@ -187,6 +201,15 @@ private:
     std::string error_;
     bool wireframe_ = false;
     gpu::ShaderHandle shader_;
+    // the same shader without discard: a GPU that removes the hidden fragments (Apple, tilers) does it only without discard
+    gpu::ShaderHandle opaqueShader_;
+    // the shaders for the placements of the static instancers
+    gpu::ShaderHandle placementShader_;
+    gpu::ShaderHandle placementOpaqueShader_;
+    // the Draw block of each item of placements, at the alignment of the uniform buffers
+    std::vector<uint8_t> drawData_;
+    gpu::BufferHandle drawUniforms_;
+    size_t drawCapacity_ = 0;
     std::unordered_map<uint32_t, gpu::PipelineHandle> pipelines_;
     gpu::BufferHandle frameUniforms_;
     gpu::BufferHandle instanceBuffer_;
@@ -195,6 +218,10 @@ private:
     std::vector<DrawItem> opaque_;
     std::vector<DrawItem> transparent_;
     std::vector<DrawItem> casters_;
+    // the matrices of the instances of the frame, by drawable
+    std::vector<Mat4> bulk_;
+    // the visible instances of an Instancer: their level and their matrix
+    std::vector<std::pair<int, Mat4>> instanceScratch_;
     gpu::ShaderHandle shadowShader_;
     gpu::PipelineHandle shadowPipeline_;
     gpu::RenderTargetHandle shadowMap_;

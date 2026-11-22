@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <random>
 
 namespace r4::scene {
 
@@ -141,6 +142,65 @@ int Instancer::select(float distance) const {
     return -1;
 }
 
+void Instancer::placementsChanged() {
+    cellsMade_ = false;
+    version_++;
+    placementBox_ = Box();
+    maxPlacementScale_ = 0;
+    for (const Placement &p : placements_) {
+        placementBox_.extend(p.position);
+        maxPlacementScale_ = std::max({maxPlacementScale_, p.scale, p.scaleUp});
+    }
+    if (static_) {
+        // a fixed random order: the first ones are spread over the whole instancer
+        std::mt19937 random(0x52344e4bu);
+        std::shuffle(placements_.begin(), placements_.end(), random);
+    }
+    markDirty();
+}
+
+void Instancer::setStatic(float thinFrom) {
+    static_ = true;
+    thinFrom_ = thinFrom;
+    placementsChanged();
+}
+
+const std::vector<Instancer::Cell> &Instancer::cells() {
+    if (cellsMade_) {
+        return cells_;
+    }
+    cellsMade_ = true;
+    cells_.clear();
+    // the two axes across the up axis
+    int u = 0;
+    for (int i = 1; i < 3; i++) {
+        if (std::abs(up_[i]) > std::abs(up_[u])) {
+            u = i;
+        }
+    }
+    const int a = (u + 1) % 3;
+    const int b = (u + 2) % 3;
+    auto cellOf = [&](const Placement &p) {
+        return std::make_pair((int)std::floor(p.position[a] / kCellSize), (int)std::floor(p.position[b] / kCellSize));
+    };
+    std::sort(placements_.begin(), placements_.end(), [&](const Placement &x, const Placement &y) {
+        return cellOf(x) < cellOf(y);
+    });
+    for (uint32_t i = 0; i < (uint32_t)placements_.size(); i++) {
+        const Placement &p = placements_[i];
+        if (cells_.empty() || cellOf(placements_[cells_.back().begin]) != cellOf(p)) {
+            Cell c;
+            c.begin = i;
+            cells_.push_back(c);
+        }
+        Cell &c = cells_.back();
+        c.box.extend(p.position);
+        c.maxScale = std::max({c.maxScale, p.scale, p.scaleUp});
+        c.end = i + 1;
+    }
+    return cells_;
+}
+
 Mat4 Instancer::matrixOf(const Placement &p) const {
     Mat4 s(1.0f);
     for (int i = 0; i < 3; i++) {
@@ -219,6 +279,102 @@ int LOD::select(float distance) const {
         }
     }
     return -1;
+}
+
+void Trigger::setSphere(float radius) {
+    shape_ = Shape::SPHERE;
+    radius_ = radius;
+}
+
+void Trigger::setCylinder(float radius, float height) {
+    shape_ = Shape::CYLINDER;
+    radius_ = radius;
+    height_ = height;
+}
+
+void Trigger::setBox(const Box &box) {
+    shape_ = Shape::BOX;
+    box_ = box;
+}
+
+bool Trigger::contains(Vec3 p) const {
+    switch (shape_) {
+    case Shape::SPHERE:
+        return length(p) <= radius_;
+    case Shape::CYLINDER:
+        return p.z >= 0 && p.z <= height_ && length(Vec2(p.x, p.y)) <= radius_;
+    case Shape::BOX:
+        return p.x >= box_.min.x && p.x <= box_.max.x && p.y >= box_.min.y && p.y <= box_.max.y && p.z >= box_.min.z && p.z <= box_.max.z;
+    }
+    return false;
+}
+
+void Trigger::update(const std::vector<Tracker> &trackers, const Mat4 &toLocal) {
+    std::unordered_set<uint32_t> now;
+    for (const Tracker &t : trackers) {
+        if (contains(transformPoint(toLocal, t.position))) {
+            now.insert(t.id);
+        }
+    }
+    for (uint32_t id : now) {
+        if (!inside_.count(id) && onEnter) {
+            onEnter(id);
+        }
+    }
+    for (uint32_t id : inside_) {
+        if (!now.count(id) && onLeave) {
+            onLeave(id);
+        }
+    }
+    inside_ = std::move(now);
+}
+
+namespace {
+
+void visitTriggers(Node &node, const Mat4 &parent, const std::vector<Tracker> &trackers, uint32_t mask) {
+    if ((node.mask() & mask) == 0) {
+        return;
+    }
+    const Mat4 world = parent * node.matrix();
+    if (node.type() == NodeType::TRIGGER) {
+        static_cast<Trigger &>(node).update(trackers, inverse(world));
+    }
+    for (const NodePtr &c : node.children()) {
+        visitTriggers(*c, world, trackers, mask);
+    }
+}
+
+} // namespace
+
+void checkTriggers(Node &root, const std::vector<Tracker> &trackers, uint32_t mask) {
+    visitTriggers(root, Mat4(1.0f), trackers, mask);
+}
+
+void Node::setAppCallbacks(AppCallback before, AppCallback after) {
+    if (!before && !after) {
+        app_.reset();
+        return;
+    }
+    app_ = std::make_unique<AppCallbacks>();
+    app_->before = std::move(before);
+    app_->after = std::move(after);
+}
+
+void app(Node &root, uint32_t mask) {
+    if ((root.appMask() & mask) == 0) {
+        return;
+    }
+    if (root.app_ && root.app_->before) {
+        root.app_->before(root);
+    }
+    // by index: a callback below can change this list
+    for (size_t i = 0; i < root.children().size(); i++) {
+        NodePtr child = root.children()[i];
+        app(*child, mask);
+    }
+    if (root.app_ && root.app_->after) {
+        root.app_->after(root);
+    }
 }
 
 } // namespace r4::scene

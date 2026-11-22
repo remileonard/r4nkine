@@ -43,6 +43,18 @@ enum class Font {
     TITLE
 };
 
+// the keys that a text field uses
+enum class Key {
+    BACKSPACE,
+    DELETE_FORWARD,
+    LEFT,
+    RIGHT,
+    HOME,
+    END,
+    ENTER,
+    ESCAPE
+};
+
 struct Input {
     float mouseX = -1; // points, from the top left
     float mouseY = -1;
@@ -52,6 +64,9 @@ struct Input {
     // since the last frame; a quick click can do both
     bool pressed = false;
     bool released = false;
+    // since the last frame, for a text field: the text typed (UTF-8) and the keys pressed
+    std::string text;
+    std::vector<Key> keys;
 };
 
 class Context {
@@ -67,9 +82,12 @@ public:
     void render();
     // the mouse is over the GUI, or a widget holds it
     bool wantsMouse() const;
+    // a text field has the focus: the keys are for it
+    bool wantsKeyboard() const;
 
     // a column of widgets with a title bar, scrolled by the wheel
-    void beginPanel(const char *id, Rect r, const char *title = nullptr);
+    // open: with a title, a cross at its right sets it to false
+    void beginPanel(const char *id, Rect r, const char *title = nullptr, bool *open = nullptr);
     void endPanel();
     // n widgets per row
     void columns(int n);
@@ -80,6 +98,17 @@ public:
     bool toggle(const char *label, bool &on, bool enabled = true);
     // "label: item", opening the list of the items
     bool menu(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);
+    // the label on the left, the item on the right, opening the list of the items
+    bool select(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);
+    // the label on the left, the text on the right: a click edits it, Enter or a click elsewhere keeps it (true when it
+    // changed), Escape gives it back
+    bool inputText(const char *label, std::string &text, bool enabled = true);
+    // a row of tabs over the width of the panel; true when the selected one changed
+    bool tabs(const char *id, int &selected, const std::vector<std::string> &names);
+    // a framed area of the panel with its own scroll and scroll bar, the rest of the panel when height is 0; the widgets
+    // until endBox go in it. Just under tabs, it opens on the selected tab.
+    void beginBox(const char *id, float height = 0);
+    void endBox();
     // log: logarithmic scale
     bool slider(const char *label, float &value, float min, float max, const char *format = "%.2f", bool log = false, bool enabled = true);
     bool radio(const char *label, int &selected, const std::vector<std::string> &items, bool enabled = true);

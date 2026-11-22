@@ -1,6 +1,6 @@
 # Game integration: traversals, intersections, triggers
 
-This document gives the design for the use of the R4nkine scene graph by the game. The design is not done yet.
+This document gives the design for the use of the R4nkine scene graph by the game. Some parts are done. Refer to "Status".
 
 The scene graph is not only for the renderer. The game also uses it. Different traversals go through the same graph. Each traversal has its own mask and its own callbacks. IRIS Performer uses the same model (APP, CULL, DRAW, ISECT).
 
@@ -83,14 +83,37 @@ Each traversal has its own mask. The shadow pass has this mask now (`RenderOptio
 
 ## Status
 
-- `R4Strike` (in `contrib/librealspace/src/r4game`) keeps the graph of a flight. The graph has the terrain, a node for each actor and a node for each simulated object. Each layer has a mask (`LAYER_TERRAIN`, `LAYER_ACTORS`, `LAYER_SHOTS`, `LAYER_PLAYER`).
-- `R4Strike::app` is the first form of APP. It runs one time in each frame, before the draw. It sets the matrices and the masks of the nodes from the state of the game. It adds and removes the nodes. It has no node callbacks yet.
-- One pass draws the graph with the camera of the game.
+The code that connects libRealSpace to R4nkine is in libRealSpace (branch `r4nkine`): `src/r4bridge` and `src/r4game`.
+
+Done in R4nkine:
+
+- The APP traversal: `Node::setAppCallbacks` (before and after the children), `Node::setAppMask`, `scene::app(root, mask)`.
+- `r4::scene::Trigger` and `checkTriggers`: the three volumes of the areas of a mission (sphere, cylinder, box), the trackers and the enter and leave callbacks.
+
+Done in libRealSpace:
+
+- `SCMission` loads and runs the mission. `R4Mission : SCMission` keeps the graph of the mission. It makes the graph when the mission is loaded. The graph has:
+  - the terrain of the area,
+  - a group for the planes (a plane goes from an area to another),
+  - a node for each area of the mission, with the objects that are in it,
+  - a Switch for each scene of an area, with the objects of the scene. The Switch is on when the scene is activated,
+  - a trigger for each area of the mission, with its volume.
+- Each layer has a mask: `LAYER_TERRAIN`, `LAYER_ACTORS`, `LAYER_SHOTS`, `LAYER_PLAYER`, `LAYER_TRIGGERS`.
+- `R4Mission::app` makes the nodes of the objects that appear and removes the nodes of the objects that are gone. Then `scene::app` runs the callback of each node. The callback copies the state of its object into the node: the matrix, the wheels, the afterburner, the stores and the model.
+- The triggers put `MissionEventAreaEntered` and `MissionEventAreaLeft` of the planes on the message bus.
+- `R4Strike : SCStrike` keeps the view: the display, the order of the passes, the keys and the cameras. It runs the APP step one time in each frame, after the camera. It puts the graph in the pass of the renderer with the effects and the cockpit.
+- The ground height: `RSArea::ground` is a hook of `RSArea::getY`. `R4Mission` sets it to `r4bridge::groundHeight`, on the LVL0 triangles. It is not an ISECT query of the graph.
+
+Not done:
+
+- ISECT: the queries of segments and rays on the graph (`intersect`).
+- APP at the fixed time step of the simulation. Now, APP runs one time in each frame of the game.
+- The views that do not draw, for a server.
 
 ## Sequence of work
 
-1. ISECT: segment and ray queries, ground height, mask. This step is useful immediately (placement, physics). It does not need the other steps.
-2. APP traversal: node callbacks and one mask for each traversal.
-3. Trigger volumes and their connection to the message bus of libRealSpace.
-4. Spatial layout of the missions: areas as nodes, scenes as switches.
+1. ISECT: segment and ray queries, ground height, mask. The ground height is done without ISECT (refer to "Status"). The queries are not done.
+2. APP traversal: node callbacks and one mask for each traversal. **Done.**
+3. Trigger volumes and their connection to the message bus of libRealSpace. **Done.**
+4. Spatial layout of the missions: areas as nodes, scenes as switches. **Done.**
 5. Views that do not draw, for a server.

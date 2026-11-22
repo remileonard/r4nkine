@@ -24,6 +24,8 @@ using GLchar = char;
 using GLubyte = unsigned char;
 using GLintptr = std::ptrdiff_t;
 using GLsizeiptr = std::ptrdiff_t;
+using GLuint64 = unsigned long long;
+using GLsync = struct GLsyncObject *;
 
 enum : GLenum {
     FALSE_ = 0,
@@ -136,6 +138,15 @@ enum : GLenum {
     COMPARE_REF_TO_TEXTURE = 0x884E,
     MAX_SAMPLES = 0x8D57,
     STENCIL_BUFFER_BIT = 0x00000400,
+    PIXEL_PACK_BUFFER = 0x88EB,
+    TIME_ELAPSED = 0x88BF,
+    QUERY_RESULT = 0x8866,
+    QUERY_RESULT_AVAILABLE = 0x8867,
+    STREAM_READ = 0x88E1,
+    MAP_READ_BIT = 0x0001,
+    SYNC_GPU_COMMANDS_COMPLETE = 0x9117,
+    ALREADY_SIGNALED = 0x911A,
+    CONDITION_SATISFIED = 0x911C,
 };
 
 #define R4_GL_FUNCTIONS(X)                                                                                                                             \
@@ -212,7 +223,18 @@ enum : GLenum {
     X(void, VertexAttribPointer, (GLuint index, GLint size, GLenum type, GLboolean norm, GLsizei stride, const void *ptr))                             \
     X(void, VertexAttribDivisor, (GLuint index, GLuint divisor))                                                                                       \
     X(void, DrawArraysInstanced, (GLenum mode, GLint first, GLsizei count, GLsizei instances))                                                         \
-    X(void, DrawElementsInstancedBaseVertex, (GLenum mode, GLsizei count, GLenum type, const void *idx, GLsizei instances, GLint base))
+    X(void, DrawElementsInstancedBaseVertex, (GLenum mode, GLsizei count, GLenum type, const void *idx, GLsizei instances, GLint base))                \
+    X(void *, MapBufferRange, (GLenum target, GLintptr off, GLsizeiptr size, GLbitfield access))                                                       \
+    X(GLboolean, UnmapBuffer, (GLenum target))                                                                                                         \
+    X(GLsync, FenceSync, (GLenum condition, GLbitfield flags))                                                                                         \
+    X(GLenum, ClientWaitSync, (GLsync sync, GLbitfield flags, GLuint64 timeout))                                                                       \
+    X(void, DeleteSync, (GLsync sync))                                                                                                                 \
+    X(void, GenQueries, (GLsizei n, GLuint * q))                                                                                                       \
+    X(void, DeleteQueries, (GLsizei n, const GLuint *q))                                                                                               \
+    X(void, BeginQuery, (GLenum target, GLuint q))                                                                                                     \
+    X(void, EndQuery, (GLenum target))                                                                                                                 \
+    X(void, GetQueryObjectiv, (GLuint q, GLenum pname, GLint * v))                                                                                     \
+    X(void, GetQueryObjectui64v, (GLuint q, GLenum pname, GLuint64 * v))
 
 struct Api {
 #define R4_GL_DECLARE(ret, name, args) ret(R4_GLAPI *name) args = nullptr;
