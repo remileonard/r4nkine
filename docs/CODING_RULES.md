@@ -1,6 +1,6 @@
 # Coding rules
 
-These rules apply to R4nkine and to its code for libRealSpace (`contrib/librealspace`).
+These rules apply to R4nkine and to its code in libRealSpace (`src/r4bridge`, `src/r4game` and the executables `r4objviewer` and `neosc_r4`).
 
 `.clang-format` sets the layout. Do `clang-format -i` on each file that you change. `.clang-tidy` does a check of the declarations and the braces.
 

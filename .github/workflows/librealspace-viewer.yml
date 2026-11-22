@@ -1,9 +1,8 @@
 name: libRealSpace viewer
 
-# r4objviewer for Windows: libRealSpace (github.com/remileonard/libRealSpace)
-# with the bridge of contrib/librealspace laid over it, built against this
-# R4nkine. Nothing is pushed to libRealSpace: its clone is patched in the
-# runner only.
+# r4objviewer for Windows: libRealSpace (github.com/remileonard/libRealSpace),
+# which holds the bridge to R4nkine, built against this R4nkine. Nothing is
+# pushed to libRealSpace.
 #
 # The archive (r4objviewer.exe and its DLLs) is attached to the run
 # (Artifacts). The game data are not in it: r4objviewer -data <folder of the TRE>.
@@ -17,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       librealspace_ref:
-        description: "Branch, tag or commit of libRealSpace (empty: its default branch)"
+        description: "Branch, tag or commit of libRealSpace"
         type: string
-        default: ""
+        default: "r4nkine"
 
 jobs:
   windows:
@@ -38,26 +37,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: remileonard/libRealSpace
-          ref: ${{ inputs.librealspace_ref }}
+          ref: ${{ inputs.librealspace_ref || 'r4nkine' }}
           path: librealspace
 
-      # the bridge into the clone of libRealSpace: its files, the include of
-      # cmake/R4nkine.cmake, and glm, stb and cgltf in its vcpkg.json
-      - name: Lay the bridge over libRealSpace
-        run: |
-          cp -r r4nkine/contrib/librealspace/src r4nkine/contrib/librealspace/cmake librealspace/
-          cd librealspace
-          sed -i 's|^add_subdirectory(tests)|include(cmake/R4nkine.cmake)\n\nadd_subdirectory(tests)|' CMakeLists.txt
-          grep -n "R4nkine.cmake" CMakeLists.txt
-          python - <<'EOF'
-          import json
-          m = json.load(open("vcpkg.json"))
-          names = [d if isinstance(d, str) else d["name"] for d in m["dependencies"]]
-          m["dependencies"] += [n for n in ("glm", "stb", "cgltf") if n not in names]
-          json.dump(m, open("vcpkg.json", "w"), indent=2)
-          EOF
-          cat vcpkg.json
-          echo "LRS_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+      - name: Commit of libRealSpace
+        working-directory: librealspace
+        run: echo "LRS_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
       # the packages of vcpkg, built once: libRealSpace needs boost, SDL2_mixer_ext...
       - uses: actions/cache@v4
@@ -87,7 +72,8 @@ jobs:
           mkdir -p "$dir"
           cp librealspace/out/build/windows/src/executables/r4objviewer/Release/*.exe "$dir/"
           cp librealspace/out/build/windows/src/executables/r4objviewer/Release/*.dll "$dir/" 2>/dev/null || true
-          cp r4nkine/contrib/librealspace/README_R4NKINE.md r4nkine/LICENSE "$dir/"
+          cp librealspace/README_R4NKINE.md "$dir/" 2>/dev/null || true
+          cp r4nkine/LICENSE "$dir/"
           ls -l "$dir"
           echo "DIR=$dir" >> "$GITHUB_ENV"
 

@@ -36,7 +36,7 @@ gpu       Device: buffers, textures, shaders, pipelines, draws
 core      math: glm (Vec3, Mat4, column-major), Box, Sphere, Frustum
 ```
 
-The RealSpace data (Strike Commander, Tactical Operations) is not in these layers. libRealSpace reads it. `contrib/librealspace` converts it into R4nkine models (r4bridge) and shows it (r4objviewer). Refer to "RealSpace (`contrib/librealspace`)".
+The RealSpace data (Strike Commander, Tactical Operations) is not in these layers. libRealSpace reads it. Code in libRealSpace converts it into R4nkine models (r4bridge) and shows it (r4objviewer, neosc_r4). Refer to "RealSpace (libRealSpace)".
 
 ## Dependencies
 
@@ -233,16 +233,17 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | 2 | instancing in the renderer (one draw for equal mesh and material), `Instancer` node for thousands of copies (forests), Billboard, PNG/JPEG with stb_image, glTF 2.0 | **done** |
 | 3 | the old formats, ports from legacy_opengl_demo: libgobj (flight), YAODL (powerflip, flip), flip .bin, pfb, dwb, OpenFlight, gset; 5551E images; all the demos in r4fly | **done** |
 | 3b | `r4::ui`, the GUI of perfly drawn through `r4::gpu`; r4fly with its panels: settings, scene graph, performance; render options in the renderer (culling, freeze, sort, instancing, textures, lighting, LOD scale) and CPU times | **done** |
-| 4 | RealSpace in `contrib/librealspace`: RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
+| 4 | RealSpace in libRealSpace (`src/r4bridge`): RSEntity to Model, `PaletteRamp` material, block terrain with LOD and seams, quadtree of the blocks, texture atlas, outside rings, forests, cities, r4objviewer | **done** |
 | 4b | renderer: shadow map, fog, texture scalers, anisotropic filter, mipmaps, palette index textures, animated textures, shadow mask, compact placements | **done** |
 | 5 | libRealSpace integration: `neosc_r4`, the game drawn only by R4nkine in a core context: screen, 320 x 200 screen, renderer, flight on the scene graph | **done** |
 | 6 | a second backend (SDL3 GPU: Vulkan, Metal, D3D12), shaders compiled to SPIR-V | not done |
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
-| game | ISECT queries (ground height, collisions), APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, views that do not draw, for a server: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | not done |
+| game | APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, areas as nodes and scenes as switches: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | **done** |
+| game 2 | ISECT queries (segments and rays: ground height, collisions), APP at the fixed time step, views that do not draw, for a server | not done |
 
-## RealSpace (`contrib/librealspace`)
+## RealSpace (libRealSpace)
 
-libRealSpace reads the data of the game. The code in `contrib/librealspace` goes into the source tree of libRealSpace. It does not change the code of libRealSpace.
+libRealSpace reads the data of the game. The code that connects it to R4nkine is in libRealSpace, on its `r4nkine` branch: `src/r4bridge`, `src/r4game`, `src/executables/r4objviewer` and `src/executables/neosc_r4`. `cmake/R4nkine.cmake` adds R4nkine from a local folder (`R4NKINE_DIR`) or from GitHub (FetchContent).
 
 **r4bridge** converts the data of libRealSpace into R4nkine models:
 
@@ -258,17 +259,20 @@ libRealSpace reads the data of the game. The code in `contrib/librealspace` goes
 - `groundHeight`: the height of the ground on the LVL0 triangles as `terrainModel` draws them. `RSArea::getY` gives incorrect heights.
 - `onGround`: it puts an object on the ground. It only raises a flying object.
 
-**r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `contrib/librealspace/README_R4NKINE.md`.
+**r4objviewer** shows the objects, the missions and the worlds of Strike Commander and Tactical Operations. It has the GUI of r4fly. Its options are in `README_R4NKINE.md` of libRealSpace.
 
 ## Integration in libRealSpace (step 5)
 
-`neosc_r4` is neosc drawn by R4nkine. The code is in `contrib/librealspace/src/r4game`. A patch adds virtual methods to libRealSpace (`contrib/librealspace/patches/r4-hooks.patch`). The behavior of neosc does not change.
+`neosc_r4` is neosc drawn by R4nkine. The code is in `src/r4game` of libRealSpace. libRealSpace has virtual methods for the display of `RSVGA`, `Loader` and `SCStrike`, a factory for `SCStrike` (`SCStrike::setFactory`) and the virtual method `SCStrike::createMission`. The behavior of neosc does not change.
 
 - **Context**: OpenGL 3.3 core (4.1 core on macOS). The game makes no GL call. Only R4nkine uses the context.
 - **Screen** (`R4Screen`, `R4VGA`, `R4Loader`): the window, the post process, the 320 x 200 screen and the loading screen. The 320 x 200 screen is an overlay over the 3D. Its index 255 is clear.
 - **Renderer** (`R4Renderer : SCRenderer`): it overrides all the methods that draw.
-  - It has its own model matrix stack (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`). The patch adds these methods. The game code that used the GL matrix stack uses them now.
+  - It has its own model matrix stack (`pushMatrix`, `translateMatrix`, `rotateMatrix`, `scaleMatrix`, `popMatrix`). `SCRenderer` has these methods. The game code that used the GL matrix stack uses them now.
   - It keeps the calls of the game: the models with their matrix, the effects (billboards, sprites, particles, tracers, effect triangles, textured quads, clouds, lines, points) as triangles batched by state, the sky, the graphs of the scenes.
   - A pass of the renderer draws them with the camera of the game. The pass occurs before a change of view, before the 320 x 200 screen and at the end of the frame.
   - The view of the target camera has its own render target (107 x 75). The renderer reads it back for the cockpit (`readRenderToTexture`).
-- **Flight** (`R4Strike : SCStrike`): the graph of the flight lives as long as the flight. It has the terrain, a node for each plane, mission object and simulated object. The APP step sets the nodes from the game one time for each frame. The graph goes in the same pass as the effects and the cockpit. See [GAME_INTEGRATION.md](GAME_INTEGRATION.md).
+- **Mission** (`R4Mission : SCMission`): the graph of the mission lives as long as the mission. It has the terrain, the areas, the scenes, a node for each plane, mission object and simulated object, and the triggers of the areas. Its APP step sets the nodes from the game. See [GAME_INTEGRATION.md](GAME_INTEGRATION.md).
+- **Flight** (`R4Strike : SCStrike`): the view. It runs the APP step of the mission one time for each frame, after the camera. It puts the graph in the same pass as the effects and the cockpit.
+- **Timer** (`R4Timer`): the time of each frame from the high resolution counter, at all frame rates.
+- **Panels**: `R4Panel` shows the performance and the render options. `R4ConfigPanel` (Ctrl+F11) changes the options of `config.ini` and the inputs of the actions: keys, buttons and axes of the controllers and joysticks, with the deadzone, the curve and the inversion of each axis.
