@@ -29,7 +29,8 @@ render    cull → shadow pass → draw list → sort → batch/instance → pas
           FXAA, CRT, palette)
 scene     Node, Group, Geode, Switch, LOD, Billboard, Instancer
 assets    Model, Mesh, Material, Image; loaders: OBJ/MTL, libgobj .d,
-          YAODL, flip .bin, pfb, dwb, OpenFlight, gset, glTF 2.0; SGI,
+          YAODL, flip .bin, pfb, dwb, OpenFlight, gset, glTF 2.0, the
+          other formats through Assimp; SGI,
           PPM, 5551E, PNG/JPEG/BMP/TGA/GIF; pixel art scalers (2xSaI, xBR)
 gpu       Device: buffers, textures, shaders, pipelines, draws
           backends: OpenGL 3.3 (done), SDL3 GPU / Vulkan (not done)
@@ -45,6 +46,7 @@ The dependencies come from vcpkg in manifest mode. The manifest is `vcpkg.json`.
 - **glm**: vectors and matrices. `r4::Vec3` and `r4::Mat4` are `glm::vec3` and `glm::mat4`. Thus, a program that uses glm gives its values without conversion. R4nkine needs `GLM_FORCE_CTOR_INIT`: vectors are zero and matrices are identity by default. The target defines it for its users.
 - **stb**: the usual image formats.
 - **cgltf**: glTF 2.0.
+- **Assimp** (`assimp` feature, option `R4_WITH_ASSIMP`): the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL, X, Blender and more). `loadModel` uses the loaders of R4nkine first. Assimp reads only the extensions that they do not read. The root node turns the model from Y up to Z up, as for glTF. Without Assimp, these formats are not read.
 - **SDL2**: only for r4fly (the `viewer` feature).
 
 The GUI (`r4::ui`) is a part of the library. It draws through `r4::gpu`. `tools/bake_font.cpp` makes its font in `src/ui/font_data.inc`.

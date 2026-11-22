@@ -9,9 +9,16 @@
     "cgltf"
   ],
   "default-features": [
-    "viewer"
+    "viewer",
+    "assimp"
   ],
   "features": {
+    "assimp": {
+      "description": "the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL...) read by Assimp",
+      "dependencies": [
+        "assimp"
+      ]
+    },
     "viewer": {
       "description": "r4fly, the model viewer (SDL2)",
       "dependencies": [
