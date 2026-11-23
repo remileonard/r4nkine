@@ -9,7 +9,7 @@ a scene graph built for speed, loaders for old and new asset formats, and
 The name comes from the Rankine scale, the absolute version of the
 Fahrenheit scale. Fahrenheit was the scene graph SGI, Microsoft and HP
 announced in 1997 and never shipped. R4nkine is a homage to the OpenGL demos
-of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
+of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md). The programmer's guide is in [docs/MANUAL.md](docs/MANUAL.md).
 
 ## What is there
 
