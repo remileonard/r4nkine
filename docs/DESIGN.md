@@ -242,6 +242,7 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
 | game | APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, areas as nodes and scenes as switches: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | **done** |
 | game 2 | ISECT queries (segments and rays: ground height, collisions), APP at the fixed time step, views that do not draw, for a server | not done |
+| audio | `r4nkine_audio`: spatial sound with OpenAL Soft, sound sources as nodes of the graph, a listener on the camera or the head, updated during APP: see [AUDIO.md](AUDIO.md) | not done |
 
 ## RealSpace (libRealSpace)
 
