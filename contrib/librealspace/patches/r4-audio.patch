@@ -1,3 +1,22 @@
+diff --git a/cmake/R4nkine.cmake b/cmake/R4nkine.cmake
+index cdeb163..fdd5fff 100644
+--- a/cmake/R4nkine.cmake
++++ b/cmake/R4nkine.cmake
+@@ -1,5 +1,5 @@
+ # cmake/R4nkine.cmake - R4nkine dans libRealSpace : la bibliothèque, le pont
+-# r4bridge, le viewer r4objviewer, r4game et le jeu neosc_r4.
++# r4bridge, le viewer r4objviewer, r4game, le jeu neosc_r4 et r4soundplayer.
+ #
+ # Dans le CMakeLists.txt principal, après les add_subdirectory(src/...) :
+ #
+@@ -37,3 +37,7 @@ add_subdirectory(${CMAKE_SOURCE_DIR}/src/executables/r4objviewer)
+ 
+ add_subdirectory(${CMAKE_SOURCE_DIR}/src/r4game)
+ add_subdirectory(${CMAKE_SOURCE_DIR}/src/executables/neosc_r4)
++# le lecteur des sons du jeu, avec r4nkine_audio (OpenAL Soft)
++if(TARGET r4nkine::r4nkine_audio)
++    add_subdirectory(${CMAKE_SOURCE_DIR}/src/executables/r4soundplayer)
++endif()
 diff --git a/src/engine/AILXmidiDriver.cpp b/src/engine/AILXmidiDriver.cpp
 index c566f64..d518f69 100644
 --- a/src/engine/AILXmidiDriver.cpp

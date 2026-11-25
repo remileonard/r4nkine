@@ -58,6 +58,7 @@ R4Mixer::~R4Mixer() {
         c.reset();
     }
     effects_.clear();
+    effectPcm_.clear();
     vocs_.clear();
     context_.reset();
 }
@@ -146,9 +147,11 @@ void R4Mixer::renderEffects() {
         }
         effects_.push_back(ok ? soundOf(pcm) : nullptr);
         loops += ok && pcm.loops ? 1 : 0;
+        effectPcm_.push_back(std::move(pcm));
     }
+    effectSynth_ = munt ? "MT-32" : "OPL";
     const double ms = (double)(SDL_GetPerformanceCounter() - start) * 1000.0 / (double)SDL_GetPerformanceFrequency();
-    std::printf("R4Mixer: %zu effects in PCM (%s), %d loops, %.0f ms\n", effects_.size(), munt ? "MT-32" : "OPL", loops, ms);
+    std::printf("R4Mixer: %zu effects in PCM (%s), %d loops, %.0f ms\n", effects_.size(), effectSynth_.c_str(), loops, ms);
 }
 
 std::shared_ptr<r4::audio::Sound> R4Mixer::soundOf(const R4SoundPcm &pcm) {
@@ -180,6 +183,14 @@ const std::shared_ptr<r4::audio::Sound> &R4Mixer::effect(int index) const {
         return kNoSound;
     }
     return effects_[(size_t)index];
+}
+
+const R4SoundPcm &R4Mixer::effectPcm(int index) const {
+    static const R4SoundPcm none;
+    if (index < 0 || index >= (int)effectPcm_.size()) {
+        return none;
+    }
+    return effectPcm_[(size_t)index];
 }
 
 int R4Mixer::effectIndex(MemMusic *fx) const {

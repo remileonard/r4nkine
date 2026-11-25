@@ -16,6 +16,7 @@
 #include "r4/audio/audio.h"
 
 #include <map>
+#include <string>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -54,11 +55,19 @@ public:
     bool isSoundPlaying() override;
     bool isSoundPlaying(int chanl) override;
 
-    // the effects rendered at init and their loops, for the logs and the tests
+    // the effects rendered at init: their sounds, their PCM and the synthesizer that made them (a player, the tests)
     size_t effectCount() const {
         return effects_.size();
     }
     const std::shared_ptr<r4::audio::Sound> &effect(int index) const;
+    const R4SoundPcm &effectPcm(int index) const;
+    const std::string &effectSynth() const {
+        return effectSynth_;
+    }
+    // the context of OpenAL, null without OpenAL (then RSMixer plays with SDL_mixer)
+    r4::audio::Context *context() const {
+        return context_.get();
+    }
 
 private:
     // a VOC played on a channel, as Mix_PlayChannel: loops plays left after this one (-1: without end)
@@ -81,6 +90,8 @@ private:
     std::unique_ptr<r4::audio::Context> context_;
     std::shared_ptr<r4::audio::Stream> music_;
     std::vector<std::shared_ptr<r4::audio::Sound>> effects_;
+    std::vector<R4SoundPcm> effectPcm_;
+    std::string effectSynth_;
     std::unordered_map<const uint8_t *, std::shared_ptr<r4::audio::Sound>> vocs_;
     std::map<int, Channel> channels_;
     int lastChannel_ = -1;

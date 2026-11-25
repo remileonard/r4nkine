@@ -8,6 +8,7 @@ This folder holds code for libRealSpace (branch `r4nkine`). Move it into libReal
 | --- | --- |
 | `src/r4bridge/R4SoundFx.h`, `.cpp` | The sound effects in PCM: `renderSoundFx` renders an XMIDI effect off line with a `MusicDevice` (OPL or munt), and finds a loop without end. `decodeVoc` decodes a VOC. |
 | `src/r4game/R4Mixer.h`, `.cpp` | `R4Mixer`, a `RSMixer` on `r4nkine_audio` (OpenAL Soft). The music is a stream. The effects of the game are sources in space. The VOC of the channels play at the listener. |
+| `src/executables/r4soundplayer/` | `r4soundplayer`: a player of the sounds of the game, as `neosc_r4` plays them (refer to "Player"). |
 | `patches/r4-audio.patch` | The changes to the files of libRealSpace (refer to "Patch"). |
 | `.clang-format` | The format of the files. |
 
@@ -34,6 +35,19 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 | `src/r4game/CMakeLists.txt` | `R4Mixer` and the link to `r4nkine::r4nkine_audio` when the target exists (`R4GAME_AUDIO`). |
 | `src/r4game/R4Screen.cpp` | `R4Mixer::update()` at each frame, in `refresh`. |
 | `src/executables/neosc_r4/main.cpp` | `RSMixer::setInstance(std::make_unique<R4Mixer>())`. |
+| `cmake/R4nkine.cmake` | `r4soundplayer`, when `r4nkine::r4nkine_audio` exists. |
+
+## Player
+
+`r4soundplayer [-data folder] [-hrtf]` shows the sounds of the game, with R4Mixer:
+
+- The tab XMIDI: the effects of `SOUNDFX`, rendered into PCM with the synthesizer of `[Sound] midi_music`. The list gives the length and the loops.
+- The tab VOC: the digitized effects of `DSOUNDFX.PAK`, with the names of `SoundEffectIds`.
+- The tab Music: the tracks of a bank, played as in the game.
+- For a sound: the curve of its level, Play, Stop, Loop, Gain, and Export WAV (the introduction and two passes of the loop).
+- In space: a direction and a distance from the listener, or "Pass in front": the source goes from left to right at a speed, for the Doppler effect. Use headphones, and `-hrtf` to hear above and below.
+
+The data: `./SC.DAT` and `./assets`, as `neosc_r4`. Else `-data`, a folder with `BIGTRE.TRE` and `LILTRE.TRE`.
 
 ## Settings (`[Sound]`)
 
@@ -53,12 +67,14 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 ## Tests done
 
 - The build of all the targets of libRealSpace with the patch, on Linux.
-- `decodeVoc`: the 39 VOC of `MID1VOC.PAK`, `MID33VOC.PAK`, `MID34VOC.PAK` and `MID36VOC.PAK` have the length that SDL_mixer gives.
-- `renderSoundFx` on the 29 sequences of `AMUSIC.PAK`: 5 have a loop without end, and the loop is found (example: an introduction of 16 s and a loop of 34.6 s).
-- `R4Mixer` on the null device of OpenAL: the effects, an emitter, a channel with a loop, the music stream, stop.
+- The effects of `SOUNDFX.ADL` on the OPL (`LILTRE.TRE`): 14 effects, rendered in 0.5 to 0.9 s. 4 loop: `GUN_FIRE` (introduction 1 s, loop 4.42 s) and the effects 6, 7 and 13. They hold a note without end: their loop is found in the wave. At the join of each loop, the step between two samples is as small as the median step of the sound. The 10 other effects end (0.33 to 4.08 s).
+- The TVFX voices keep a noise of 1 to 6 units after the end of an effect. Below 16 units, `renderSoundFx` takes it as silence.
+- `decodeVoc`: the 31 VOC of `DSOUNDFX.PAK` (entry 22 is empty), and the 39 VOC of the cutscenes, which have the length that SDL_mixer gives.
+- `renderSoundFx` on the 29 sequences of `AMUSIC.PAK`: 5 have a loop without end, and the loop is found.
+- `R4Mixer` and `r4soundplayer` on the null device of OpenAL: the lists, Play, the loops, the pass in front, Export WAV.
 
 ## Not tested
 
-- The effects of `SOUNDFX.ADL` and `DSOUNDFX.PAK`: `SOUND.TRE` was not available for the tests. The render of the effects is not heard yet.
+- The sound on a sound card: the tests used the null device of OpenAL. The WAV files were not heard.
 - The MT-32 render (munt): there were no ROMs.
-- `neosc_r4` in a mission, with a sound card.
+- `neosc_r4` in a mission.

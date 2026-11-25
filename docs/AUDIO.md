@@ -171,9 +171,10 @@ All the sound effects are PCM `Sound`s on positional `Source`s. Thus, all the ef
 - A VOC effect is decoded into a mono PCM buffer. `R4Mixer` has its own VOC decoder (8 bits, unsigned, blocks of type 1), because SDL_mixer is not used.
 - An XMIDI effect of `SOUNDFX.ADL` is rendered into a mono PCM buffer at load, one time for each bank:
   1. A new synthesizer and a new AIL driver render the effect. They do not share voices with the music.
-  2. An effect without a loop, or with a loop that has a count, is rendered up to `SEQ_DONE`, then up to silence (the release). The maximum length is 10 seconds.
+  2. An effect without a loop, or with a loop that has a count, is rendered up to `SEQ_DONE`, then up to silence (the release; the TVFX voices keep a noise of a few units, which is silence). The maximum length is 10 seconds.
   3. An effect with a loop without end (`FOR_LOOP`, controller 116, with a count of 0) is rendered with its introduction and two passes of the loop. The driver gives the sample of `FOR_LOOP` and of the jump of `NEXT_LOOP` (controller 117). The second pass is the body of the loop: the state of the synthesizer is then stable (voices in release, TVFX curves), and the end joins the start.
   4. The buffer is the introduction and the body, with loop points. The source plays the introduction one time, then loops on the body.
+  5. An effect that holds a note without end, without a loop in its sequence (`GUN_FIRE` on the OPL), is still heard after 6 seconds. Its loop starts at 1 s. Its end is in the last second, where the wave is the most like the wave at 1 s.
 - The synthesizer of the render follows the mode:
   - modes 0 and 1: an OPL;
   - mode 3: one munt, off line. The timbres of `STRIKE.MT` go to munt before the render, and munt must process the sysex before the first note;
@@ -209,4 +210,4 @@ Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
 3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
 4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body. `Listener::setPose`. **Done.**
 5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. **Code in `contrib/librealspace`** (`R4Mixer`, `patches/r4-audio.patch`). The VOC decoder gives the lengths of SDL_mixer.
-6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Code in `contrib/librealspace`** (`R4SoundFx` in r4bridge, `R4Mixer`). Not heard yet: `SOUND.TRE` and the MT-32 ROMs were not available for the tests. Refer to `contrib/librealspace/README.md`.
+6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Code in `contrib/librealspace`** (`R4SoundFx` in r4bridge, `R4Mixer`). The 14 effects of `SOUNDFX.ADL` are rendered on the OPL; 4 hold a note without end, and their loop is found in the wave. `r4soundplayer` plays the effects, the VOC and the music. Not tested: a sound card, the MT-32 ROMs. Refer to `contrib/librealspace/README.md`.

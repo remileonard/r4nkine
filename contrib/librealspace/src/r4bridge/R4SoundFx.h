@@ -5,7 +5,9 @@
 //  The sound effects of the game in PCM, for a sound in space: an XMIDI effect of SOUNDFX.ADL rendered off line by a synthesizer
 //  (OPL or MT-32), and a digitized sound (VOC) decoded.
 //  An effect with a loop without end (FOR_LOOP with a count of 0) gives its introduction and its body: the render goes through the
-//  introduction and two passes of the loop, and keeps the second pass, when the state of the synthesizer is stable.
+//  introduction and two passes of the loop, and keeps the second pass, when the state of the synthesizer is stable. A held
+//  sound (a note without end, without a loop in the sequence) loops from 1 s to the point of the sixth second where the wave
+//  is the most like the wave at 1 s.
 //
 #pragma once
 

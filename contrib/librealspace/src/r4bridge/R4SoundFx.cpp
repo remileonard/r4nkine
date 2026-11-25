@@ -14,8 +14,10 @@
 
 namespace {
 
-// a sample below it is silence: the end of the release
-constexpr int kSilence = 2;
+// a sample below it is silence: the end of the release (the TVFX voices can keep a noise of a few units for minutes)
+constexpr int kSilence = 16;
+// a sound still heard at this time without the end of its sequence nor a loop is held: a note without end
+constexpr float kHeldSeconds = 6.0f;
 
 int16_t clamp16(int v) {
     return (int16_t)std::max(-32768, std::min(32767, v));
@@ -32,6 +34,27 @@ bool silentEnd(const std::vector<int16_t> &pcm, size_t window) {
         }
     }
     return true;
+}
+
+// A held sound (a note without end, no loop in the sequence): the loop starts at 1 s, after the attack; its end, in the last
+// second, is where the wave is the most like the wave at its start, so that the join cannot be heard.
+void findHeldLoop(const std::vector<int16_t> &pcm, int rate, size_t &start, size_t &end) {
+    const size_t window = 256;
+    start = (size_t)rate;
+    size_t first = pcm.size() > (size_t)rate + window ? pcm.size() - (size_t)rate : start + window;
+    end = pcm.size() - window;
+    double best = -1;
+    for (size_t e = first; e + window <= pcm.size(); e++) {
+        double cost = 0;
+        for (size_t k = 0; k < window && (best < 0 || cost < best); k++) {
+            const double d = (double)pcm[start + k] - (double)pcm[e + k];
+            cost += d * d;
+        }
+        if (best < 0 || cost < best) {
+            best = cost;
+            end = e;
+        }
+    }
 }
 
 void trimSilence(std::vector<int16_t> &pcm) {
@@ -58,6 +81,7 @@ bool renderSoundFx(MusicDevice &device, const SCTimbreLibrary *timbres, const ui
         return false;
     }
     const size_t maxFrames = (size_t)(maxSeconds * (float)rate);
+    const size_t heldFrames = (size_t)(kHeldSeconds * (float)rate);
     const size_t silenceWindow = (size_t)(rate / 20);
     const double tick = (double)rate / 120.0;
     std::vector<int16_t> stereo;
@@ -99,6 +123,9 @@ bool renderSoundFx(MusicDevice &device, const SCTimbreLibrary *timbres, const ui
         if (done && silentEnd(out.samples, silenceWindow)) {
             break;
         }
+        if (!done && jumpCount == 0 && out.samples.size() >= heldFrames) {
+            break;
+        }
     }
     xmi.stop(h);
     xmi.release(h);
@@ -114,6 +141,10 @@ bool renderSoundFx(MusicDevice &device, const SCTimbreLibrary *timbres, const ui
         out.loopStart = loopMark;
         out.loopEnd = jumps[0];
         out.samples.resize(jumps[0]);
+    } else if (!done && out.samples.size() >= heldFrames && !silentEnd(out.samples, silenceWindow)) {
+        out.loops = true;
+        findHeldLoop(out.samples, rate, out.loopStart, out.loopEnd);
+        out.samples.resize(out.loopEnd);
     } else {
         trimSilence(out.samples);
     }
