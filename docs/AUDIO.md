@@ -142,21 +142,70 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 ## Use in libRealSpace
 
-- libRealSpace is a client of `r4nkine_audio`. `R4Mixer` replaces `RSMixer` for `neosc_r4`, as `R4Screen` replaces `RSScreen`. The other programs keep `RSMixer` and SDL_mixer.
-- `R4Mixer` keeps the sequencer, the AIL driver and the synthesis of `RSMixer`. Only the output changes.
-- The music: one stereo `Stream`. Its `fill` calls the render of the synthesis (`RSMixer::render`, under its lock). This replaces `Mix_HookMusic`.
-- The voices and the radio (VOC): a `Sound` for each, on a `Source` without position. `onFinished` frees the channel. This replaces `Mix_PlayChannel` and `Mix_ChannelFinished`.
-- The sound effects: the game renders each sound effect of the AIL driver one time, at load, into a mono PCM buffer (`Sound::fromPCM`).
-- Some effects loop. Some effects change during the flight, for example the engine. An inventory of the effects of the game must find them before the work starts. A loop uses `loop`. A change of speed uses `pitch`.
-- `R4Strike` attaches a `SoundSource` to the node of each emitter: the engine of each plane, the guns, the missiles, the explosions. It replaces `RSMixer::playOrUpdateSoundFx(effect, emitter, distance)`.
-- `referenceDistance` and `maxDistance` are set from the values of the game (1000 and 5000 units). Thus, the game sounds as before, with a direction.
-- The music, the radio and the voices are not in space.
-- Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
-- In virtual reality, the listener follows the head of `r4nkine_xr`.
+libRealSpace is a client of `r4nkine_audio`. `R4Mixer` replaces `RSMixer` for `neosc_r4`, as `R4Screen` replaces `RSScreen`. The other programs keep `RSMixer` and SDL_mixer.
+
+### Synthesis modes
+
+`[Sound] midi_music` selects the synthesis. The mode tells where the sound is made:
+
+| Mode | Music | XMIDI sound effects |
+| --- | --- | --- |
+| 0: OPL (default) | OPL, in the program | the same OPL |
+| 1: General MIDI | a MIDI port, or a SoundFont in the program | a separate OPL (`sfxOpl`) |
+| 2: MT-32 hardware | the MIDI port | the same MT-32 |
+| 3: MT-32 emulated (munt) | munt, in the program | the same munt |
+
+The digitized sounds (VOC) do not use a synthesizer.
+
+### Music
+
+- The music is one stereo `Stream`. Its `fill` calls `RSMixer::render` under `engineMutex`. This replaces `Mix_HookMusic`.
+- The stream contains only the sound that the program makes: modes 0 and 3, and mode 1 with a SoundFont. When the music goes to a MIDI port (mode 2, mode 1 with a port), it does not go through `r4nkine_audio`.
+- The music is not in space.
+
+### Sound effects
+
+All the sound effects are PCM `Sound`s on positional `Source`s. Thus, all the effects are in space, in all the modes.
+
+- A VOC effect is decoded into a mono PCM buffer. `R4Mixer` has its own VOC decoder (8 bits, unsigned, blocks of type 1), because SDL_mixer is not used.
+- An XMIDI effect of `SOUNDFX.ADL` is rendered into a mono PCM buffer at load, one time for each bank:
+  1. A new synthesizer and a new AIL driver render the effect. They do not share voices with the music.
+  2. An effect without a loop, or with a loop that has a count, is rendered up to `SEQ_DONE`, then up to silence (the release). The maximum length is 10 seconds.
+  3. An effect with a loop without end (`FOR_LOOP`, controller 116, with a count of 0) is rendered with its introduction and two passes of the loop. The driver gives the sample of `FOR_LOOP` and of the jump of `NEXT_LOOP` (controller 117). The second pass is the body of the loop: the state of the synthesizer is then stable (voices in release, TVFX curves), and the end joins the start.
+  4. The buffer is the introduction and the body, with loop points. The source plays the introduction one time, then loops on the body.
+- The synthesizer of the render follows the mode:
+  - modes 0 and 1: an OPL;
+  - mode 3: one munt, off line. The timbres of `STRIKE.MT` go to munt before the render, and munt must process the sysex before the first note;
+  - mode 2: the output of the hardware cannot be captured. Use munt when the ROMs are there, else the OPL.
+- The game does not stop an effect while it plays. It stops it only when its volume is 0, thus when it is too far to hear. Thus, to stop the PCM at once gives no audible cut.
+- `setRelVolume` becomes the gain of the source. During an effect, only its volume changes. Thus, the PCM buffer is correct.
+- The renders can be kept in a cache on the disk.
+
+### Sources of the effects
+
+- `SCMission::playEffect(id, position)` makes a source at the position. The source is released at the end of its sound.
+- `SCMission::playOrUpdateEffect(id, emitter, distance)` keeps one source for each emitter and effect. It updates its position at each frame. Later, `R4Strike` can attach a `SoundSource` to the node of the actor.
+- There is no limit of 5 channels: all the effects are heard. `Settings::maxVoices` (64) is the limit. A configuration key sets it, for example `[Sound] max_voices`.
+- All the effects have the same priority. Thus, the distance gives the order: the sounds of the player are at the camera and keep their voices. The voices and the radio play without position: their distance is 0.
+- The attenuation uses `LINEAR_CLAMPED` with `maxDistance` 1000: this is the rule 100 − d / 10 of the game.
+
+### Voices and radio
+
+- The voices and the radio (VOC) use a `Sound` on a `Source` without position. `onFinished` frees the channel. This replaces `Mix_PlayChannel` and `Mix_ChannelFinished`.
+
+### Listener
+
+- The listener follows the camera of `R4Renderer` (`Listener::fromView`). In virtual reality, it follows the head of `r4nkine_xr`.
+- The positions of the sources and of the listener use the same frame as the render.
+- The speed of sound is set in the units of the game, for the Doppler effect.
+
+Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
 
 ## Sequence of work
 
 1. `r4nkine_audio`: the context, the sounds, the WAV loader, `Source` with `onFinished`, `Stream` and its thread, the listener on a camera, `SoundSource`, `Context::update`. Tests on a loopback context (`tests/audio_tests.cpp`): left and right, the listener on a node and on a camera, the end of a sound, the voices and their priority, the APP mask, the streams, the Doppler effect, the audio thread, WAV. **Done.**
 2. r4fly: `-sound file.wav` plays a sound that turns about the models, heard from the camera; `-hrtf`. **Done.**
 3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
-4. libRealSpace: `R4Mixer` with the music in a `Stream` and the voices on sources without position. Then the inventory of the sound effects, their render into PCM buffers, and the sources on the nodes of `R4Strike`.
+4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body.
+5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. Do a check against SDL_mixer with a loopback context.
+6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera.
