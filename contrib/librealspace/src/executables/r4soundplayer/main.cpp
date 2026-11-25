@@ -8,8 +8,10 @@
 //  Usage: r4soundplayer [-data folder of the TRE] [-hrtf] [-frames N]
 //  The data: ./SC.DAT and ./assets, as neosc_r4; or -data, a folder with BIGTRE.TRE and LILTRE.TRE.
 //
-#include "../../strike_commander/precomp.h"
+#include "../../engine/Config.hpp"
 #include "../../r4game/R4Mixer.h"
+#include "../../realspace/AssetManager.h"
+#include "../../realspace/RSSound.h"
 #include "r4/gpu/device.h"
 #include "r4/ui/ui.h"
 
