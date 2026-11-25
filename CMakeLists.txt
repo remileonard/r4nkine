@@ -143,7 +143,7 @@ if(R4_BUILD_APPS)
     endif()
     # the examples of the README, built with the viewer (SDL2)
     if(R4_BUILD_EXAMPLES)
-        foreach(example hello_model forest hierarchy ui_panel cockpit)
+        foreach(example hello_model forest hierarchy ui_panel cockpit town)
             add_executable(${example} examples/${example}.cpp)
             target_link_libraries(${example} PRIVATE r4nkine
                 $<TARGET_NAME_IF_EXISTS:SDL2::SDL2main>

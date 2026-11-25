@@ -209,6 +209,7 @@ and distance in all of them):
 | `forest` | an Instancer: up to 50000 trees, two levels of detail, a few draw calls; the panel changes the count, the LOD scale, instancing, culling and fog, and shows the cost |
 | `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads); the panel flies the plane |
 | `ui_panel` | `r4::ui`: a panel of perfly driving a box, with the color picker |
+| `town [file.flt]` | a walk in `data/openflight/ville_with_sky.flt`, from the center: W A S D (Z Q S D on AZERTY) or the arrows, the left button looks, Shift runs, F flies (Space and C up and down), R back to the center; on foot the eye follows the ground and the walls stop it |
 | `cockpit` | `r4::raster`: a cockpit drawn on the CPU (radar, horizon, compass tape, readouts) over the scene, in 320x200 indexed pixels or up to 1280x800 in true colors; palette effects; a HUD in true colors at the size of the window; the radar as a screen standing in the scene; the post process on everything |
 
 `examples/common` holds what they share and is not R4nkine: an SDL2
