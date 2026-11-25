@@ -70,7 +70,7 @@ Sound::~Sound() {
     }
 }
 
-std::shared_ptr<Sound> Sound::fromPCM(const int16_t *samples, size_t frames, int channels, int rate) {
+std::shared_ptr<Sound> Sound::fromPCM(const int16_t *samples, size_t frames, int channels, int rate, size_t loopStart, size_t loopEnd) {
     if (!samples || frames == 0 || (channels != 1 && channels != 2) || rate <= 0 || !alcGetCurrentContext()) {
         return nullptr;
     }
@@ -86,6 +86,19 @@ std::shared_ptr<Sound> Sound::fromPCM(const int16_t *samples, size_t frames, int
     s->channels_ = channels;
     s->rate_ = rate;
     s->frames_ = frames;
+    s->loopStart_ = 0;
+    s->loopEnd_ = frames;
+    if (loopEnd > loopStart && loopEnd <= frames && (loopStart > 0 || loopEnd < frames)) {
+        if (!alIsExtensionPresent("AL_SOFT_loop_points")) {
+            return s;
+        }
+        ALint points[2] = {(ALint)loopStart, (ALint)loopEnd};
+        alBufferiv(b, AL_LOOP_POINTS_SOFT, points);
+        if (alGetError() == AL_NO_ERROR) {
+            s->loopStart_ = loopStart;
+            s->loopEnd_ = loopEnd;
+        }
+    }
     return s;
 }
 
@@ -604,10 +617,13 @@ void Context::update(float dt) {
         } else {
             // virtual: its time goes on
             src.time_ += (double)dt * std::max(0.01f, src.pitch);
-            double length = src.sound_->seconds();
-            if (src.time_ >= length) {
-                if (src.loop && length > 0) {
-                    src.time_ = std::fmod(src.time_, length);
+            const Sound &sound = *src.sound_;
+            double rate = std::max(1, sound.rate());
+            double end = src.loop ? (double)sound.loopEnd() / rate : sound.seconds();
+            if (src.time_ >= end) {
+                double start = (double)sound.loopStart() / rate;
+                if (src.loop && end > start) {
+                    src.time_ = start + std::fmod(src.time_ - start, end - start);
                 } else {
                     ended = true;
                 }

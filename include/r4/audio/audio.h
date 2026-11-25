@@ -23,8 +23,9 @@ public:
     Sound(const Sound &) = delete;
     Sound &operator=(const Sound &) = delete;
 
-    // frames of channels samples (1 or 2), interleaved; null without a current context
-    static std::shared_ptr<Sound> fromPCM(const int16_t *samples, size_t frames, int channels, int rate);
+    // frames of channels samples (1 or 2), interleaved; null without a current context. With loopEnd > loopStart, a source with
+    // loop plays the frames before loopStart one time, then loops on [loopStart, loopEnd) (AL_SOFT_loop_points)
+    static std::shared_ptr<Sound> fromPCM(const int16_t *samples, size_t frames, int channels, int rate, size_t loopStart = 0, size_t loopEnd = 0);
 
     int channels() const {
         return channels_;
@@ -41,10 +42,19 @@ public:
     uint32_t buffer() const {
         return buffer_;
     }
+    // the loop in frames; [0, frames) without loop points
+    size_t loopStart() const {
+        return loopStart_;
+    }
+    size_t loopEnd() const {
+        return loopEnd_;
+    }
 
 private:
     Sound() = default;
     uint32_t buffer_ = 0;
+    size_t loopStart_ = 0;
+    size_t loopEnd_ = 0;
     int channels_ = 0;
     int rate_ = 0;
     size_t frames_ = 0;

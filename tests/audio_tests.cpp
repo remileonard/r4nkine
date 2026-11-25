@@ -49,6 +49,50 @@ static void energy(audio::Context &ctx, int frames, double &left, double &right)
     }
 }
 
+// loop points: the introduction (silence) one time, then the body (a tone) again and again; the virtual time loops on the body
+static void testLoopPoints(audio::Context &ctx) {
+    const size_t part = kRate / 10;
+    std::vector<int16_t> pcm(part * 2, 0);
+    for (size_t i = part; i < pcm.size(); i++) {
+        pcm[i] = (int16_t)(12000 * std::sin(2 * 3.14159265 * 440 * (double)i / kRate));
+    }
+    auto sound = audio::Sound::fromPCM(pcm.data(), pcm.size(), 1, kRate, part, part * 2);
+    CHECK(sound && sound->loopStart() == part && sound->loopEnd() == part * 2);
+    auto src = ctx.createSource(sound);
+    src->loop = true;
+    src->play();
+    ctx.update(0.01f);
+    double left = 0;
+    double right = 0;
+    energy(ctx, (int)part - 480, left, right);
+    CHECK(left / (double)(part - 480) < kSilence);
+    std::vector<int16_t> skip(480 * 2 * 2);
+    ctx.render(skip.data(), 480 * 2);
+    bool body = true;
+    for (int i = 0; i < 5; i++) {
+        energy(ctx, (int)part, left, right);
+        body = body && left / (double)part > 1000;
+    }
+    CHECK(body);
+    src->stop();
+    ctx.update(0.01f);
+    // virtual: after the introduction, its time stays in the body
+    src->positional = true;
+    src->position = {1000, 0, 0};
+    src->maxDistance = 100;
+    src->play();
+    ctx.update(0.01f);
+    CHECK(!src->hasVoice() && src->isPlaying());
+    bool inBody = true;
+    for (int i = 0; i < 20; i++) {
+        ctx.update(0.037f);
+        inBody = inBody && (i < 3 || (src->offset() >= 0.1f - 1e-4f && src->offset() < 0.2f + 1e-4f));
+    }
+    CHECK(inBody && src->isPlaying());
+    src->stop();
+    ctx.update(0.01f);
+}
+
 // the listener at the origin, ahead +Y (the default of R4nkine): +X is on its right
 static void testPan(audio::Context &ctx) {
     auto sound = tone(1);
@@ -234,11 +278,14 @@ static void testStream(audio::Context &ctx) {
 static int crossings(audio::Context &ctx, int frames) {
     std::vector<int16_t> out((size_t)frames * 2);
     ctx.render(out.data(), frames);
+    // with a margin, so that the dither about 0 counts for nothing
     int n = 0;
-    for (int i = 1; i < frames; i++) {
-        bool a = out[(i - 1) * 2] >= 0;
-        bool b = out[i * 2] >= 0;
-        n += a != b ? 1 : 0;
+    int side = 0;
+    for (int i = 0; i < frames; i++) {
+        int v = out[i * 2];
+        int now = v > 8 ? 1 : (v < -8 ? -1 : side);
+        n += side != 0 && now != side ? 1 : 0;
+        side = now;
     }
     return n;
 }
@@ -362,6 +409,7 @@ int main(int argc, char **argv) {
     testPan(*ctx);
     testListenerNode(*ctx);
     testFinished(*ctx);
+    testLoopPoints(*ctx);
     testStream(*ctx);
     testDoppler(*ctx);
     testWAV(dir);
