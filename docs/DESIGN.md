@@ -48,6 +48,7 @@ The dependencies come from vcpkg in manifest mode. The manifest is `vcpkg.json`.
 - **cgltf**: glTF 2.0.
 - **Assimp** (`assimp` feature, option `R4_WITH_ASSIMP`): the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL, X, Blender and more). `loadModel` uses the loaders of R4nkine first. Assimp reads only the extensions that they do not read. The root node turns the model from Y up to Z up, as for glTF. Without Assimp, these formats are not read.
 - **SDL2**: only for r4fly (the `viewer` feature).
+- **OpenAL Soft**: only for `r4nkine_audio` (the `audio` feature). Its license is LGPL: link it dynamically. Refer to [AUDIO.md](AUDIO.md).
 - **OpenXR loader**: only for `r4nkine_xr` (the `xr` feature, default on Windows). Refer to "Virtual reality (`r4::xr`)".
 
 The GUI (`r4::ui`) is a part of the library. It draws through `r4::gpu`. `tools/bake_font.cpp` makes its font in `src/ui/font_data.inc`.
@@ -242,6 +243,7 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
 | game | APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, areas as nodes and scenes as switches: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | **done** |
 | game 2 | ISECT queries (segments and rays: ground height, collisions), APP at the fixed time step, views that do not draw, for a server | not done |
+| audio | `r4nkine_audio`: sound with OpenAL Soft, sources and streams, sound sources as nodes of the graph, a listener on the camera or the head, updated after APP; r4fly `-sound`: see [AUDIO.md](AUDIO.md) | **done** (libRealSpace: not done) |
 
 ## RealSpace (libRealSpace)
 

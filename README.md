@@ -9,7 +9,7 @@ a scene graph built for speed, loaders for old and new asset formats, and
 The name comes from the Rankine scale, the absolute version of the
 Fahrenheit scale. Fahrenheit was the scene graph SGI, Microsoft and HP
 announced in 1997 and never shipped. R4nkine is a homage to the OpenGL demos
-of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
+of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md). The programmer's guide is in [docs/MANUAL.md](docs/MANUAL.md).
 
 ## What is there
 
@@ -108,8 +108,10 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md).
   Keys: F1 shows or hides the GUI, `w` wireframe, `r` reset, `s` statistics.
   `-snap` saves a frame, `-nogui` starts without the GUI, `-view` places
   the eye, `-state` chooses the state bits of the models, `-F` gives the
-  search paths, and `-forest N[,F]` plants N copies of the files with an
-  Instancer (the first file near, the next ones beyond F, 2F...).
+  search paths.
+  `-sound file.wav` plays a mono sound that turns about the models, heard
+  from the camera (`r4nkine_audio`), and `-hrtf` turns on the HRTF for
+  headphones.
 
 ## Downloads
 
@@ -131,6 +133,13 @@ On macOS (Apple silicon), the archive is not signed: after unpacking it,
 `xattr -dr com.apple.quarantine r4fly-*` lets it start. On Windows,
 `r4fly.exe`, the examples and `SDL2.dll` are side by side: drop a model on
 the exe, or run `r4fly samples\quad.obj`.
+
+`data/openflight` (`samples/openflight` in the archives) holds OpenFlight
+models: trees (`feuillu`, `peuplier`, `sapin`), buildings (`maison`,
+`ferme`, `grange`, `eglise`, `immeuble`), vehicles (`voiture`, `camion`,
+`spaceship`), and `ville`, a town that places the others by external
+references: `r4fly data/openflight/ville.flt`. `ville_with_sky` is the same
+town under a sky dome with clouds, on a large ground.
 
 ### libRealSpace: r4objviewer
 
@@ -168,6 +177,7 @@ mode (`vcpkg.json`):
 | SDL2 | r4fly, the viewer | `viewer` (default) |
 | Assimp | the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL, X, Blender...) | `assimp` (default); without it, `loadModel` reads only the formats above |
 | OpenXR loader | `r4nkine_xr`, virtual reality (`r4/xr/xr.h`) | `xr` (default on Windows) |
+| OpenAL Soft | `r4nkine_audio`, sound in space (`r4/audio/audio.h`, [docs/AUDIO.md](docs/AUDIO.md)); LGPL, a shared library | `audio` (default) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:
@@ -199,6 +209,7 @@ and distance in all of them):
 | `forest` | an Instancer: up to 50000 trees, two levels of detail, a few draw calls; the panel changes the count, the LOD scale, instancing, culling and fog, and shows the cost |
 | `hierarchy` | a plane and its missiles: matrices down the graph, a Switch (the gear, `G`), a LOD, missiles fired off their pylons (`Space`, `R` reloads); the panel flies the plane |
 | `ui_panel` | `r4::ui`: a panel of perfly driving a box, with the color picker |
+| `town [file.flt]` | a walk in `data/openflight/ville_with_sky.flt`, from the center: W A S D (Z Q S D on AZERTY) or the arrows, the left button looks, Shift runs, F flies (Space and C up and down), R back to the center; on foot the eye follows the ground and the walls stop it |
 | `cockpit` | `r4::raster`: a cockpit drawn on the CPU (radar, horizon, compass tape, readouts) over the scene, in 320x200 indexed pixels or up to 1280x800 in true colors; palette effects; a HUD in true colors at the size of the window; the radar as a screen standing in the scene; the post process on everything |
 
 `examples/common` holds what they share and is not R4nkine: an SDL2

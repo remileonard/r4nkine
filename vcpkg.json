@@ -11,6 +11,7 @@
   "default-features": [
     "viewer",
     "assimp",
+    "audio",
     {
       "name": "xr",
       "platform": "windows"
@@ -33,6 +34,12 @@
       "description": "r4::xr, virtual reality with OpenXR (the OpenGL session works on Windows)",
       "dependencies": [
         "openxr-loader"
+      ]
+    },
+    "audio": {
+      "description": "r4nkine_audio, sound in space with OpenAL Soft",
+      "dependencies": [
+        "openal-soft"
       ]
     }
   }

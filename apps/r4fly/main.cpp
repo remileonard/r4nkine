@@ -14,8 +14,9 @@
 //     -view H,P,Z      the trackball: heading, pitch (degrees), zoom (2: twice closer)
 //     -state MASK      the state of the models (their default otherwise)
 //     -F dir:dir...    the folders where the textures and references are searched
-//     -forest N[,F]    N copies of the files planted on a square: the first file near, the next ones beyond F, 2F... units
 //     -vr              the views in a headset, with OpenXR (Windows)
+//     -sound file.wav  a sound that turns about the models, heard from the camera (r4nkine_audio, OpenAL Soft)
+//     -hrtf            with -sound: the HRTF of OpenAL Soft, for headphones
 //
 // The files are loaded side by side under one root. Mouse: left turns, wheel zooms, right moves. Keys: F1 the GUI, w wireframe, r reset, s statistics,
 // v the headset on or off, Esc quit. In the headset, the viewer stands at the eye of the trackball, on a floor under the center of the view.
@@ -25,6 +26,10 @@
 
 #ifdef R4FLY_XR
 #include "r4/xr/xr.h"
+#endif
+
+#ifdef R4FLY_AUDIO
+#include "r4/audio/audio.h"
 #endif
 
 #include <chrono>
@@ -66,7 +71,7 @@ constexpr int kCoreMinor = 3;
 
 void usage() {
     std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-shadows] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
-                         "[-state MASK] [-F dirs] [-forest N[,F]] [-vr] file ...\n");
+                         "[-state MASK] [-F dirs] [-vr] [-sound file.wav] [-hrtf] file ...\n");
     std::exit(1);
 }
 
@@ -193,9 +198,9 @@ int main(int argc, char **argv) {
 #endif
     const char *snap = nullptr;
     long state = -1;
-    int forest = 0;
-    float forestFar = 0;
     bool vr = false;
+    std::string soundFile;
+    bool hrtf = false;
     std::vector<std::string> files;
     for (int i = 1; i < argc; i++) {
         std::string a = argv[i];
@@ -236,12 +241,12 @@ int main(int argc, char **argv) {
                 assets::addSearchPath(list.substr(p, c - p));
                 p = c + 1;
             }
-        } else if (a == "-forest" && i + 1 < argc) {
-            if (std::sscanf(argv[++i], "%d,%f", &forest, &forestFar) < 1) {
-                usage();
-            }
         } else if (a == "-vr") {
             vr = true;
+        } else if (a == "-sound" && i + 1 < argc) {
+            soundFile = argv[++i];
+        } else if (a == "-hrtf") {
+            hrtf = true;
         } else if (a == "-stats") {
             app.printStats = true;
         } else if (!a.empty() && a[0] == '-') {
@@ -312,8 +317,6 @@ int main(int argc, char **argv) {
     app.models->setName("root");
     app.top->addChild(app.models);
     float x = 0;
-    auto instancer = scene::make<scene::Instancer>();
-    int level = 0;
     for (const std::string &f : files) {
         auto model = assets::loadModel(f, &error);
         if (!model) {
@@ -343,55 +346,54 @@ int main(int argc, char **argv) {
             }
         }
         std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n", f.c_str(), model->meshes.size(), lf.triangles, lf.lines, lf.points, model->materials.size(), model->images.size());
-        if (forest > 0) {
-            Box box = model->bounds();
-            float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
-            Mat4 m = scale({unit, unit, unit}) * translate({-s.center.x, -s.center.y, -box.min.z});
-            auto parts = scene::collectParts(*node);
-            for (auto &p : parts) {
-                p.local = m * p.local;
-            }
-            float limit = forestFar > 0 && level + 1 < (int)files.size() ? forestFar * (level + 1) : 1e30f;
-            instancer->addLevel(parts, limit);
-            level++;
-        } else {
-            auto place = scene::make<scene::Group>();
-            place->setName(f);
-            if (!s.empty()) {
-                float k = 1.0f / std::max(s.radius, 1e-6f);
-                place->setMatrix(translate({x + 1, 0, 0}) * scale({k, k, k}) * translate(-s.center));
-            }
-            place->addChild(node);
-            app.models->addChild(place);
-            x += 2.2f;
+        auto place = scene::make<scene::Group>();
+        place->setName(f);
+        if (!s.empty()) {
+            float k = 1.0f / std::max(s.radius, 1e-6f);
+            place->setMatrix(translate({x + 1, 0, 0}) * scale({k, k, k}) * translate(-s.center));
         }
+        place->addChild(node);
+        app.models->addChild(place);
+        x += 2.2f;
         app.files.push_back(std::move(lf));
-    }
-
-    if (forest > 0) {
-        int side = (int)std::ceil(std::sqrt((double)forest));
-        unsigned seed = 1;
-        auto rnd = [&]() {
-            seed = seed * 1103515245u + 12345u;
-            return (seed >> 8 & 0xffff) / 65535.0f;
-        };
-        std::vector<Mat4> inst;
-        for (int i = 0; i < forest; i++) {
-            float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f;
-            float py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
-            float k = 0.7f + 0.6f * rnd();
-            inst.push_back(translate({px, py, 0}) * rotate(rnd() * 6.2832f, {0, 0, 1}) * scale({k, k, k}));
-        }
-        instancer->setInstances(inst);
-        instancer->setName("forest");
-        app.models->addChild(instancer);
-        app.forest = instancer;
-        std::printf("r4fly: %d instances, %d levels\n", forest, level);
     }
 
     app.boundsMarker = makeBoundsMarker(renderer);
     app.boundsMarker->setMask(0);
     app.top->addChild(app.boundsMarker);
+
+#ifdef R4FLY_AUDIO
+    // a sound that turns about the models in 8 s, on a circle of twice their radius; destroyed before its context
+    std::unique_ptr<audio::Context> sound;
+    std::shared_ptr<audio::SoundSource> soundNode;
+    const Sphere soundAround = app.models->bounds();
+    if (!soundFile.empty()) {
+        audio::Settings as;
+        as.hrtf = hrtf;
+        sound = audio::Context::create(as, &error);
+        std::shared_ptr<audio::Sound> wav = sound ? audio::loadWAV(soundFile, &error) : nullptr;
+        if (!wav) {
+            std::fprintf(stderr, "r4fly: -sound: %s\n", error.c_str());
+        } else {
+            if (wav->channels() != 1) {
+                std::fprintf(stderr, "r4fly: -sound: %s is stereo: it has no place in space\n", soundFile.c_str());
+            }
+            soundNode = std::make_shared<audio::SoundSource>(sound->createSource(wav));
+            soundNode->setName("sound");
+            soundNode->source().loop = true;
+            soundNode->source().referenceDistance = std::max(soundAround.radius, 0.1f);
+            soundNode->source().play();
+            app.top->addChild(soundNode);
+            std::printf("r4fly: %s on %s%s\n", soundFile.c_str(), sound->deviceName().c_str(), sound->hrtf() ? ", HRTF" : "");
+        }
+    }
+    double lastSound = now();
+#else
+    if (!soundFile.empty()) {
+        std::fprintf(stderr, "r4fly: built without r4nkine_audio, no -sound\n");
+    }
+    (void)hrtf;
+#endif
 
     app.resetView();
     app.ui = std::make_unique<ui::Context>(*app.device);
@@ -571,6 +573,23 @@ int main(int argc, char **argv) {
         int vx = (int)std::lround(view.x * pixelScale);
         int vw = std::max(1, (int)std::lround(view.w * pixelScale));
         app.ball.apply(app.camera, h > 0 ? (float)vw / h : 1);
+#ifdef R4FLY_AUDIO
+        if (soundNode) {
+            double ts = now();
+            float dt = std::min(0.1f, (float)(ts - lastSound) / 1000.0f);
+            lastSound = ts;
+            float angle = (float)std::fmod(ts / 8000.0, 1.0) * 2 * 3.14159265f;
+            float r = 2 * std::max(soundAround.radius, 0.1f);
+            soundNode->setMatrix(translate(soundAround.center + Vec3{r * std::cos(angle), r * std::sin(angle), 0}));
+            sound->listener().fromView(app.camera.view);
+#ifdef R4FLY_XR
+            if (headset && headset->running()) {
+                sound->listener().fromCameraPose(headset->head());
+            }
+#endif
+            sound->update(*app.top, dt);
+        }
+#endif
         if (app.headlight) {
             Vec3 toTarget = normalize(app.ball.target() - app.ball.eye());
             renderer.environment().lightDirection = normalize(toTarget + Vec3{0.3f, 0, -0.6f});
@@ -674,11 +693,17 @@ int main(int argc, char **argv) {
         hand.reset();
     }
 #endif
+#ifdef R4FLY_AUDIO
+    if (soundNode) {
+        app.top->removeChild(soundNode.get());
+    }
+    soundNode.reset();
+    sound.reset();
+#endif
     app.ui.reset();
     app.selected = nullptr;
     app.boundsMarker.reset();
     app.files.clear();
-    app.forest.reset();
     app.models.reset();
     app.top.reset();
     app.post.reset();
