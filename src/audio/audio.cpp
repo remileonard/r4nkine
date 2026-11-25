@@ -266,6 +266,12 @@ void Listener::set(Vec3 position, Vec3 forward, Vec3 up) {
     up_ = normalize(up);
 }
 
+void Listener::setPose(Vec3 position, Vec3 forward, Vec3 up) {
+    follow_.reset();
+    following_ = false;
+    set(position, forward, up);
+}
+
 void Listener::fromCameraPose(const Mat4 &worldFromCamera) {
     follow_.reset();
     following_ = false;

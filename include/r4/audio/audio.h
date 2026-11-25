@@ -190,6 +190,8 @@ private:
 // Where the sounds are heard. Its velocity comes from its moves between two updates.
 class Listener {
 public:
+    // a position, the axis ahead and the axis up, in the world
+    void setPose(Vec3 position, Vec3 forward, Vec3 up);
     // a camera of the renderer (its view matrix: -Z ahead, +Y up)
     void fromView(const Mat4 &view);
     // the world from a camera (-Z ahead, +Y up): the head of xr::Session::head()

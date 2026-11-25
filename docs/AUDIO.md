@@ -1,6 +1,6 @@
 # Spatial audio: `r4nkine_audio`
 
-This document gives the design of the audio of R4nkine. Steps 1, 2 and 3 of "Sequence of work" are done. The API is in `include/r4/audio/audio.h`.
+This document gives the design of the audio of R4nkine. Steps 1 to 4 of "Sequence of work" are done. The code of steps 5 and 6 is in `contrib/librealspace`, to move into libRealSpace. The API is in `include/r4/audio/audio.h`.
 
 The scene graph knows the position of each node, the camera, and the head in virtual reality. Thus, R4nkine can put the sounds in space. The module plays the sounds and puts them in space. The application makes the sounds. The OpenAL module of OpenSceneGraph (osgAL, then osgAudio) uses the same model.
 
@@ -101,6 +101,7 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 - `audio::Context::listener()` gives the listener.
 - `Listener::fromView(camera.view)` puts the listener at a camera of the renderer: its position, its forward axis and its up axis. `Listener::fromCameraPose(worldFromCamera)` does the same from the pose of a camera.
+- `Listener::setPose(position, forward, up)` sets the pose directly. Example: a camera of an application that has its own camera.
 - `Listener::follow(node)` attaches the listener to a node. Example: the head of the pilot.
 - In virtual reality, `Listener::fromCameraPose(session.head())` sets the pose of the head at each frame.
 - The speed of the listener comes from its change of position, as for a source.
@@ -177,7 +178,7 @@ All the sound effects are PCM `Sound`s on positional `Source`s. Thus, all the ef
   - modes 0 and 1: an OPL;
   - mode 3: one munt, off line. The timbres of `STRIKE.MT` go to munt before the render, and munt must process the sysex before the first note;
   - mode 2: the output of the hardware cannot be captured. Use munt when the ROMs are there, else the OPL.
-- The game does not stop an effect while it plays. It stops it only when its volume is 0, thus when it is too far to hear. Thus, to stop the PCM at once gives no audible cut.
+- The game stops an effect while it plays in two cases: its volume is 0 (it is too far to hear), and the gun stops (`SCMission::stopEffect`). In the second case, the source stops at once, without the release of the synthesizer.
 - `setRelVolume` becomes the gain of the source. During an effect, only its volume changes. Thus, the PCM buffer is correct.
 - The renders can be kept in a cache on the disk.
 
@@ -206,6 +207,6 @@ Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
 1. `r4nkine_audio`: the context, the sounds, the WAV loader, `Source` with `onFinished`, `Stream` and its thread, the listener on a camera, `SoundSource`, `Context::update`. Tests on a loopback context (`tests/audio_tests.cpp`): left and right, the listener on a node and on a camera, the end of a sound, the voices and their priority, the APP mask, the streams, the Doppler effect, the audio thread, WAV. **Done.**
 2. r4fly: `-sound file.wav` plays a sound that turns about the models, heard from the camera; `-hrtf`. **Done.**
 3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
-4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body.
-5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. Do a check against SDL_mixer with a loopback context.
-6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera.
+4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body. `Listener::setPose`. **Done.**
+5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. **Code in `contrib/librealspace`** (`R4Mixer`, `patches/r4-audio.patch`). The VOC decoder gives the lengths of SDL_mixer.
+6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Code in `contrib/librealspace`** (`R4SoundFx` in r4bridge, `R4Mixer`). Not heard yet: `SOUND.TRE` and the MT-32 ROMs were not available for the tests. Refer to `contrib/librealspace/README.md`.
