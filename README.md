@@ -108,8 +108,7 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md). The programmer's
   Keys: F1 shows or hides the GUI, `w` wireframe, `r` reset, `s` statistics.
   `-snap` saves a frame, `-nogui` starts without the GUI, `-view` places
   the eye, `-state` chooses the state bits of the models, `-F` gives the
-  search paths, and `-forest N[,F]` plants N copies of the files with an
-  Instancer (the first file near, the next ones beyond F, 2F...).
+  search paths.
   `-sound file.wav` plays a mono sound that turns about the models, heard
   from the camera (`r4nkine_audio`), and `-hrtf` turns on the HRTF for
   headphones.

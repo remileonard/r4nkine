@@ -253,9 +253,6 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     for (const LoadedFile &f : app.files) {
         g.message(fmt("%.0f tris, %.0f lines, %.0f points", (double)f.triangles, (double)f.lines, (double)f.points).insert(0, baseName(f.path) + ": ").c_str());
     }
-    if (app.forest) {
-        g.message(fmt("forest: %.0f instances, %.0f levels", (double)app.forest->instances().size(), (double)app.forest->levels().size()).c_str());
-    }
     g.endPanel();
 }
 

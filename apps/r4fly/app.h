@@ -111,7 +111,6 @@ struct App {
 
     std::shared_ptr<scene::Group> top;    // the models and the overlay
     std::shared_ptr<scene::Group> models; // what is shown
-    std::shared_ptr<scene::Instancer> forest;
     std::vector<LoadedFile> files;
 
     // the light: over the shoulder of the viewer, or fixed in the world

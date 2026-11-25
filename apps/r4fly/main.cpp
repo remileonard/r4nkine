@@ -14,7 +14,6 @@
 //     -view H,P,Z      the trackball: heading, pitch (degrees), zoom (2: twice closer)
 //     -state MASK      the state of the models (their default otherwise)
 //     -F dir:dir...    the folders where the textures and references are searched
-//     -forest N[,F]    N copies of the files planted on a square: the first file near, the next ones beyond F, 2F... units
 //     -vr              the views in a headset, with OpenXR (Windows)
 //     -sound file.wav  a sound that turns about the models, heard from the camera (r4nkine_audio, OpenAL Soft)
 //     -hrtf            with -sound: the HRTF of OpenAL Soft, for headphones
@@ -72,7 +71,7 @@ constexpr int kCoreMinor = 3;
 
 void usage() {
     std::fprintf(stderr, "usage: r4fly [-size WxH] [-wire] [-shadows] [-core] [-scale S] [-post LIST] [-nogui] [-frames N] [-snap file.ppm] [-stats] [-view H,P,Z] "
-                         "[-state MASK] [-F dirs] [-forest N[,F]] [-vr] [-sound file.wav] [-hrtf] file ...\n");
+                         "[-state MASK] [-F dirs] [-vr] [-sound file.wav] [-hrtf] file ...\n");
     std::exit(1);
 }
 
@@ -199,8 +198,6 @@ int main(int argc, char **argv) {
 #endif
     const char *snap = nullptr;
     long state = -1;
-    int forest = 0;
-    float forestFar = 0;
     bool vr = false;
     std::string soundFile;
     bool hrtf = false;
@@ -243,10 +240,6 @@ int main(int argc, char **argv) {
                 }
                 assets::addSearchPath(list.substr(p, c - p));
                 p = c + 1;
-            }
-        } else if (a == "-forest" && i + 1 < argc) {
-            if (std::sscanf(argv[++i], "%d,%f", &forest, &forestFar) < 1) {
-                usage();
             }
         } else if (a == "-vr") {
             vr = true;
@@ -324,8 +317,6 @@ int main(int argc, char **argv) {
     app.models->setName("root");
     app.top->addChild(app.models);
     float x = 0;
-    auto instancer = scene::make<scene::Instancer>();
-    int level = 0;
     for (const std::string &f : files) {
         auto model = assets::loadModel(f, &error);
         if (!model) {
@@ -355,50 +346,16 @@ int main(int argc, char **argv) {
             }
         }
         std::printf("r4fly: %s: %zu meshes, %zu triangles, %zu lines, %zu points, %zu materials, %zu images\n", f.c_str(), model->meshes.size(), lf.triangles, lf.lines, lf.points, model->materials.size(), model->images.size());
-        if (forest > 0) {
-            Box box = model->bounds();
-            float unit = s.empty() ? 1 : 1.0f / std::max(s.radius, 1e-6f);
-            Mat4 m = scale({unit, unit, unit}) * translate({-s.center.x, -s.center.y, -box.min.z});
-            auto parts = scene::collectParts(*node);
-            for (auto &p : parts) {
-                p.local = m * p.local;
-            }
-            float limit = forestFar > 0 && level + 1 < (int)files.size() ? forestFar * (level + 1) : 1e30f;
-            instancer->addLevel(parts, limit);
-            level++;
-        } else {
-            auto place = scene::make<scene::Group>();
-            place->setName(f);
-            if (!s.empty()) {
-                float k = 1.0f / std::max(s.radius, 1e-6f);
-                place->setMatrix(translate({x + 1, 0, 0}) * scale({k, k, k}) * translate(-s.center));
-            }
-            place->addChild(node);
-            app.models->addChild(place);
-            x += 2.2f;
+        auto place = scene::make<scene::Group>();
+        place->setName(f);
+        if (!s.empty()) {
+            float k = 1.0f / std::max(s.radius, 1e-6f);
+            place->setMatrix(translate({x + 1, 0, 0}) * scale({k, k, k}) * translate(-s.center));
         }
+        place->addChild(node);
+        app.models->addChild(place);
+        x += 2.2f;
         app.files.push_back(std::move(lf));
-    }
-
-    if (forest > 0) {
-        int side = (int)std::ceil(std::sqrt((double)forest));
-        unsigned seed = 1;
-        auto rnd = [&]() {
-            seed = seed * 1103515245u + 12345u;
-            return (seed >> 8 & 0xffff) / 65535.0f;
-        };
-        std::vector<Mat4> inst;
-        for (int i = 0; i < forest; i++) {
-            float px = (i % side + rnd() * 0.6f - 0.3f) * 2.5f;
-            float py = (i / side + rnd() * 0.6f - 0.3f) * 2.5f;
-            float k = 0.7f + 0.6f * rnd();
-            inst.push_back(translate({px, py, 0}) * rotate(rnd() * 6.2832f, {0, 0, 1}) * scale({k, k, k}));
-        }
-        instancer->setInstances(inst);
-        instancer->setName("forest");
-        app.models->addChild(instancer);
-        app.forest = instancer;
-        std::printf("r4fly: %d instances, %d levels\n", forest, level);
     }
 
     app.boundsMarker = makeBoundsMarker(renderer);
@@ -747,7 +704,6 @@ int main(int argc, char **argv) {
     app.selected = nullptr;
     app.boundsMarker.reset();
     app.files.clear();
-    app.forest.reset();
     app.models.reset();
     app.top.reset();
     app.post.reset();
