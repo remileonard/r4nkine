@@ -101,7 +101,7 @@ jobs:
           echo "dir=r4fly-$version-${{ matrix.os }}-$arch" >> "$GITHUB_OUTPUT"
 
       # r4fly, the examples (and SDL2.dll on Windows), the license, the README and the
-      # small models of the tests as samples
+      # small models of the tests and the OpenFlight models as samples
       - name: Package
         run: |
           dir="${{ steps.name.outputs.dir }}"
@@ -111,6 +111,7 @@ jobs:
           cp LICENSE README.md "$dir/"
           cp tests/data/* "$dir/samples/"
           rm -f "$dir/samples/make_data.py"
+          cp -r data/openflight "$dir/samples/"
           if [ "$RUNNER_OS" = Windows ]; then
             7z a "$dir.zip" "$dir"
             echo "ARCHIVE=$dir.zip" >> "$GITHUB_ENV"

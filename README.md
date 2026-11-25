@@ -134,6 +134,12 @@ On macOS (Apple silicon), the archive is not signed: after unpacking it,
 `r4fly.exe`, the examples and `SDL2.dll` are side by side: drop a model on
 the exe, or run `r4fly samples\quad.obj`.
 
+`data/openflight` (`samples/openflight` in the archives) holds OpenFlight
+models: trees (`feuillu`, `peuplier`, `sapin`), buildings (`maison`,
+`ferme`, `grange`, `eglise`, `immeuble`), vehicles (`voiture`, `camion`,
+`spaceship`), and `ville`, a town that places the others by external
+references: `r4fly data/openflight/ville.flt`.
+
 ### libRealSpace: r4objviewer
 
 The code that connects
