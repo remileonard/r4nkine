@@ -110,6 +110,9 @@ of that era. The design is in [docs/DESIGN.md](docs/DESIGN.md). The programmer's
   the eye, `-state` chooses the state bits of the models, `-F` gives the
   search paths, and `-forest N[,F]` plants N copies of the files with an
   Instancer (the first file near, the next ones beyond F, 2F...).
+  `-sound file.wav` plays a mono sound that turns about the models, heard
+  from the camera (`r4nkine_audio`), and `-hrtf` turns on the HRTF for
+  headphones.
 
 ## Downloads
 
@@ -168,6 +171,7 @@ mode (`vcpkg.json`):
 | SDL2 | r4fly, the viewer | `viewer` (default) |
 | Assimp | the other model formats (FBX, COLLADA, 3DS, LWO, PLY, STL, X, Blender...) | `assimp` (default); without it, `loadModel` reads only the formats above |
 | OpenXR loader | `r4nkine_xr`, virtual reality (`r4/xr/xr.h`) | `xr` (default on Windows) |
+| OpenAL Soft | `r4nkine_audio`, sound in space (`r4/audio/audio.h`, [docs/AUDIO.md](docs/AUDIO.md)); LGPL, a shared library | `audio` (default) |
 
 With `VCPKG_ROOT` set to a vcpkg folder, the presets of `CMakePresets.json`
 use its toolchain, and vcpkg installs the dependencies at configure time:

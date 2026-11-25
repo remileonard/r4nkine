@@ -1,6 +1,6 @@
 # Spatial audio: `r4nkine_audio`
 
-This document gives the design of the audio of R4nkine. The design is not done yet.
+This document gives the design of the audio of R4nkine. Steps 1, 2 and 3 of "Sequence of work" are done. The API is in `include/r4/audio/audio.h`.
 
 The scene graph knows the position of each node, the camera, and the head in virtual reality. Thus, R4nkine can put the sounds in space. The module plays the sounds and puts them in space. The application makes the sounds. The OpenAL module of OpenSceneGraph (osgAL, then osgAudio) uses the same model.
 
@@ -45,15 +45,15 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 ## Sound data
 
-- `audio::Sound` is a PCM buffer in OpenAL: 8 or 16 bits, mono or stereo, with its sample rate.
+- `audio::Sound` is a PCM buffer of 16 bits in OpenAL, mono or stereo, with its sample rate. Make the sounds after the context. Free them before it.
 - Only a mono sound has a position in space. A stereo sound plays without position (music, menus).
-- `audio::loadWAV(path)` reads a WAV file.
+- `audio::loadWAV(path)` reads a WAV file of PCM, 8 or 16 bits, mono or stereo.
 - `audio::Sound::fromPCM(samples, count, channels, rate)` makes a sound from samples that the application gives.
 - Use a `Sound` for a sound that is known before it plays: a sound effect, a voice. For a sound that the application makes while it plays, use a stream (refer to "Streams").
 
 ## Sources
 
-`audio::Source` plays a `Sound`. It can be outside the graph.
+`audio::Source` plays a `Sound`. It can be outside the graph. `Context::createSource(sound)` makes it. Free the sources before the context.
 
 - A source without position plays at the listener: a voice, the radio, a menu. This is the default.
 - A source can have a position, a speed and a direction that the application sets. Example: a program without a graph.
@@ -63,18 +63,18 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 ### End of a sound
 
-- `Source::onFinished` is a callback. `audio::update` calls it when a source without `loop` comes to the end of its sound, or when `stop()` stops it.
-- The callback runs on the thread of the application, during `audio::update`. It does not run on the audio thread. Thus, the callback can change the state of the application without a lock.
+- `Source::onFinished` is a callback. `Context::update` calls it when a source without `loop` comes to the end of its sound, or when `stop()` stops it.
+- The callback runs on the thread of the application, during `Context::update`. It does not run on the audio thread. Thus, the callback can change the state of the application without a lock.
 - The application uses `onFinished` and `isPlaying()` for its own logic. Example: libRealSpace frees one of its channels, as it does with `Mix_ChannelFinished` of SDL_mixer now.
 
 ## Streams
 
 `audio::Stream` plays a sound that the application makes while it plays: music from a sequencer, a synthesizer.
 
-- `audio::Stream(channels, rate, fill)` makes a stream. `fill(int16_t *out, int frames)` writes the next frames.
+- `Context::createStream(channels, rate, fill, latencyMs)` makes a stream. `fill(int16_t *out, int frames)` writes the next frames.
 - The audio thread of `r4nkine_audio` calls `fill`. It keeps a queue of OpenAL buffers full. This is the same model as `Mix_HookMusic` of SDL_mixer.
 - `fill` runs on the audio thread. The application must protect the data that `fill` reads with a lock.
-- `Stream::setLatency(ms)` sets the length of the queue. A short queue gives a quick answer to a change of music. A long queue prevents gaps when a frame is slow.
+- `latencyMs` sets the length of the queue (4 buffers). A short queue gives a quick answer to a change of music. A long queue prevents gaps when a frame is slow.
 - A stream has a `Source`: its gain, its `play`, `pause` and `stop`. A mono stream can have a position, as any source.
 
 ## Sound source node
@@ -88,10 +88,10 @@ The scene graph knows the position of each node, the camera, and the head in vir
 | `pitch` | 1 is the speed of the data. Use it for an engine with a variable speed. |
 | `loop` | the sound starts again at its end |
 | `referenceDistance` | the distance where the gain is 1 |
-| `maxDistance` | the distance after which the attenuation stops. After this distance, the source stops and frees its voice. |
+| `maxDistance` | the distance after which the attenuation stops. After this distance, the source has no voice. Its time goes on. |
 | `rolloff` | the slope of the attenuation |
-| `priority` | when there are not sufficient voices, the sources with a low priority stop first |
-| `relative` | the source is in the space of the listener (a sound in the cockpit) |
+| `priority` | when there are not sufficient voices, the sources with a low priority lose their voice first |
+| `positional` | false: the source plays at the listener (a voice, the radio, a sound in the cockpit). A `SoundSource` sets it to true. |
 
 - `play()`, `stop()`, `isPlaying()` and `onFinished` are those of its `audio::Source`.
 - The world matrix of the node gives the position. The change of position between two APP traversals, divided by the time step, gives the speed. Thus, the Doppler effect needs nothing from the application.
@@ -100,27 +100,29 @@ The scene graph knows the position of each node, the camera, and the head in vir
 ## Listener
 
 - `audio::Context::listener()` gives the listener.
-- By default, the listener follows a camera: its position, its forward axis and its up axis.
+- `Listener::fromView(camera.view)` puts the listener at a camera of the renderer: its position, its forward axis and its up axis. `Listener::fromCameraPose(worldFromCamera)` does the same from the pose of a camera.
 - `Listener::follow(node)` attaches the listener to a node. Example: the head of the pilot.
-- In virtual reality, `Listener::setPose(session.head())` sets the pose of the head at each frame.
+- In virtual reality, `Listener::fromCameraPose(session.head())` sets the pose of the head at each frame.
 - The speed of the listener comes from its change of position, as for a source.
 
 ## Update during APP
 
-- `audio::update(context, root, dt, mask)` goes through the graph below `root`. It uses the APP mask (`Node::appMask`). Thus, one mask stops all the sounds of a branch.
+- `Context::update(root, dt, mask)` goes through the graph below `root`. It uses the APP mask (`Node::appMask`). Thus, one mask stops all the sounds of a branch.
 - For each `SoundSource`, it does these steps:
   1. It calculates the world matrix, the position and the speed.
   2. It calculates the distance to the listener.
-  3. When the distance is more than `maxDistance`, it stops the source.
-- Then it gives the voices to the sources that play: first by `priority`, then by distance. OpenAL Soft gives 256 voices by default. `Context::setMaxVoices` decreases this number.
+  3. When the distance is more than `maxDistance`, the source has no voice.
+- A `SoundSource` in a branch out of the mask, or out of the graph, has no voice.
+- Then it gives the voices to the sources that play: first by `priority`, then by distance. `Settings::maxVoices` sets the number of voices (64 by default). The streams have their own voices.
 - The sources without a voice are virtual. They keep their position in the sound. When a voice is free again, they continue from this position.
 - It updates the sources outside the graph and the streams.
 - It calls the `onFinished` callbacks of the sources that stopped since the last update.
-- The application calls `audio::update` one time for each frame, after `scene::app` and before the draw. The position of the listener is then the position of the frame.
+- `Context::update(dt)` does the same without a graph.
+- The application calls `Context::update` one time for each frame, after `scene::app` and before the draw. The position of the listener is then the position of the frame.
 
 ## Threads
 
-- The thread of the application calls all the functions of `r4nkine_audio`, and `audio::update`.
+- The thread of the application calls all the functions of `r4nkine_audio`, and `Context::update`.
 - The audio thread of `r4nkine_audio` fills the streams only. It calls `Stream::fill`. It does not call `onFinished`.
 - OpenAL Soft mixes the voices on its own thread.
 
@@ -128,11 +130,15 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 | Option | Function |
 | --- | --- |
-| `hrtf` | the HRTF of OpenAL Soft for headphones: the listener hears above and below |
-| `doppler` | the strength of the Doppler effect; 0 stops it |
-| `distanceModel` | inverse, linear or exponential, clamped or not |
-| `masterGain` | the gain of all the sources |
-| `device` | the name of the OpenAL device; empty for the default device |
+| `Settings::device` | the name of the OpenAL device; empty for the default device |
+| `Settings::hrtf` | the HRTF of OpenAL Soft for headphones: the listener hears above and below |
+| `Settings::maxVoices` | the sources heard at one time |
+| `Context::setDoppler` | the strength of the Doppler effect; 0 stops it |
+| `Context::setDistanceModel` | inverse, linear or exponential, clamped or not |
+| `Context::setSpeedOfSound` | in the units of the world |
+| `Listener::gain` | the gain of all the sources |
+
+`Context::createLoopback(rate)` makes a context without a device. `Context::render` gives its stereo output in memory. The tests use it: they need no sound card. OpenAL Soft dithers its 16 bits output: silence is a noise of ±1.
 
 ## Use in libRealSpace
 
@@ -150,7 +156,7 @@ The scene graph knows the position of each node, the camera, and the head in vir
 
 ## Sequence of work
 
-1. `r4nkine_audio`: the context, the sounds, the WAV loader, `Source` with `onFinished`, `Stream` and its thread, the listener on a camera, `SoundSource`, `audio::update`. Tests without a device (the calculation of the positions, the speeds and the priorities).
-2. r4fly: an option that plays a WAV file on a node of the model, to hear the position, the Doppler effect and the HRTF.
-3. Virtual reality: the listener on the head.
+1. `r4nkine_audio`: the context, the sounds, the WAV loader, `Source` with `onFinished`, `Stream` and its thread, the listener on a camera, `SoundSource`, `Context::update`. Tests on a loopback context (`tests/audio_tests.cpp`): left and right, the listener on a node and on a camera, the end of a sound, the voices and their priority, the APP mask, the streams, the Doppler effect, the audio thread, WAV. **Done.**
+2. r4fly: `-sound file.wav` plays a sound that turns about the models, heard from the camera; `-hrtf`. **Done.**
+3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
 4. libRealSpace: `R4Mixer` with the music in a `Stream` and the voices on sources without position. Then the inventory of the sound effects, their render into PCM buffers, and the sources on the nodes of `R4Strike`.
