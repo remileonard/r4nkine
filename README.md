@@ -138,7 +138,8 @@ the exe, or run `r4fly samples\quad.obj`.
 models: trees (`feuillu`, `peuplier`, `sapin`), buildings (`maison`,
 `ferme`, `grange`, `eglise`, `immeuble`), vehicles (`voiture`, `camion`,
 `spaceship`), and `ville`, a town that places the others by external
-references: `r4fly data/openflight/ville.flt`.
+references: `r4fly data/openflight/ville.flt`. `ville_with_sky` is the same
+town under a sky dome with clouds, on a large ground.
 
 ### libRealSpace: r4objviewer
 
