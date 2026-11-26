@@ -117,6 +117,8 @@ public:
     float outerGain = 0;
     // the higher first when there are not enough voices
     int priority = 0;
+    // the volume group (0 to Context::kGroups - 1): its gain multiplies the gain of the source. Example: music and effects.
+    int group = 0;
     // at the update after the end of a sound without loop, or after stop(); on the thread of the application
     std::function<void(Source &)> onFinished;
 
@@ -255,6 +257,10 @@ public:
     void setSpeedOfSound(float speed);
     // 0: no Doppler effect
     void setDoppler(float factor);
+    static constexpr int kGroups = 8;
+    // the gain of a volume group (1 by default), for the volumes that the user sets: the music, the effects...
+    void setGroupGain(int group, float gain);
+    float groupGain(int group) const;
     void setDistanceModel(DistanceModel model);
 
     // the sources, the listener and the voices: once a frame, after scene::app and before the draw
@@ -300,6 +306,7 @@ private:
     std::vector<std::weak_ptr<Source>> sources_;
     std::vector<Stream *> streams_;
     std::vector<Source *> finished_;
+    float groupGains_[kGroups] = {1, 1, 1, 1, 1, 1, 1, 1};
     bool loopback_ = false;
     bool hrtf_ = false;
     std::string deviceName_;

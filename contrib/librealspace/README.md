@@ -34,6 +34,7 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 | `src/r4bridge/CMakeLists.txt` | `R4SoundFx`. |
 | `src/r4game/CMakeLists.txt` | `R4Mixer` and the link to `r4nkine::r4nkine_audio` when the target exists (`R4GAME_AUDIO`). |
 | `src/r4game/R4Screen.cpp` | `R4Mixer::update()` at each frame, in `refresh`. |
+| `src/r4game/R4ConfigPanel.cpp` | In the Sound group: Music Volume and Effects Volume (they apply at once), Effects Synthesizer and HRTF (at the next start). |
 | `src/executables/neosc_r4/main.cpp` | `RSMixer::setInstance(std::make_unique<R4Mixer>())`. |
 | `cmake/R4nkine.cmake` | `r4soundplayer`, when `r4nkine::r4nkine_audio` exists. |
 
@@ -46,6 +47,7 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 - The tab Music: the tracks of a bank, played as in the game.
 - For a sound: the curve of its level, Play, Stop, Loop, Gain, and Export WAV (the introduction and two passes of the loop).
 - In space: a direction and a distance from the listener, or "Pass in front": the source goes from left to right at a speed, for the Doppler effect. Use headphones, and `-hrtf` to hear above and below.
+- The volumes of the music and of the effects. The synthesizer of the effects (OPL or MT-32) and "Render the effects again".
 
 The data: `./SC.DAT` and `./assets`, as `neosc_r4`. Else `-data`, a folder with `BIGTRE.TRE` and `LILTRE.TRE`.
 
@@ -57,12 +59,19 @@ The data: `./SC.DAT` and `./assets`, as `neosc_r4`. Else `-data`, a folder with 
 | `hrtf` | false | The HRTF of OpenAL Soft, for headphones. |
 | `speed_of_sound` | 1125 | In units of the world a second (1125: feet). |
 | `doppler` | 1 | The Doppler effect; 0 stops it. |
+| `music_volume` | 100 | The volume of the music, 0 to 100. |
+| `sfx_volume` | 100 | The volume of all the other sounds (effects, engine, radio, voices), 0 to 100. |
+| `sfx_synth` | auto | The synthesizer that renders the XMIDI effects: `auto` (the one of the music), `opl` or `mt32`. |
 
-`midi_music` selects the synthesizer of the effects, as for the music:
+`sfx_synth` selects the synthesizer of the XMIDI effects. Each effect is rendered on a new synthesizer:
 
-- 0 (OPL) and 1 (General MIDI): an OPL.
-- 3 (munt): a second munt, off line.
-- 2 (MT-32 on a MIDI port): munt when the ROMs are in `mt32_rom_dir`. Else, the AdLib effects on an OPL.
+- `opl`: `SOUNDFX.ADL` with the timbres of `STRIKE.AD`, on an OPL.
+- `mt32`: `SOUNDFX.ROL` with the timbres of `STRIKE.MT`, on munt (MT-32 emulated). It needs the ROMs in `mt32_rom_dir`. Without them, the effects stay on the OPL.
+- `auto`: the synthesizer of the music (`midi_music`). For 0 (AdLib) and 1 (General MIDI): the OPL. For 2 (MT-32 on a MIDI port, which cannot be recorded) and 3: munt, else the OPL.
+
+When the files of the music are not those of the synthesizer of the effects, R4Mixer loads the effects of the other synthesizer.
+
+The volumes are the volume groups of `r4nkine_audio`: the music stream is in the group `GROUP_MUSIC`, all the other sources in `GROUP_EFFECTS`. The game's own volumes (`setVolume`, `engine_volume`) stay, and are multiplied by them.
 
 ## Tests done
 
@@ -71,10 +80,10 @@ The data: `./SC.DAT` and `./assets`, as `neosc_r4`. Else `-data`, a folder with 
 - The TVFX voices keep a noise of 1 to 6 units after the end of an effect. Below 16 units, `renderSoundFx` takes it as silence.
 - `decodeVoc`: the 31 VOC of `DSOUNDFX.PAK` (entry 22 is empty), and the 39 VOC of the cutscenes, which have the length that SDL_mixer gives.
 - `renderSoundFx` on the 29 sequences of `AMUSIC.PAK`: 5 have a loop without end, and the loop is found.
-- `R4Mixer` and `r4soundplayer` on the null device of OpenAL: the lists, Play, the loops, the pass in front, Export WAV.
+- `R4Mixer` and `r4soundplayer` on the null device of OpenAL: the lists, Play, the loops, the pass in front, Export WAV, the volumes, the render of the effects again.
 
 ## Not tested
 
 - The sound on a sound card: the tests used the null device of OpenAL. The WAV files were not heard.
-- The MT-32 render (munt): there were no ROMs.
+- The MT-32 render (munt): there were no ROMs. Without them, the player refuses MT-32 and keeps the effects of the OPL (tested).
 - `neosc_r4` in a mission.

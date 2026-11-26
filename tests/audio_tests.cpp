@@ -93,6 +93,39 @@ static void testLoopPoints(audio::Context &ctx) {
     ctx.update(0.01f);
 }
 
+// a volume group: its gain multiplies the gain of its sources, and only of them
+static void testGroups(audio::Context &ctx) {
+    auto a = ctx.createSource(tone(1));
+    a->loop = true;
+    a->group = 2;
+    a->play();
+    ctx.update(0.01f);
+    double left = 0;
+    double right = 0;
+    energy(ctx, 4800, left, right);
+    const double full = left;
+    ctx.setGroupGain(2, 0.5f);
+    ctx.update(0.01f);
+    energy(ctx, 2048, left, right);
+    energy(ctx, 4800, left, right);
+    CHECK(left > full * 0.2 && left < full * 0.3);
+    ctx.setGroupGain(3, 0);
+    ctx.update(0.01f);
+    energy(ctx, 2048, left, right);
+    energy(ctx, 4800, left, right);
+    CHECK(left > full * 0.2 && left < full * 0.3);
+    ctx.setGroupGain(2, 0);
+    ctx.update(0.01f);
+    energy(ctx, 2048, left, right);
+    energy(ctx, 4800, left, right);
+    CHECK(left / 4800 < kSilence);
+    CHECK(ctx.groupGain(2) == 0 && ctx.groupGain(0) == 1 && ctx.groupGain(99) == 1);
+    ctx.setGroupGain(2, 1);
+    ctx.setGroupGain(3, 1);
+    a->stop();
+    ctx.update(0.01f);
+}
+
 // the listener at the origin, ahead +Y (the default of R4nkine): +X is on its right
 static void testPan(audio::Context &ctx) {
     auto sound = tone(1);
@@ -410,6 +443,7 @@ int main(int argc, char **argv) {
     testListenerNode(*ctx);
     testFinished(*ctx);
     testLoopPoints(*ctx);
+    testGroups(*ctx);
     testStream(*ctx);
     testDoppler(*ctx);
     testWAV(dir);

@@ -451,8 +451,18 @@ void Context::render(int16_t *out, int frames) {
     impl_->renderSamples(impl_->device, out, frames);
 }
 
+void Context::setGroupGain(int group, float gain) {
+    if (group >= 0 && group < kGroups) {
+        groupGains_[group] = std::max(0.0f, gain);
+    }
+}
+
+float Context::groupGain(int group) const {
+    return group >= 0 && group < kGroups ? groupGains_[group] : 1.0f;
+}
+
 void Context::apply(Source &s, uint32_t al) {
-    alSourcef(al, AL_GAIN, std::max(0.0f, s.gain));
+    alSourcef(al, AL_GAIN, std::max(0.0f, s.gain) * groupGain(s.group));
     alSourcef(al, AL_PITCH, std::clamp(s.pitch, 0.01f, 16.0f));
     if (!s.stream_) {
         alSourcei(al, AL_LOOPING, s.loop ? AL_TRUE : AL_FALSE);
