@@ -138,6 +138,7 @@ The scene graph knows the position of each node, the camera, and the head in vir
 | `Context::setDistanceModel` | inverse, linear or exponential, clamped or not |
 | `Context::setSpeedOfSound` | in the units of the world |
 | `Listener::gain` | the gain of all the sources |
+| `Context::setGroupGain` | the gain of a volume group (`Source::group`, 0 to 7): the volumes that the user sets, for example the music and the effects |
 
 `Context::createLoopback(rate)` makes a context without a device. `Context::render` gives its stereo output in memory. The tests use it: they need no sound card. OpenAL Soft dithers its 16 bits output: silence is a noise of ±1.
 
@@ -182,6 +183,7 @@ All the sound effects are PCM `Sound`s on positional `Source`s. Thus, all the ef
 - The game stops an effect while it plays in two cases: its volume is 0 (it is too far to hear), and the gun stops (`SCMission::stopEffect`). In the second case, the source stops at once, without the release of the synthesizer.
 - `setRelVolume` becomes the gain of the source. During an effect, only its volume changes. Thus, the PCM buffer is correct.
 - The renders can be kept in a cache on the disk.
+- `[Sound] sfx_synth` selects the synthesizer of the effects: `auto` (the one of the music), `opl` or `mt32`. Thus, the MT-32 effects are available with the music on the OPL, and the reverse.
 
 ### Sources of the effects
 
@@ -194,6 +196,10 @@ All the sound effects are PCM `Sound`s on positional `Source`s. Thus, all the ef
 ### Voices and radio
 
 - The voices and the radio (VOC) use a `Sound` on a `Source` without position. `onFinished` frees the channel. This replaces `Mix_PlayChannel` and `Mix_ChannelFinished`.
+
+### Volumes
+
+- The user sets the volume of the music and the volume of the effects (`[Sound] music_volume` and `sfx_volume`, in the configuration panel of the game). They are two volume groups of the context: the music stream is in one, all the other sources in the other.
 
 ### Listener
 
@@ -208,6 +214,6 @@ Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
 1. `r4nkine_audio`: the context, the sounds, the WAV loader, `Source` with `onFinished`, `Stream` and its thread, the listener on a camera, `SoundSource`, `Context::update`. Tests on a loopback context (`tests/audio_tests.cpp`): left and right, the listener on a node and on a camera, the end of a sound, the voices and their priority, the APP mask, the streams, the Doppler effect, the audio thread, WAV. **Done.**
 2. r4fly: `-sound file.wav` plays a sound that turns about the models, heard from the camera; `-hrtf`. **Done.**
 3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
-4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body. `Listener::setPose`. **Done.**
+4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body. `Listener::setPose`. The volume groups (`Source::group`, `Context::setGroupGain`). **Done.**
 5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. **Code in `contrib/librealspace`** (`R4Mixer`, `patches/r4-audio.patch`). The VOC decoder gives the lengths of SDL_mixer.
 6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Code in `contrib/librealspace`** (`R4SoundFx` in r4bridge, `R4Mixer`). The 14 effects of `SOUNDFX.ADL` are rendered on the OPL; 4 hold a note without end, and their loop is found in the wave. `r4soundplayer` plays the effects, the VOC and the music. Not tested: a sound card, the MT-32 ROMs. Refer to `contrib/librealspace/README.md`.
