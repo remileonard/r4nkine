@@ -74,7 +74,9 @@ void R4Mixer::init() {
     context_->setDoppler((float)cfg.getInt("Sound", "doppler", 1));
     initEngine(kRate);
     const std::string synth = cfg.getString("Sound", "sfx_synth", "auto");
-    renderEffects(synth == "opl" ? EffectSynth::OPL : synth == "mt32" ? EffectSynth::MT32 : EffectSynth::AUTO);
+    if (!renderEffects(synth == "opl" ? EffectSynth::OPL : synth == "mt32" ? EffectSynth::MT32 : EffectSynth::AUTO)) {
+        renderEffects(EffectSynth::OPL);
+    }
     loadVolumes();
     // the music: the synthesis of RSMixer, as Mix_HookMusic did
     music_ = context_->createStream(2, kRate, [this](int16_t *out, int frames) {
@@ -104,14 +106,18 @@ bool R4Mixer::renderEffects(EffectSynth wanted) {
     const std::string romDir = Config::getInstance().getString("Sound", "mt32_rom_dir", "./assets/mt32");
     const bool musicMt32 = dynamic_cast<Mt32EmuDevice *>(device.get()) || dynamic_cast<Mt32Device *>(device.get());
     bool mt32 = wanted == EffectSynth::MT32 || (wanted == EffectSynth::AUTO && musicMt32);
+    // the ROMs are read once; each effect starts a new munt from them
+    std::shared_ptr<const Mt32Roms> roms = mt32 ? Mt32Synth::readRoms(romDir) : nullptr;
+    std::unique_ptr<Mt32EmuDevice> first;
     if (mt32) {
-        Mt32EmuDevice probe(false);
-        if (!probe.open(romDir, kRate)) {
+        first = std::make_unique<Mt32EmuDevice>(false);
+        if (!first->open(roms, kRate)) {
             std::printf("R4Mixer: no MT-32 ROMs in %s\n", romDir.c_str());
             if (wanted == EffectSynth::MT32) {
                 return false;
             }
             mt32 = false;
+            first.reset();
         }
     }
     RSMusic *bank = music;
@@ -132,8 +138,14 @@ bool R4Mixer::renderEffects(EffectSynth wanted) {
         R4SoundPcm pcm;
         bool ok = false;
         if (fx && mt32) {
-            Mt32EmuDevice munt(false);
-            ok = munt.open(romDir, kRate) && renderSoundFx(munt, &bank->sfx_timbres, fx->data, fx->size, kRate, pcm);
+            std::unique_ptr<Mt32EmuDevice> munt = std::move(first);
+            if (!munt) {
+                munt = std::make_unique<Mt32EmuDevice>(false);
+                ok = munt->open(roms, kRate);
+            } else {
+                ok = true;
+            }
+            ok = ok && renderSoundFx(*munt, &bank->sfx_timbres, fx->data, fx->size, kRate, pcm);
         } else if (fx) {
             OplDevice opl;
             opl.init(kRate);

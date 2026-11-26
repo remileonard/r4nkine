@@ -29,6 +29,7 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 | --- | --- |
 | `src/engine/AILXmidiDriver.h`, `.cpp` | `endlessLoopStarts` and `endlessLoopJumps`: the driver counts the loops without end (`FOR_LOOP` with a count of 0) and the jumps of their `NEXT_LOOP`. |
 | `src/engine/RSMixer.h`, `.cpp` | `setInstance`, as `SCRenderer`. The members are protected. The functions of the effects and of the channels are virtual. `init` is in two parts: `initEngine(rate)` makes the devices, and `init` opens SDL_mixer. New: `playEffectAt` and `playOrUpdateEffectAt` with the position. |
+| `src/engine/Mt32Synth.h`, `.cpp`, `Mt32EmuOutput.h` | `Mt32Synth::readRoms` reads the files of the ROM folder once, and `open(roms, rate)` starts a synth from them in memory (`mt32emu_add_rom_data`). `open(romDir, rate)` does the two. |
 | `src/strike_commander/SCMission.h`, `.cpp` | `playEffect` and `playOrUpdateEffect` give the position to the mixer. `playOrUpdateEffect` takes the position of the emitter, not the distance. |
 | `src/strike_commander/SCPlane.cpp`, `SCMissionActors.cpp` | The calls of `playOrUpdateEffect` give the position. |
 | `src/r4bridge/CMakeLists.txt` | `R4SoundFx`. |
@@ -66,7 +67,7 @@ The data: `./SC.DAT` and `./assets`, as `neosc_r4`. Else `-data`, a folder with 
 `sfx_synth` selects the synthesizer of the XMIDI effects. Each effect is rendered on a new synthesizer:
 
 - `opl`: `SOUNDFX.ADL` with the timbres of `STRIKE.AD`, on an OPL.
-- `mt32`: `SOUNDFX.ROL` with the timbres of `STRIKE.MT`, on munt (MT-32 emulated). It needs the ROMs in `mt32_rom_dir`. Without them, the effects stay on the OPL.
+- `mt32`: `SOUNDFX.ROL` with the timbres of `STRIKE.MT`, on munt (MT-32 emulated). It needs the ROMs in `mt32_rom_dir`; they are read once, and each effect starts a new munt from them in memory. Without them, the effects are on the OPL.
 - `auto`: the synthesizer of the music (`midi_music`). For 0 (AdLib) and 1 (General MIDI): the OPL. For 2 (MT-32 on a MIDI port, which cannot be recorded) and 3: munt, else the OPL.
 
 When the files of the music are not those of the synthesizer of the effects, R4Mixer loads the effects of the other synthesizer.
@@ -85,5 +86,5 @@ The volumes are the volume groups of `r4nkine_audio`: the music stream is in the
 ## Not tested
 
 - The sound on a sound card: the tests used the null device of OpenAL. The WAV files were not heard.
-- The MT-32 render (munt): there were no ROMs. Without them, the player refuses MT-32 and keeps the effects of the OPL (tested).
+- The MT-32 render (munt): there were no ROMs. Tested: a folder without valid ROMs; at the start the effects go on the OPL, and the player refuses MT-32 and keeps the effects of the OPL.
 - `neosc_r4` in a mission.
