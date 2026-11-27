@@ -664,6 +664,8 @@ The airframes of the module enhanced of libRealSpace use these conventions.
 
 An OpenFlight file can refer to other files. The loader finds these files with the search paths. Chapter 7.5 describes the search paths.
 
+The glTF loader reads glTF 2.0. A glTF 1.0 file (2015 to 2017, with the shaders and the techniques of WebGL) goes to Assimp when R4nkine has it (`R4_WITH_ASSIMP`). Without Assimp, the loader gives an error: use the glTF 2.0 version of the file.
+
 The glTF loader changes the PBR materials to the materials of R4nkine:
 
 - The base color gives the diffuse color. The metallic and roughness factors give `Material::metallic` and `Material::roughness`, the specular color and the shininess.

@@ -321,6 +321,7 @@ int main(int argc, char **argv) {
         auto model = assets::loadModel(f, &error);
         if (!model) {
             std::fprintf(stderr, "r4fly: %s\n", error.c_str());
+            app.errors.push_back(f.substr(f.find_last_of("/\\") + 1) + ": " + error);
             continue;
         }
         scene::NodePtr node = renderer.upload(*model);

@@ -221,7 +221,19 @@ std::shared_ptr<Model> loadModel(const std::string &path, std::string *error) {
         return loadFLT(path, error);
     }
     if (ext == "gltf" || ext == "glb") {
-        return loadGLTF(path, error);
+        std::string why;
+        std::shared_ptr<Model> model = loadGLTF(path, &why);
+        // glTF 1.0 (2015-2017, shaders and techniques of WebGL): Assimp reads it, cgltf does not
+        if (!model && why.find("1.0") != std::string::npos) {
+            if (!assimpExtensions().empty()) {
+                return loadAssimp(path, error);
+            }
+            why += " without Assimp (R4_WITH_ASSIMP): use the glTF 2.0 version of the file";
+        }
+        if (!model && error) {
+            *error = why;
+        }
+        return model;
     }
     // the formats without a loader of R4nkine
     return loadAssimp(path, error);

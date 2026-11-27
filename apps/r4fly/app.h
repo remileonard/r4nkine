@@ -112,6 +112,8 @@ struct App {
     std::shared_ptr<scene::Group> top;    // the models and the overlay
     std::shared_ptr<scene::Group> models; // what is shown
     std::vector<LoadedFile> files;
+    // the files that could not be read, with the reason, shown in the panel
+    std::vector<std::string> errors;
 
     // the light: over the shoulder of the viewer, or fixed in the world
     bool headlight = true;
