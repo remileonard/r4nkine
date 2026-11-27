@@ -378,6 +378,17 @@ static void testStep2(const std::string &dir) {
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
     }
+    // a normal map and its scale; the quad beside it has none
+    auto bump = assets::loadModel(dir + "/bump.gltf", &err);
+    CHECK(bump != nullptr);
+    if (bump) {
+        const assets::Material &mapped = bump->materials[bump->meshes[0].material];
+        const assets::Material &real = bump->materials[bump->meshes[1].material];
+        CHECK(mapped.normalImage == 0 && near(mapped.normalScale, 0.5f) && real.normalImage < 0);
+        CHECK(bump->images.size() == 1 && bump->images[0].width == 128 && bump->images[0].channels == 3);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
 }
 
 static void testRaster() {

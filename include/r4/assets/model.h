@@ -51,6 +51,9 @@ struct Material {
     float shininess = 16;
     int diffuseImage = -1;  // an index in Model::images
     int emissiveImage = -1; // an index in Model::images; it multiplies the emissive color
+    // a tangent space normal map (OpenGL convention, +Y up), an index in Model::images; normalScale scales its X and Y
+    int normalImage = -1;
+    float normalScale = 1;
     bool sphereMap = false;
     AlphaMode alpha = AlphaMode::NONE;
     float alphaCutoff = 0.5f;

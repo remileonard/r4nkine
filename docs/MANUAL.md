@@ -660,12 +660,13 @@ The glTF loader changes the PBR materials to the materials of R4nkine:
 - The base color gives the diffuse color. The metallic and roughness factors give `Material::metallic` and `Material::roughness`, the specular color and the shininess.
 - A material with `roughness` >= 0 reflects the environment of the renderer (`Environment::envSky`, `envHorizon`, `envGround`): a sky over the horizon and a ground under it, blurred by the roughness, more at a grazing angle (Fresnel). A metal (`metallic` 1) has no diffuse light: its color is its reflection and its highlight. The other loaders give `roughness` -1: Phong only.
 - The emissive texture multiplies the emissive color (`Material::emissiveImage`).
-- `KHR_texture_transform` of the base color texture (offset, rotation, scale) changes the texture coordinates of the mesh.
+- The normal map bends the normal (`Material::normalImage`, `normalScale`). The tangent space comes from the derivatives of the position and of the texture coordinates in the fragment shader: the vertices need no tangent. `tests/data/bump.gltf` shows a mapped quad beside a real hemisphere.
+- `KHR_texture_transform` of the base color texture (offset, rotation, scale) changes the texture coordinates of the mesh; without a base color texture, the one of the normal map.
 - `alphaMode` gives the alpha mode: `BLEND` or `MASK` with its cutoff.
 - `KHR_materials_transmission` (glass) gives a blended material: a fully transmissive material lets 85 % of the light through. There is no refraction.
 - `KHR_materials_emissive_strength` multiplies the emissive color.
 - `KHR_materials_unlit` gives an unlit material.
-- Not read: the normal, occlusion and metallic-roughness textures, the clearcoat, the iridescence, the variants (the default material is used).
+- Not read: the occlusion and metallic-roughness textures, the clearcoat, the iridescence, the variants (the default material is used).
 
 ### 7.4 Images
 

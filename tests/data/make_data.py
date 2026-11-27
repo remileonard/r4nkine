@@ -140,3 +140,70 @@ glass["materials"] = [{"name": "glass", "pbrMetallicRoughness": {"baseColorFacto
 del glass["textures"]
 del glass["images"]
 open('glass.gltf', 'w').write(json.dumps(glass, indent=1))
+
+# glTF: a quad with the normal map of a bump (left) beside a real hemisphere (right), lit the same way when the normal map is
+# right; the normal map scaled by 0.5
+import math
+N = 128
+rows = []
+for r in range(N):
+    row = []
+    for c in range(N):
+        x = (c + 0.5) / N * 2 - 1
+        y = -((r + 0.5) / N * 2 - 1)
+        d = x * x + y * y
+        n = (0.0, 0.0, 1.0)
+        if d < 0.64:
+            z = math.sqrt(0.64 - d)
+            k = math.sqrt(x * x + y * y + z * z)
+            n = (x / k, y / k, z / k)
+        row += [int((v * 0.5 + 0.5) * 255 + 0.5) for v in n]
+    rows.append(row)
+bump_png = b'\x89PNG\r\n\x1a\n' + png_chunk(b'IHDR', struct.pack('>IIBBBBB', N, N, 8, 2, 0, 0, 0)) + \
+    png_chunk(b'IDAT', zlib.compress(b''.join(b'\0' + bytes(r) for r in rows))) + png_chunk(b'IEND', b'')
+bbuf = b''
+views = []
+accessors = []
+def accessor(fmt, values, kind, component, count, bounds=None):
+    global bbuf
+    data = struct.pack('<%d%s' % (len(values), fmt), *values)
+    views.append({"buffer": 0, "byteOffset": len(bbuf), "byteLength": len(data)})
+    bbuf += data
+    while len(bbuf) % 4:
+        bbuf += b'\0'
+    a = {"bufferView": len(views) - 1, "componentType": component, "count": count, "type": kind}
+    if bounds:
+        a["min"], a["max"] = bounds
+    accessors.append(a)
+    return len(accessors) - 1
+qp, qn, qu = [], [], []
+for (x, z, u, v) in [(-1, -1, 0, 0), (1, -1, 1, 0), (1, 1, 1, 1), (-1, 1, 0, 1)]:
+    qp += [x - 1.2, 0, z]
+    qn += [0, 1, 0]
+    qu += [u, v]
+hp, hn, hi = [], [], []
+for a in range(25):
+    th = a / 24 * math.pi / 2
+    for b in range(49):
+        ph = b / 48 * 2 * math.pi
+        nx, ny, nz = math.sin(th) * math.cos(ph), math.cos(th), math.sin(th) * math.sin(ph)
+        hp += [nx * 0.8 + 1.2, ny * 0.8, nz * 0.8]
+        hn += [nx, ny, nz]
+for a in range(24):
+    for b in range(48):
+        i0 = a * 49 + b
+        hi += [i0, i0 + 1, i0 + 49, i0 + 1, i0 + 50, i0 + 49]
+A = [accessor('f', qp, 'VEC3', 5126, 4, ([-2.2, 0, -1], [-0.2, 0, 1])), accessor('f', qn, 'VEC3', 5126, 4),
+     accessor('f', qu, 'VEC2', 5126, 4), accessor('H', [0, 2, 1, 0, 3, 2], 'SCALAR', 5123, 6),
+     accessor('f', hp, 'VEC3', 5126, len(hp) // 3, ([0.4, 0, -0.8], [2.0, 0.8, 0.8])), accessor('f', hn, 'VEC3', 5126, len(hn) // 3),
+     accessor('H', hi, 'SCALAR', 5123, len(hi))]
+bump = {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0, 1]}], "nodes": [{"mesh": 0}, {"mesh": 1}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": A[0], "NORMAL": A[1], "TEXCOORD_0": A[2]}, "indices": A[3], "material": 0}]},
+                   {"primitives": [{"attributes": {"POSITION": A[4], "NORMAL": A[5]}, "indices": A[6], "material": 1}]}],
+        "materials": [{"name": "mapped", "pbrMetallicRoughness": {"baseColorFactor": [0.8, 0.8, 0.8, 1], "metallicFactor": 0, "roughnessFactor": 0.9},
+                       "normalTexture": {"index": 0, "scale": 0.5}},
+                      {"name": "real", "pbrMetallicRoughness": {"baseColorFactor": [0.8, 0.8, 0.8, 1], "metallicFactor": 0, "roughnessFactor": 0.9}}],
+        "textures": [{"source": 0}], "images": [{"uri": "data:image/png;base64," + base64.b64encode(bump_png).decode()}],
+        "buffers": [{"byteLength": len(bbuf), "uri": "data:application/octet-stream;base64," + base64.b64encode(bbuf).decode()}],
+        "bufferViews": views, "accessors": accessors}
+open('bump.gltf', 'w').write(json.dumps(bump))

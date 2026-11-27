@@ -29,6 +29,7 @@ struct MaterialInstance {
     gpu::TextureHandle texture;
     gpu::TextureHandle indexTexture;
     gpu::TextureHandle emissiveTexture;
+    gpu::TextureHandle normalTexture;
     gpu::BufferHandle uniforms;
     uint32_t id = 0; // for sorting
 };
@@ -129,7 +130,7 @@ public:
     // its parts for an Instancer: scene::collectParts(*upload(model))
     scene::NodePtr upload(const assets::Model &model);
     std::shared_ptr<GpuMesh> uploadMesh(const assets::Mesh &mesh);
-    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {}, gpu::TextureHandle emissiveTexture = {});
+    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {}, gpu::TextureHandle emissiveTexture = {}, gpu::TextureHandle normalTexture = {});
     gpu::TextureHandle uploadImage(const assets::Image &image, bool mipmaps = true);
 
     // the viewport in pixels, from the bottom left

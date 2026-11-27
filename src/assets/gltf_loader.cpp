@@ -169,6 +169,8 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
         m.emissiveImage = imageOf(gm.emissive_texture.texture);
+        m.normalImage = imageOf(gm.normal_texture.texture);
+        m.normalScale = gm.normal_texture.scale;
         if (gm.has_emissive_strength) {
             m.emissive *= gm.emissive_strength.emissive_strength;
         }
@@ -236,8 +238,12 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                 continue;
             }
             // KHR_texture_transform of the base color texture: uv' = offset + rotation * scale * uv
+            // (else the one of the normal map): the two textures share the texture coordinates
             const cgltf_texture_view *view = prim.material && prim.material->has_pbr_metallic_roughness ? &prim.material->pbr_metallic_roughness.base_color_texture : nullptr;
-            const cgltf_texture_transform *tt = view && view->has_transform ? &view->transform : nullptr;
+            const cgltf_texture_transform *tt = view && view->texture && view->has_transform ? &view->transform : nullptr;
+            if (!tt && prim.material && !(view && view->texture) && prim.material->normal_texture.has_transform) {
+                tt = &prim.material->normal_texture.transform;
+            }
             Mesh m;
             m.name = gm.name ? gm.name : "mesh " + std::to_string(mi);
             m.vertices.resize(pos->count);

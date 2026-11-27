@@ -54,7 +54,7 @@ struct MaterialBlock {
     float flags3[4]; // receives the shadows, drawn over the face of the same depth, index atlas columns and rows
     float textureMean[4];
     float animation[4]; // frames, frames per second, out of the fog
-    float pbr[4];       // metallic, roughness (< 0: not a PBR material)
+    float pbr[4];       // metallic, roughness (< 0: not a PBR material), scale of the normal map (0: none)
 };
 
 // the matrix of a placement in the vertex shader, as Instancer::matrixOf, grown by drawUp.w
@@ -185,6 +185,7 @@ uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
 uniform sampler2D indexMap;
 uniform sampler2D emissiveMap;
+uniform sampler2D normalMap;
 in vec4 vShadow;
 in vec3 vNormal;
 in vec3 vPosition;
@@ -260,17 +261,39 @@ float rampIntensity(float shadow) {
     }
     return intensity;
 }
+// the normal n bent by the normal map, in the tangent space made from the derivatives of the position and of the texture
+// coordinates (the cotangent frame of Schuler): no tangent in the vertices
+vec3 mappedNormal(vec3 n, vec2 uv) {
+    vec3 dp1 = dFdx(vPosition);
+    vec3 dp2 = dFdy(vPosition);
+    vec2 duv1 = dFdx(uv);
+    vec2 duv2 = dFdy(uv);
+    vec3 dp2perp = cross(dp2, n);
+    vec3 dp1perp = cross(n, dp1);
+    vec3 t = dp2perp * duv1.x + dp1perp * duv2.x;
+    vec3 b = dp2perp * duv1.y + dp1perp * duv2.y;
+    float len = max(dot(t, t), dot(b, b));
+    if (len < 1e-20) {
+        return n;
+    }
+    float k = inversesqrt(len);
+    vec3 m = texture(normalMap, uv).xyz * 2.0 - 1.0;
+    m.xy *= pbr.z;
+    // the signs of the axes: those that light a map of a bump as the real bump, from all the sides
+    // (tests/data/bump.gltf, a mapped quad beside a real hemisphere)
+    vec3 bent = mat3(-t * k, -b * k, n) * m;
+    return dot(bent, bent) > 1e-12 ? normalize(bent) : n;
+}
 // the sky, the horizon and the ground in the direction r (view space), blurred by the roughness
 vec3 environment(vec3 r, float rough) {
     float up = dot(r, worldUp.xyz);
-    vec3 c;
-    if (up >= 0.0) {
-        c = mix(envHorizon.rgb, envSky.rgb, smoothstep(0.0, 0.5 + rough, up));
-    } else {
-        c = mix(envGround.rgb * 1.6, envGround.rgb, smoothstep(0.0, 0.3 + rough, -up));
-    }
+    vec3 sky = mix(envHorizon.rgb, envSky.rgb, smoothstep(0.0, 0.5 + rough, up));
+    vec3 ground = mix(envGround.rgb * 1.6, envGround.rgb, smoothstep(0.0, 0.3 + rough, -up));
+    // the horizon: sharp for a mirror, wider with the roughness
+    float w = 0.01 + 0.6 * rough;
+    vec3 c = mix(ground, sky, smoothstep(-w, w, up));
     vec3 mean = (envSky.rgb + 2.0 * envHorizon.rgb + envGround.rgb) * 0.25;
-    return mix(c, mean, rough * rough);
+    return mix(c, mean, rough);
 }
 vec3 fogged(vec3 color) {
     if (fogParams.z > 0.5 && animation.z < 0.5) {
@@ -357,6 +380,9 @@ void main() {
         }
     } else {
         vec3 n = seenNormal();
+        if (pbr.z != 0.0 && options.x > 0.5 && options.z < 0.5) {
+            n = mappedNormal(n, uv);
+        }
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
         vec3 glow = emissive.rgb * texture(emissiveMap, uv).rgb;
@@ -528,7 +554,7 @@ bool Renderer::createShaders() {
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
     d.uniformBlocks = {{"Frame", FRAME_SLOT}, {"Material", MATERIAL_SLOT}};
-    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}, {"emissiveMap", 3}};
+    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}, {"emissiveMap", 3}, {"normalMap", 4}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
     if (!shader_) {
@@ -669,7 +695,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     return m;
 }
 
-std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture, gpu::TextureHandle emissiveTexture) {
+std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture, gpu::TextureHandle emissiveTexture, gpu::TextureHandle normalTexture) {
     gpu::Device *dev = &device_;
     auto m = std::shared_ptr<MaterialInstance>(new MaterialInstance, [dev](MaterialInstance *mi) {
         dev->destroyBuffer(mi->uniforms);
@@ -679,6 +705,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     m->texture = texture;
     m->indexTexture = indexTexture;
     m->emissiveTexture = emissiveTexture;
+    m->normalTexture = normalTexture;
     m->id = nextMaterialId_++;
     MaterialBlock b{};
     b.diffuse[0] = p.diffuse.x;
@@ -713,6 +740,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.animation[2] = p.fog ? 0.0f : 1.0f;
     b.pbr[0] = p.metallic;
     b.pbr[1] = p.roughness;
+    b.pbr[2] = normalTexture ? p.normalScale : 0.0f;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -727,7 +755,8 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
         gpu::TextureHandle texture = m.diffuseImage >= 0 && m.diffuseImage < (int)textures.size() ? textures[m.diffuseImage] : gpu::TextureHandle{};
         gpu::TextureHandle indexTexture = m.indexImage >= 0 && m.indexImage < (int)textures.size() ? textures[m.indexImage] : gpu::TextureHandle{};
         gpu::TextureHandle emissiveTexture = m.emissiveImage >= 0 && m.emissiveImage < (int)textures.size() ? textures[m.emissiveImage] : gpu::TextureHandle{};
-        materials.push_back(createMaterial(m, texture, indexTexture, emissiveTexture));
+        gpu::TextureHandle normalTexture = m.normalImage >= 0 && m.normalImage < (int)textures.size() ? textures[m.normalImage] : gpu::TextureHandle{};
+        materials.push_back(createMaterial(m, texture, indexTexture, emissiveTexture, normalTexture));
     }
     std::vector<std::shared_ptr<GpuMesh>> meshes;
     for (const assets::Mesh &m : model.meshes) {
@@ -1261,6 +1290,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
                     device_.bindTexture(2, it.material->indexTexture);
                 }
                 device_.bindTexture(3, it.material->emissiveTexture ? it.material->emissiveTexture : white_);
+                device_.bindTexture(4, it.material->normalTexture ? it.material->normalTexture : white_);
                 lastMaterial = it.material;
             }
             if (it.mesh != lastMesh) {
