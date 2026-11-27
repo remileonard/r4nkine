@@ -530,6 +530,27 @@ gpu::VertexLayout placementLayout() {
     return l;
 }
 
+// the mean of the cosines between the normals and the directions to the center of the bounds is over 0.5: the faces look
+// at the center, as those of a sky dome. An object, its normals outward, gives below 0; a flat ground about 0.
+bool facesInward(const assets::Mesh &mesh) {
+    if (mesh.primitive != assets::Primitive::TRIANGLES || mesh.vertices.empty() || mesh.bounds.empty()) {
+        return false;
+    }
+    const Vec3 center = (mesh.bounds.min + mesh.bounds.max) * 0.5f;
+    double sum = 0;
+    size_t count = 0;
+    for (const assets::Vertex &v : mesh.vertices) {
+        const Vec3 toCenter = center - v.position;
+        const float d = length(toCenter);
+        const float n = length(v.normal);
+        if (d > 1e-6f && n > 1e-6f) {
+            sum += dot(v.normal, toCenter) / (d * n);
+            count++;
+        }
+    }
+    return count > 0 && sum / (double)count > 0.5;
+}
+
 } // namespace
 
 Renderer::Renderer(gpu::Device &device) : device_(device) {
@@ -707,6 +728,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     }
     m->bounds = sphereOf(b);
     m->box = b;
+    m->inward = facesInward(mesh);
     return m;
 }
 
@@ -1161,11 +1183,35 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
         RenderStats keep = stats_;
         cull(root, Mat4(1.0f), Frustum::fromMatrix(lightViewProj), false, cam.mask & options_.shadowMask, cullEye_);
         stats_ = keep;
-        auto casts = [](const DrawItem &it) {
+        // a mesh whose box holds all the area of the shadows (a sky, a dome) is around everything: its shadow would cover it all
+        const Sphere area = shadowArea_;
+        auto surrounds = [&area](const DrawItem &it) {
+            const Box &b = it.mesh->box;
+            if (b.empty()) {
+                return false;
+            }
+            Box w;
+            for (int k = 0; k < 8; k++) {
+                w.extend(transformPoint(it.world, {k & 1 ? b.max.x : b.min.x, k & 2 ? b.max.y : b.min.y, k & 4 ? b.max.z : b.min.z}));
+            }
+            const Vec3 r(area.radius);
+            return all(lessThanEqual(w.min, area.center - r)) && all(greaterThanEqual(w.max, area.center + r));
+        };
+        // a mesh that faces inward and is as large as the scene (half its radius or more): a sky dome, even seen from outside.
+        // The rooms face inward too, but they are small in the scene: they keep their shadows.
+        const float sceneRadius = root.bounds().radius;
+        auto sky = [sceneRadius](const DrawItem &it) {
+            if (!it.mesh->inward) {
+                return false;
+            }
+            const float scale = std::max({length(Vec3(it.world[0])), length(Vec3(it.world[1])), length(Vec3(it.world[2]))});
+            return it.mesh->bounds.radius * scale >= 0.5f * sceneRadius;
+        };
+        auto casts = [&surrounds, &sky](const DrawItem &it) {
             const assets::Material &m = it.material->params;
             bool solid = m.alpha == assets::AlphaMode::NONE || m.alpha == assets::AlphaMode::MASK || (m.alpha == assets::AlphaMode::BLEND && m.blendDepthWrite);
             // the placements of the static instancers cast no shadow
-            return !it.placements && m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::TRIANGLES;
+            return !it.placements && m.castShadows && solid && m.depthWrite && !m.depthEqual && it.mesh->primitive == assets::Primitive::TRIANGLES && !sky(it) && !surrounds(it);
         };
         for (size_t i = o; i < opaque_.size(); i++) {
             if (casts(opaque_[i])) {
@@ -1386,6 +1432,7 @@ bool Renderer::shadowView(const Camera &cam, Mat4 &lightViewProj, float &texel) 
     float reach = std::max(0.0f, options_.shadowCasterReach);
     Mat4 proj = glm::ortho(lc.x - r, lc.x + r, lc.y - r, lc.y + r, -lc.z - r - reach, -lc.z + r);
     lightViewProj = proj * view;
+    shadowArea_ = {center, r};
     return true;
 }
 

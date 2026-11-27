@@ -22,6 +22,9 @@ struct GpuMesh {
     Sphere bounds;
     Box box;
     std::string name;
+    // its normals point to its center: a sky dome, a skybox, or a room seen from inside; as large as the scene, it is a sky
+    // and casts no shadow
+    bool inward = false;
 };
 
 struct MaterialInstance {
@@ -210,6 +213,8 @@ private:
     gpu::RenderTargetHandle target_;
     RenderStats stats_;
     // kept while it is frozen
+    // the sphere of the world that the shadow map covers, this frame
+    Sphere shadowArea_;
     Mat4 cullViewProj_;
     Vec3 cullEye_;
     bool frozen_ = false;
