@@ -253,6 +253,9 @@ void settingsPanel(App &app, ui::Context &g, float height) {
     for (const LoadedFile &f : app.files) {
         g.message(fmt("%.0f tris, %.0f lines, %.0f points", (double)f.triangles, (double)f.lines, (double)f.points).insert(0, baseName(f.path) + ": ").c_str());
     }
+    for (const std::string &e : app.errors) {
+        g.message(e.c_str());
+    }
     g.endPanel();
 }
 

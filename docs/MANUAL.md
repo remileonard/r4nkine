@@ -653,7 +653,33 @@ R4nkine has loaders for these formats:
 
 Other formats use Assimp. Build with the option `R4_WITH_ASSIMP` to read them. Examples are FBX, COLLADA, 3DS, PLY and STL.
 
+An OBJ file without a `.mtl` can name its materials with these conventions. A `.mtl` always has priority.
+
+- `usemtl rgb_RRGGBB`: the color RRGGBB (hexadecimal).
+- `usemtl glass`: a tinted glass, blended.
+- Another name: grey.
+- `g lod0`, `g lod1`...: the levels of detail of a LOD node, the first one the nearest. A level is used up to 30, 60, 90... times the radius of the object; the last one has no limit.
+
+The airframes of the module enhanced of libRealSpace use these conventions.
+
 An OpenFlight file can refer to other files. The loader finds these files with the search paths. Chapter 7.5 describes the search paths.
+
+The glTF loader reads glTF 2.0. A glTF 1.0 file (2015 to 2017, with the shaders and the techniques of WebGL) goes to Assimp when R4nkine has it (`R4_WITH_ASSIMP`). Without Assimp, the loader gives an error: use the glTF 2.0 version of the file.
+
+The glTF loader changes the PBR materials to the materials of R4nkine:
+
+- The base color gives the diffuse color. The metallic and roughness factors give `Material::metallic` and `Material::roughness`, the specular color and the shininess.
+- A material with `roughness` >= 0 reflects the environment of the renderer (`Environment::envSky`, `envHorizon`, `envGround`): a sky over the horizon and a ground under it, blurred by the roughness, more at a grazing angle (Fresnel). A metal (`metallic` 1) has no diffuse light: its color is its reflection and its highlight. The other loaders give `roughness` -1: Phong only.
+- The emissive texture multiplies the emissive color (`Material::emissiveImage`).
+- The normal map bends the normal (`Material::normalImage`, `normalScale`). The tangent space comes from the derivatives of the position and of the texture coordinates in the fragment shader: the vertices need no tangent. `tests/data/bump.gltf` shows a mapped quad beside a real hemisphere.
+- `KHR_texture_transform` of the base color texture (offset, rotation, scale) changes the texture coordinates of the mesh; without a base color texture, the one of the normal map.
+- `alphaMode` gives the alpha mode: `BLEND` or `MASK` with its cutoff.
+- `KHR_materials_transmission` (glass) gives a blended material: a fully transmissive material lets 85 % of the light through. There is no refraction.
+- `KHR_materials_emissive_strength` multiplies the emissive color.
+- `KHR_materials_unlit` gives an unlit material.
+- The metallic-roughness texture multiplies the metal (blue) and the roughness (green) at each pixel. The occlusion texture (red) darkens the ambient light and the reflections, with its strength. They are read on the first texture coordinates only.
+- `KHR_materials_volume` (a solid glass object) lets 55 % of the light through, not 85 %: its color shows more.
+- Not read: the textures on the second texture coordinates, the clearcoat, the iridescence, the sheen, the variants (the default material is used).
 
 ### 7.4 Images
 

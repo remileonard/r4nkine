@@ -22,12 +22,19 @@ struct GpuMesh {
     Sphere bounds;
     Box box;
     std::string name;
+    // its normals point to its center: a sky dome, a skybox, or a room seen from inside; as large as the scene, it is a sky
+    // and casts no shadow
+    bool inward = false;
 };
 
 struct MaterialInstance {
     assets::Material params;
     gpu::TextureHandle texture;
     gpu::TextureHandle indexTexture;
+    gpu::TextureHandle emissiveTexture;
+    gpu::TextureHandle normalTexture;
+    gpu::TextureHandle metallicRoughnessTexture;
+    gpu::TextureHandle occlusionTexture;
     gpu::BufferHandle uniforms;
     uint32_t id = 0; // for sorting
 };
@@ -60,6 +67,10 @@ struct Environment {
     float fogStart = 100;
     float fogEnd = 1000;
     float time = 0; // seconds, for the animated textures
+    // what the PBR materials reflect (Material::roughness >= 0): a sky over the horizon, a ground under it, along the up axis
+    Vec3 envSky{0.32f, 0.46f, 0.72f};
+    Vec3 envHorizon{0.86f, 0.88f, 0.92f};
+    Vec3 envGround{0.16f, 0.15f, 0.14f};
 };
 
 struct RenderOptions {
@@ -124,7 +135,14 @@ public:
     // its parts for an Instancer: scene::collectParts(*upload(model))
     scene::NodePtr upload(const assets::Model &model);
     std::shared_ptr<GpuMesh> uploadMesh(const assets::Mesh &mesh);
-    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {});
+    // the textures of the material, by role, besides its diffuse texture and its index texture
+    struct MaterialTextures {
+        gpu::TextureHandle emissive;
+        gpu::TextureHandle normal;
+        gpu::TextureHandle metallicRoughness;
+        gpu::TextureHandle occlusion;
+    };
+    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {}, const MaterialTextures &more = {});
     gpu::TextureHandle uploadImage(const assets::Image &image, bool mipmaps = true);
 
     // the viewport in pixels, from the bottom left
@@ -195,6 +213,8 @@ private:
     gpu::RenderTargetHandle target_;
     RenderStats stats_;
     // kept while it is frozen
+    // the sphere of the world that the shadow map covers, this frame
+    Sphere shadowArea_;
     Mat4 cullViewProj_;
     Vec3 cullEye_;
     bool frozen_ = false;

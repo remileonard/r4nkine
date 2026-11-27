@@ -4,6 +4,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <algorithm>
 #include <cstring>
 #include <map>
 #include <unordered_map>
@@ -68,6 +69,40 @@ struct Builder {
     std::unordered_map<Key, uint32_t, KeyHash> map;
     bool missingNormals = false;
 };
+
+// A material named by usemtl and not in a .mtl: rgb_RRGGBB is that color, glass a tinted glass, the others grey (the
+// convention of the airframes of libRealSpace)
+Material namedMaterial(const std::string &name) {
+    Material m;
+    m.name = name;
+    unsigned rgb = 0;
+    if (name.size() == 10 && std::sscanf(name.c_str(), "rgb_%6x", &rgb) == 1) {
+        Vec3 c{((rgb >> 16) & 0xff) / 255.0f, ((rgb >> 8) & 0xff) / 255.0f, (rgb & 0xff) / 255.0f};
+        m.diffuse = Vec4(c, 1.0f);
+        m.ambient = c;
+    } else if (name == "glass") {
+        m.diffuse = {0.25f, 0.3f, 0.35f, 0.35f};
+        m.ambient = {0.25f, 0.3f, 0.35f};
+        m.specular = {0.6f, 0.6f, 0.6f};
+        m.shininess = 64;
+        m.alpha = AlphaMode::BLEND;
+        m.doubleSided = true;
+    } else {
+        m.diffuse = {0.6f, 0.6f, 0.6f, 1.0f};
+        m.ambient = {0.6f, 0.6f, 0.6f};
+    }
+    return m;
+}
+
+// "lod3" gives 3; -1 for another name
+int lodOfGroup(const std::string &name) {
+    int n = -1;
+    char rest = 0;
+    if (std::sscanf(name.c_str(), "lod%d%c", &n, &rest) == 1 && n >= 0) {
+        return n;
+    }
+    return -1;
+}
 
 void loadMTL(const std::string &path, Model &model, std::map<std::string, int> &byName, std::map<std::string, int> &images) {
     std::vector<std::string> lines;
@@ -183,9 +218,11 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
     std::vector<Vec2> uvs;
     std::map<std::string, int> materialByName;
     std::map<std::string, int> images;
-    std::map<int, Builder> builders;
-    std::vector<int> order;
+    // by (level of detail of the group, -1 without, material)
+    std::map<std::pair<int, int>, Builder> builders;
+    std::vector<std::pair<int, int>> order;
     int material = -1;
+    int lod = -1;
 
     for (const std::string &line : lines) {
         if (line.empty() || line[0] == '#') {
@@ -205,10 +242,11 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
             std::sscanf(s + 3, "%f %f", &t.x, &t.y);
             uvs.push_back(t);
         } else if (s[0] == 'f' && (s[1] == ' ' || s[1] == '\t')) {
-            if (!builders.count(material)) {
-                order.push_back(material);
+            const std::pair<int, int> key{lod, material};
+            if (!builders.count(key)) {
+                order.push_back(key);
             }
-            Builder &b = builders[material];
+            Builder &b = builders[key];
             std::vector<uint32_t> corners;
             const char *p = s + 2;
             while (*p) {
@@ -270,20 +308,24 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
             std::string name = trim(s + 6);
             auto it = materialByName.find(name);
             if (it == materialByName.end()) {
-                Material m;
-                m.name = name;
                 it = materialByName.emplace(name, (int)model->materials.size()).first;
-                model->materials.push_back(m);
+                model->materials.push_back(namedMaterial(name));
             }
             material = it->second;
+        } else if (s[0] == 'g' && (s[1] == ' ' || s[1] == '\t' || s[1] == 0)) {
+            lod = lodOfGroup(trim(s + 1));
         }
     }
 
     Node root;
     root.name = path;
     root.local = axes::fromYUpMatrix();
-    for (int m : order) {
-        Builder &b = builders[m];
+    // the groups lod0, lod1...: the levels of detail of a LOD node, each a child, in the order of their numbers
+    std::map<int, std::vector<int>> levels;
+    Box lodBox;
+    for (const std::pair<int, int> &key : order) {
+        Builder &b = builders[key];
+        const int m = key.second;
         if (b.mesh.indices.empty()) {
             continue;
         }
@@ -293,8 +335,39 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
         b.mesh.material = m;
         b.mesh.name = m >= 0 ? model->materials[m].name : "default";
         b.mesh.computeBounds();
-        root.meshes.push_back((int)model->meshes.size());
+        const int index = (int)model->meshes.size();
+        if (key.first >= 0) {
+            levels[key.first].push_back(index);
+            lodBox.extend(b.mesh.bounds);
+        } else {
+            root.meshes.push_back(index);
+        }
         model->meshes.push_back(std::move(b.mesh));
+    }
+    model->nodes.push_back(root);
+    if (!levels.empty()) {
+        // without distances in the file: a level for each 30 radii of the object
+        const Vec3 center = (lodBox.min + lodBox.max) * 0.5f;
+        const float step = 30.0f * std::max(length(lodBox.max - lodBox.min) * 0.5f, 1e-3f);
+        Node lodNode;
+        lodNode.name = "lod";
+        lodNode.kind = NodeKind::LOD;
+        lodNode.lodCenter = center;
+        lodNode.hasLodCenter = true;
+        lodNode.lodRanges.push_back(0);
+        const int lodIndex = (int)model->nodes.size();
+        model->nodes.push_back(lodNode);
+        model->nodes[0].children.push_back(lodIndex);
+        int i = 0;
+        for (auto &[number, meshes] : levels) {
+            Node level;
+            level.name = "lod" + std::to_string(number);
+            level.meshes = meshes;
+            i++;
+            model->nodes[lodIndex].lodRanges.push_back(i < (int)levels.size() ? step * (float)i : 1e30f);
+            model->nodes[lodIndex].children.push_back((int)model->nodes.size());
+            model->nodes.push_back(level);
+        }
     }
     if (model->meshes.empty()) {
         if (error) {
@@ -302,7 +375,6 @@ std::shared_ptr<Model> loadOBJ(const std::string &path, std::string *error) {
         }
         return nullptr;
     }
-    model->nodes.push_back(std::move(root));
     return model;
 }
 

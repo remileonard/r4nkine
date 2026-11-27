@@ -25,6 +25,11 @@
 namespace r4::assets {
 namespace {
 
+// the part of the light that a fully transmissive material (glass) lets through: its opacity is 1 - 0.85
+constexpr float kTransmitted = 0.85f;
+// the same for a glass with a volume (a solid glass object), which absorbs and bends more of the light
+constexpr float kTransmittedVolume = 0.55f;
+
 std::string resultText(cgltf_result r) {
     switch (r) {
     case cgltf_result_data_too_short:
@@ -161,8 +166,22 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             float spec = 0.04f + 0.5f * pbr.metallic_factor * (1 - rough);
             m.specular = {spec, spec, spec};
             m.shininess = std::fmin(2.0f / (rough * rough * rough * rough) - 2.0f, 256.0f);
+            m.metallicRoughnessImage = pbr.metallic_roughness_texture.texcoord == 0 ? imageOf(pbr.metallic_roughness_texture.texture) : -1;
+            m.metallic = std::fmin(std::fmax(pbr.metallic_factor, 0.0f), 1.0f);
+            m.roughness = std::fmin(std::fmax(pbr.roughness_factor, 0.0f), 1.0f);
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
+        m.emissiveImage = imageOf(gm.emissive_texture.texture);
+        m.normalImage = imageOf(gm.normal_texture.texture);
+        // the second texture coordinates are not read: an occlusion on them is left out
+        if (gm.occlusion_texture.texcoord == 0) {
+            m.occlusionImage = imageOf(gm.occlusion_texture.texture);
+            m.occlusionStrength = gm.occlusion_texture.scale;
+        }
+        m.normalScale = gm.normal_texture.scale;
+        if (gm.has_emissive_strength) {
+            m.emissive *= gm.emissive_strength.emissive_strength;
+        }
         if (gm.unlit) {
             m.shading = Shading::UNLIT;
         }
@@ -172,6 +191,13 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         } else if (gm.alpha_mode == cgltf_alpha_mode_mask) {
             m.alpha = AlphaMode::MASK;
             m.alphaCutoff = gm.alpha_cutoff;
+        }
+        // KHR_materials_transmission (glass): no refraction here, a blend that lets the light through; its highlight stays
+        if (gm.has_transmission && gm.transmission.transmission_factor > 0 && m.alpha != AlphaMode::MASK) {
+            m.alpha = AlphaMode::BLEND;
+            // a thick glass (KHR_materials_volume) absorbs more of the light: its color shows more than a thin pane
+            const float through = gm.has_volume && gm.volume.thickness_factor > 0 ? kTransmittedVolume : kTransmitted;
+            m.diffuse.w *= 1.0f - through * gm.transmission.transmission_factor;
         }
         materials[&gm] = (int)model->materials.size();
         model->materials.push_back(m);
@@ -221,6 +247,13 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             if (!pos) {
                 continue;
             }
+            // KHR_texture_transform of the base color texture: uv' = offset + rotation * scale * uv
+            // (else the one of the normal map): the two textures share the texture coordinates
+            const cgltf_texture_view *view = prim.material && prim.material->has_pbr_metallic_roughness ? &prim.material->pbr_metallic_roughness.base_color_texture : nullptr;
+            const cgltf_texture_transform *tt = view && view->texture && view->has_transform ? &view->transform : nullptr;
+            if (!tt && prim.material && !(view && view->texture) && prim.material->normal_texture.has_transform) {
+                tt = &prim.material->normal_texture.transform;
+            }
             Mesh m;
             m.name = gm.name ? gm.name : "mesh " + std::to_string(mi);
             m.vertices.resize(pos->count);
@@ -232,6 +265,14 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                     m.vertices[v].normal = {f[0], f[1], f[2]};
                 }
                 if (uv && v < uv->count && cgltf_accessor_read_float(uv, v, f, 2)) {
+                    if (tt) {
+                        const float c = std::cos(tt->rotation);
+                        const float sn = std::sin(tt->rotation);
+                        const float u = tt->scale[0] * f[0];
+                        const float w = tt->scale[1] * f[1];
+                        f[0] = c * u + sn * w + tt->offset[0];
+                        f[1] = -sn * u + c * w + tt->offset[1];
+                    }
                     m.vertices[v].uv = {f[0], 1 - f[1]};
                 }
                 if (col && v < col->count) {

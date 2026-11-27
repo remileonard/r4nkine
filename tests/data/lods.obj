@@ -1,0 +1,13 @@
+# two levels of detail
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 1 1 0
+g lod0
+usemtl rgb_FF8000
+f 1 2 3
+usemtl glass
+f 2 4 3
+g lod1
+usemtl body
+f 1 2 4

@@ -49,7 +49,16 @@ struct Material {
     Vec3 specular{0, 0, 0};
     Vec3 emissive{0, 0, 0};
     float shininess = 16;
-    int diffuseImage = -1; // an index in Model::images
+    int diffuseImage = -1;  // an index in Model::images
+    int emissiveImage = -1; // an index in Model::images; it multiplies the emissive color
+    // a tangent space normal map (OpenGL convention, +Y up), an index in Model::images; normalScale scales its X and Y
+    int normalImage = -1;
+    float normalScale = 1;
+    // glTF: the metal in blue and the roughness in green multiply metallic and roughness; the ambient occlusion in red (its
+    // strength: 1 the full texture, 0 none). Indices in Model::images.
+    int metallicRoughnessImage = -1;
+    int occlusionImage = -1;
+    float occlusionStrength = 1;
     bool sphereMap = false;
     AlphaMode alpha = AlphaMode::NONE;
     float alphaCutoff = 0.5f;
@@ -84,6 +93,10 @@ struct Material {
     // diffuseImage as frames stacked from top to bottom, shown in turn
     int frames = 1;
     float framesPerSecond = 0;
+    // a PBR material (glTF) with roughness >= 0: it reflects the environment of the renderer, with the Fresnel effect. A metal
+    // (metallic 1) has no diffuse light: its color is its reflection and its highlight. roughness < 0: Phong only.
+    float metallic = 0;
+    float roughness = -1;
 };
 
 enum class Primitive {

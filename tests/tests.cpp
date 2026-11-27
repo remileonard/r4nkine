@@ -359,10 +359,51 @@ static void testStep2(const std::string &dir) {
         CHECK(g->nodes[1].name == "tri" && near(translationOf(g->nodes[1].local), {0, 0, 5}));
         const assets::Material &m = g->materials[g->meshes[0].material];
         CHECK(m.name == "half" && near(m.diffuse.x, 0.5f) && m.doubleSided && m.diffuseImage == 0);
+        CHECK(near(m.metallic, 0) && near(m.roughness, 1));
         CHECK(g->images.size() == 1 && g->images[0].width == 2);
         CHECK(near(g->meshes[0].vertices[2].uv.y, 0) && near(g->meshes[0].vertices[0].uv.y, 1));
         Box b = g->bounds();
         CHECK(near(b.min.y, -5) && near(b.max.z, 1));
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+    // glass: a blend that lets 85 % of the light through; the emissive strength multiplies the emissive color
+    auto glass = assets::loadModel(dir + "/glass.gltf", &err);
+    CHECK(glass != nullptr);
+    if (glass) {
+        const assets::Material &m = glass->materials[glass->meshes[0].material];
+        CHECK(m.alpha == assets::AlphaMode::BLEND && near(m.diffuse.w, 0.15f));
+        CHECK(near(m.emissive.x, 0.2f) && near(m.emissive.z, 0.6f));
+        CHECK(near(m.metallic, 0) && near(m.roughness, 0) && m.emissiveImage < 0);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+    // OBJ without a .mtl: the groups lod0 and lod1 under a LOD node, the named materials
+    auto lods = assets::loadModel(dir + "/lods.obj", &err);
+    CHECK(lods != nullptr);
+    if (lods) {
+        CHECK(lods->nodes.size() == 4 && lods->nodes[0].children.size() == 1);
+        const assets::Node &lodNode = lods->nodes[lods->nodes[0].children[0]];
+        CHECK(lodNode.kind == assets::NodeKind::LOD && lodNode.children.size() == 2 && lodNode.lodRanges.size() == 3);
+        CHECK(near(lodNode.lodRanges[0], 0) && lodNode.lodRanges[1] > 0 && lodNode.lodRanges[2] > 1e20f);
+        CHECK(lods->nodes[lodNode.children[0]].meshes.size() == 2 && lods->nodes[lodNode.children[1]].meshes.size() == 1);
+        const assets::Material &orange = lods->materials[0];
+        const assets::Material &glass = lods->materials[1];
+        const assets::Material &body = lods->materials[2];
+        CHECK(orange.name == "rgb_FF8000" && near(orange.diffuse.x, 1) && near(orange.diffuse.y, 128.0f / 255) && near(orange.diffuse.z, 0));
+        CHECK(glass.alpha == assets::AlphaMode::BLEND && glass.diffuse.w < 1 && glass.doubleSided);
+        CHECK(near(body.diffuse.x, 0.6f) && body.alpha == assets::AlphaMode::NONE);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
+    // a normal map and its scale; the quad beside it has none
+    auto bump = assets::loadModel(dir + "/bump.gltf", &err);
+    CHECK(bump != nullptr);
+    if (bump) {
+        const assets::Material &mapped = bump->materials[bump->meshes[0].material];
+        const assets::Material &real = bump->materials[bump->meshes[1].material];
+        CHECK(mapped.normalImage == 0 && near(mapped.normalScale, 0.5f) && real.normalImage < 0);
+        CHECK(bump->images.size() == 1 && bump->images[0].width == 128 && bump->images[0].channels == 3);
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
     }
@@ -540,6 +581,25 @@ static void testAssimp(const std::string &dir) {
         return;
     }
     CHECK(std::find(ext.begin(), ext.end(), "fbx") != ext.end());
+    // the same texture coordinates as the loaders of R4nkine, for a format with v from the bottom (OBJ) and one with v from
+    // the top (glTF)
+    for (const char *file : {"/quad.obj", "/tri.gltf"}) {
+        std::string why;
+        auto own = assets::loadModel(dir + file, &why);
+        auto other = assets::loadAssimp(dir + file, &why);
+        CHECK(own && other);
+        if (own && other) {
+            bool same = true;
+            for (const assets::Vertex &a : own->meshes[0].vertices) {
+                bool found = false;
+                for (const assets::Vertex &b : other->meshes[0].vertices) {
+                    found = found || (length(a.position - b.position) < 1e-4f && near(a.uv.x, b.uv.x) && near(a.uv.y, b.uv.y));
+                }
+                same = same && found;
+            }
+            CHECK(same);
+        }
+    }
     std::vector<std::string> all = assets::modelExtensions();
     CHECK(std::count(all.begin(), all.end(), "obj") == 1);
     std::string err;
