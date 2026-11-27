@@ -28,6 +28,7 @@ struct MaterialInstance {
     assets::Material params;
     gpu::TextureHandle texture;
     gpu::TextureHandle indexTexture;
+    gpu::TextureHandle emissiveTexture;
     gpu::BufferHandle uniforms;
     uint32_t id = 0; // for sorting
 };
@@ -60,6 +61,10 @@ struct Environment {
     float fogStart = 100;
     float fogEnd = 1000;
     float time = 0; // seconds, for the animated textures
+    // what the PBR materials reflect (Material::roughness >= 0): a sky over the horizon, a ground under it, along the up axis
+    Vec3 envSky{0.32f, 0.46f, 0.72f};
+    Vec3 envHorizon{0.86f, 0.88f, 0.92f};
+    Vec3 envGround{0.16f, 0.15f, 0.14f};
 };
 
 struct RenderOptions {
@@ -124,7 +129,7 @@ public:
     // its parts for an Instancer: scene::collectParts(*upload(model))
     scene::NodePtr upload(const assets::Model &model);
     std::shared_ptr<GpuMesh> uploadMesh(const assets::Mesh &mesh);
-    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {});
+    std::shared_ptr<MaterialInstance> createMaterial(const assets::Material &m, gpu::TextureHandle texture = {}, gpu::TextureHandle indexTexture = {}, gpu::TextureHandle emissiveTexture = {});
     gpu::TextureHandle uploadImage(const assets::Image &image, bool mipmaps = true);
 
     // the viewport in pixels, from the bottom left

@@ -359,6 +359,7 @@ static void testStep2(const std::string &dir) {
         CHECK(g->nodes[1].name == "tri" && near(translationOf(g->nodes[1].local), {0, 0, 5}));
         const assets::Material &m = g->materials[g->meshes[0].material];
         CHECK(m.name == "half" && near(m.diffuse.x, 0.5f) && m.doubleSided && m.diffuseImage == 0);
+        CHECK(near(m.metallic, 0) && near(m.roughness, 1));
         CHECK(g->images.size() == 1 && g->images[0].width == 2);
         CHECK(near(g->meshes[0].vertices[2].uv.y, 0) && near(g->meshes[0].vertices[0].uv.y, 1));
         Box b = g->bounds();
@@ -373,6 +374,7 @@ static void testStep2(const std::string &dir) {
         const assets::Material &m = glass->materials[glass->meshes[0].material];
         CHECK(m.alpha == assets::AlphaMode::BLEND && near(m.diffuse.w, 0.15f));
         CHECK(near(m.emissive.x, 0.2f) && near(m.emissive.z, 0.6f));
+        CHECK(near(m.metallic, 0) && near(m.roughness, 0) && m.emissiveImage < 0);
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
     }

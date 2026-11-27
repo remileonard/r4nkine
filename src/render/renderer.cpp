@@ -31,6 +31,10 @@ struct FrameBlock {
     float shadowParams[4];   // enabled, normal offset (world), depth bias, strength of the unlit
     float shadowParams2[4];  // a texel of the map (uv)
     float time[4];           // seconds
+    float envSky[4];         // the environment of the PBR materials
+    float envHorizon[4];
+    float envGround[4];
+    float worldUp[4]; // the up axis in view space
 };
 
 // for an item of placements: the matrices around the matrix of a placement, the up axis and the growth of the kept ones
@@ -50,6 +54,7 @@ struct MaterialBlock {
     float flags3[4]; // receives the shadows, drawn over the face of the same depth, index atlas columns and rows
     float textureMean[4];
     float animation[4]; // frames, frames per second, out of the fog
+    float pbr[4];       // metallic, roughness (< 0: not a PBR material)
 };
 
 // the matrix of a placement in the vertex shader, as Instancer::matrixOf, grown by drawUp.w
@@ -87,6 +92,10 @@ layout(std140) uniform Frame {
     vec4 shadowParams;
     vec4 shadowParams2;
     vec4 time;
+    vec4 envSky;
+    vec4 envHorizon;
+    vec4 envGround;
+    vec4 worldUp;
 };
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -106,6 +115,7 @@ layout(std140) uniform Material {
     vec4 flags3;
     vec4 textureMean;
     vec4 animation;
+    vec4 pbr;
 };
 out vec3 vNormal;
 out vec3 vPosition;
@@ -154,6 +164,10 @@ layout(std140) uniform Frame {
     vec4 shadowParams;
     vec4 shadowParams2;
     vec4 time;
+    vec4 envSky;
+    vec4 envHorizon;
+    vec4 envGround;
+    vec4 worldUp;
 };
 layout(std140) uniform Material {
     vec4 diffuse;
@@ -165,10 +179,12 @@ layout(std140) uniform Material {
     vec4 flags3;
     vec4 textureMean;
     vec4 animation;
+    vec4 pbr;
 };
 uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
 uniform sampler2D indexMap;
+uniform sampler2D emissiveMap;
 in vec4 vShadow;
 in vec3 vNormal;
 in vec3 vPosition;
@@ -243,6 +259,18 @@ float rampIntensity(float shadow) {
         intensity = flags2.z + (vRampIntensity - flags2.z) * shadow;
     }
     return intensity;
+}
+// the sky, the horizon and the ground in the direction r (view space), blurred by the roughness
+vec3 environment(vec3 r, float rough) {
+    float up = dot(r, worldUp.xyz);
+    vec3 c;
+    if (up >= 0.0) {
+        c = mix(envHorizon.rgb, envSky.rgb, smoothstep(0.0, 0.5 + rough, up));
+    } else {
+        c = mix(envGround.rgb * 1.6, envGround.rgb, smoothstep(0.0, 0.3 + rough, -up));
+    }
+    vec3 mean = (envSky.rgb + 2.0 * envHorizon.rgb + envGround.rgb) * 0.25;
+    return mix(c, mean, rough * rough);
 }
 vec3 fogged(vec3 color) {
     if (fogParams.z > 0.5 && animation.z < 0.5) {
@@ -331,12 +359,26 @@ void main() {
         vec3 n = seenNormal();
         vec3 l = lightDirection.xyz;
         vec3 v = normalize(-vPosition);
+        vec3 glow = emissive.rgb * texture(emissiveMap, uv).rgb;
         float nl = max(dot(n, l), 0.0) * shadow;
         float spec = 0.0;
         if (nl > 0.0 && specular.w > 0.0) {
             spec = pow(max(dot(n, normalize(l + v)), 0.0), specular.w);
         }
-        color = emissive.rgb + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) + specular.rgb * lightColor.rgb * spec;
+        if (pbr.y < 0.0) {
+            color = glow + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) + specular.rgb * lightColor.rgb * spec;
+        } else {
+            // a metal has no diffuse light; all reflect the environment more at a grazing angle (Schlick)
+            float rough = clamp(pbr.y, 0.0, 1.0);
+            vec3 f0 = mix(vec3(0.04), base.rgb, pbr.x);
+            float grazing = pow(1.0 - max(dot(n, v), 0.0), 5.0);
+            vec3 fresnel = f0 + (vec3(1.0) - f0) * grazing * (1.0 - rough);
+            vec3 reflected = environment(reflect(-v, n), rough) * fresnel;
+            vec3 diffuseLight = base.rgb * (1.0 - pbr.x) * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl);
+            color = glow + diffuseLight + reflected + f0 * lightColor.rgb * spec;
+            // a glass shows its reflection: it is less transparent where it reflects more
+            base.a = mix(base.a, 1.0, max(fresnel.r, max(fresnel.g, fresnel.b)));
+        }
     }
     fragColor = vec4(fogged(color), base.a);
 }
@@ -486,7 +528,7 @@ bool Renderer::createShaders() {
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
     d.uniformBlocks = {{"Frame", FRAME_SLOT}, {"Material", MATERIAL_SLOT}};
-    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}};
+    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}, {"emissiveMap", 3}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
     if (!shader_) {
@@ -627,7 +669,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     return m;
 }
 
-std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture) {
+std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture, gpu::TextureHandle emissiveTexture) {
     gpu::Device *dev = &device_;
     auto m = std::shared_ptr<MaterialInstance>(new MaterialInstance, [dev](MaterialInstance *mi) {
         dev->destroyBuffer(mi->uniforms);
@@ -636,6 +678,7 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     m->params = p;
     m->texture = texture;
     m->indexTexture = indexTexture;
+    m->emissiveTexture = emissiveTexture;
     m->id = nextMaterialId_++;
     MaterialBlock b{};
     b.diffuse[0] = p.diffuse.x;
@@ -668,6 +711,8 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.animation[0] = (float)std::max(1, p.frames);
     b.animation[1] = p.framesPerSecond;
     b.animation[2] = p.fog ? 0.0f : 1.0f;
+    b.pbr[0] = p.metallic;
+    b.pbr[1] = p.roughness;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -681,7 +726,8 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     for (const assets::Material &m : model.materials) {
         gpu::TextureHandle texture = m.diffuseImage >= 0 && m.diffuseImage < (int)textures.size() ? textures[m.diffuseImage] : gpu::TextureHandle{};
         gpu::TextureHandle indexTexture = m.indexImage >= 0 && m.indexImage < (int)textures.size() ? textures[m.indexImage] : gpu::TextureHandle{};
-        materials.push_back(createMaterial(m, texture, indexTexture));
+        gpu::TextureHandle emissiveTexture = m.emissiveImage >= 0 && m.emissiveImage < (int)textures.size() ? textures[m.emissiveImage] : gpu::TextureHandle{};
+        materials.push_back(createMaterial(m, texture, indexTexture, emissiveTexture));
     }
     std::vector<std::shared_ptr<GpuMesh>> meshes;
     for (const assets::Mesh &m : model.meshes) {
@@ -1109,6 +1155,10 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
     fb.fogParams[1] = env_.fogEnd;
     fb.fogParams[2] = env_.fog ? 1.0f : 0.0f;
     fb.time[0] = env_.time;
+    copyVec(fb.envSky, env_.envSky, 1);
+    copyVec(fb.envHorizon, env_.envHorizon, 1);
+    copyVec(fb.envGround, env_.envGround, 1);
+    copyVec(fb.worldUp, normalize(transformVector(cam.view, axes::kUp)), 0);
     fb.options[0] = options_.textures && !wireframe_ ? 1.0f : 0.0f;
     fb.options[1] = options_.lighting ? 1.0f : 0.0f;
     fb.options[2] = options_.flatShading ? 1.0f : 0.0f;
@@ -1210,6 +1260,7 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
                 if (it.material->indexTexture) {
                     device_.bindTexture(2, it.material->indexTexture);
                 }
+                device_.bindTexture(3, it.material->emissiveTexture ? it.material->emissiveTexture : white_);
                 lastMaterial = it.material;
             }
             if (it.mesh != lastMesh) {

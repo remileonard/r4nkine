@@ -164,8 +164,11 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             float spec = 0.04f + 0.5f * pbr.metallic_factor * (1 - rough);
             m.specular = {spec, spec, spec};
             m.shininess = std::fmin(2.0f / (rough * rough * rough * rough) - 2.0f, 256.0f);
+            m.metallic = std::fmin(std::fmax(pbr.metallic_factor, 0.0f), 1.0f);
+            m.roughness = std::fmin(std::fmax(pbr.roughness_factor, 0.0f), 1.0f);
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
+        m.emissiveImage = imageOf(gm.emissive_texture.texture);
         if (gm.has_emissive_strength) {
             m.emissive *= gm.emissive_strength.emissive_strength;
         }
@@ -232,6 +235,9 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             if (!pos) {
                 continue;
             }
+            // KHR_texture_transform of the base color texture: uv' = offset + rotation * scale * uv
+            const cgltf_texture_view *view = prim.material && prim.material->has_pbr_metallic_roughness ? &prim.material->pbr_metallic_roughness.base_color_texture : nullptr;
+            const cgltf_texture_transform *tt = view && view->has_transform ? &view->transform : nullptr;
             Mesh m;
             m.name = gm.name ? gm.name : "mesh " + std::to_string(mi);
             m.vertices.resize(pos->count);
@@ -243,6 +249,14 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
                     m.vertices[v].normal = {f[0], f[1], f[2]};
                 }
                 if (uv && v < uv->count && cgltf_accessor_read_float(uv, v, f, 2)) {
+                    if (tt) {
+                        const float c = std::cos(tt->rotation);
+                        const float sn = std::sin(tt->rotation);
+                        const float u = tt->scale[0] * f[0];
+                        const float w = tt->scale[1] * f[1];
+                        f[0] = c * u + sn * w + tt->offset[0];
+                        f[1] = -sn * u + c * w + tt->offset[1];
+                    }
                     m.vertices[v].uv = {f[0], 1 - f[1]};
                 }
                 if (col && v < col->count) {
