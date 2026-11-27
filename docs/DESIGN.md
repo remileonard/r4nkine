@@ -243,7 +243,8 @@ Each loader is a port of the loader in legacy_opengl_demo. The loaders keep the 
 | later | culling in threads (APP/CULL/DRAW as in Performer); occlusion culling (horizon, occlusion queries or Hi-Z) | not done |
 | game | APP traversal with node callbacks, trigger volumes connected to the message bus of libRealSpace, areas as nodes and scenes as switches: see [GAME_INTEGRATION.md](GAME_INTEGRATION.md) | **done** |
 | game 2 | ISECT queries (segments and rays: ground height, collisions), APP at the fixed time step, views that do not draw, for a server | not done |
-| audio | `r4nkine_audio`: sound with OpenAL Soft, sources and streams, sound sources as nodes of the graph, a listener on the camera or the head, updated after APP; r4fly `-sound`: see [AUDIO.md](AUDIO.md) | **done** (libRealSpace: not done) |
+| audio | `r4nkine_audio`: sound with OpenAL Soft, sources and streams, sound sources as nodes of the graph, a listener on the camera or the head, updated after APP; r4fly `-sound`: see [AUDIO.md](AUDIO.md) | **done** (libRealSpace: in `contrib/librealspace`) |
+| OBJ groups | the OBJ loader keeps the structure of the file: each `o` a named Group node, each `g` in it a named Group node with its meshes by material, the groups `lodN` a LOD node (done). Above a number of groups (for example 256, the exports of CAD), the meshes are merged by material, as now. OBJ has no transforms: a group has no pivot (the center of its bounds can be one). `g` with several names: the first name, or the full line. The smoothing groups `s` are not parts. | not done |
 
 ## RealSpace (libRealSpace)
 
