@@ -207,3 +207,20 @@ bump = {"asset": {"version": "2.0"}, "scene": 0, "scenes": [{"nodes": [0, 1]}], 
         "buffers": [{"byteLength": len(bbuf), "uri": "data:application/octet-stream;base64," + base64.b64encode(bbuf).decode()}],
         "bufferViews": views, "accessors": accessors}
 open('bump.gltf', 'w').write(json.dumps(bump))
+
+# OBJ without a .mtl: two levels of detail (g lod0, g lod1) and the named materials rgb_RRGGBB, glass and body
+lods = """# two levels of detail
+v 0 0 0
+v 1 0 0
+v 0 1 0
+v 1 1 0
+g lod0
+usemtl rgb_FF8000
+f 1 2 3
+usemtl glass
+f 2 4 3
+g lod1
+usemtl body
+f 1 2 4
+"""
+open('lods.obj', 'w').write(lods)

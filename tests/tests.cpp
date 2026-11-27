@@ -378,6 +378,24 @@ static void testStep2(const std::string &dir) {
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
     }
+    // OBJ without a .mtl: the groups lod0 and lod1 under a LOD node, the named materials
+    auto lods = assets::loadModel(dir + "/lods.obj", &err);
+    CHECK(lods != nullptr);
+    if (lods) {
+        CHECK(lods->nodes.size() == 4 && lods->nodes[0].children.size() == 1);
+        const assets::Node &lodNode = lods->nodes[lods->nodes[0].children[0]];
+        CHECK(lodNode.kind == assets::NodeKind::LOD && lodNode.children.size() == 2 && lodNode.lodRanges.size() == 3);
+        CHECK(near(lodNode.lodRanges[0], 0) && lodNode.lodRanges[1] > 0 && lodNode.lodRanges[2] > 1e20f);
+        CHECK(lods->nodes[lodNode.children[0]].meshes.size() == 2 && lods->nodes[lodNode.children[1]].meshes.size() == 1);
+        const assets::Material &orange = lods->materials[0];
+        const assets::Material &glass = lods->materials[1];
+        const assets::Material &body = lods->materials[2];
+        CHECK(orange.name == "rgb_FF8000" && near(orange.diffuse.x, 1) && near(orange.diffuse.y, 128.0f / 255) && near(orange.diffuse.z, 0));
+        CHECK(glass.alpha == assets::AlphaMode::BLEND && glass.diffuse.w < 1 && glass.doubleSided);
+        CHECK(near(body.diffuse.x, 0.6f) && body.alpha == assets::AlphaMode::NONE);
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
     // a normal map and its scale; the quad beside it has none
     auto bump = assets::loadModel(dir + "/bump.gltf", &err);
     CHECK(bump != nullptr);

@@ -653,6 +653,15 @@ R4nkine has loaders for these formats:
 
 Other formats use Assimp. Build with the option `R4_WITH_ASSIMP` to read them. Examples are FBX, COLLADA, 3DS, PLY and STL.
 
+An OBJ file without a `.mtl` can name its materials with these conventions. A `.mtl` always has priority.
+
+- `usemtl rgb_RRGGBB`: the color RRGGBB (hexadecimal).
+- `usemtl glass`: a tinted glass, blended.
+- Another name: grey.
+- `g lod0`, `g lod1`...: the levels of detail of a LOD node, the first one the nearest. A level is used up to 30, 60, 90... times the radius of the object; the last one has no limit.
+
+The airframes of the module enhanced of libRealSpace use these conventions.
+
 An OpenFlight file can refer to other files. The loader finds these files with the search paths. Chapter 7.5 describes the search paths.
 
 The glTF loader changes the PBR materials to the materials of R4nkine:
