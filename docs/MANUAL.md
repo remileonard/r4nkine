@@ -675,7 +675,9 @@ The glTF loader changes the PBR materials to the materials of R4nkine:
 - `KHR_materials_transmission` (glass) gives a blended material: a fully transmissive material lets 85 % of the light through. There is no refraction.
 - `KHR_materials_emissive_strength` multiplies the emissive color.
 - `KHR_materials_unlit` gives an unlit material.
-- Not read: the occlusion and metallic-roughness textures, the clearcoat, the iridescence, the variants (the default material is used).
+- The metallic-roughness texture multiplies the metal (blue) and the roughness (green) at each pixel. The occlusion texture (red) darkens the ambient light and the reflections, with its strength. They are read on the first texture coordinates only.
+- `KHR_materials_volume` (a solid glass object) lets 55 % of the light through, not 85 %: its color shows more.
+- Not read: the textures on the second texture coordinates, the clearcoat, the iridescence, the sheen, the variants (the default material is used).
 
 ### 7.4 Images
 

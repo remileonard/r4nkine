@@ -54,6 +54,11 @@ struct Material {
     // a tangent space normal map (OpenGL convention, +Y up), an index in Model::images; normalScale scales its X and Y
     int normalImage = -1;
     float normalScale = 1;
+    // glTF: the metal in blue and the roughness in green multiply metallic and roughness; the ambient occlusion in red (its
+    // strength: 1 the full texture, 0 none). Indices in Model::images.
+    int metallicRoughnessImage = -1;
+    int occlusionImage = -1;
+    float occlusionStrength = 1;
     bool sphereMap = false;
     AlphaMode alpha = AlphaMode::NONE;
     float alphaCutoff = 0.5f;

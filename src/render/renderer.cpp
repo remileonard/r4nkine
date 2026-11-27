@@ -55,6 +55,7 @@ struct MaterialBlock {
     float textureMean[4];
     float animation[4]; // frames, frames per second, out of the fog
     float pbr[4];       // metallic, roughness (< 0: not a PBR material), scale of the normal map (0: none)
+    float pbr2[4];      // metallic-roughness texture (1: there), strength of the occlusion texture (0: none)
 };
 
 // the matrix of a placement in the vertex shader, as Instancer::matrixOf, grown by drawUp.w
@@ -116,6 +117,7 @@ layout(std140) uniform Material {
     vec4 textureMean;
     vec4 animation;
     vec4 pbr;
+    vec4 pbr2;
 };
 out vec3 vNormal;
 out vec3 vPosition;
@@ -180,12 +182,15 @@ layout(std140) uniform Material {
     vec4 textureMean;
     vec4 animation;
     vec4 pbr;
+    vec4 pbr2;
 };
 uniform sampler2D diffuseMap;
 uniform sampler2DShadow shadowMap;
 uniform sampler2D indexMap;
 uniform sampler2D emissiveMap;
 uniform sampler2D normalMap;
+uniform sampler2D metallicRoughnessMap;
+uniform sampler2D occlusionMap;
 in vec4 vShadow;
 in vec3 vNormal;
 in vec3 vPosition;
@@ -395,12 +400,22 @@ void main() {
             color = glow + base.rgb * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl) + specular.rgb * lightColor.rgb * spec;
         } else {
             // a metal has no diffuse light; all reflect the environment more at a grazing angle (Schlick)
-            float rough = clamp(pbr.y, 0.0, 1.0);
-            vec3 f0 = mix(vec3(0.04), base.rgb, pbr.x);
+            float metal = pbr.x;
+            float rough = pbr.y;
+            if (pbr2.x > 0.5) {
+                vec3 mr = texture(metallicRoughnessMap, uv).rgb;
+                rough *= mr.g;
+                metal *= mr.b;
+            }
+            rough = clamp(rough, 0.0, 1.0);
+            float occlusion = 1.0 + pbr2.y * (texture(occlusionMap, uv).r - 1.0);
+            float shininess = min(2.0 / pow(max(rough, 0.05), 4.0) - 2.0, 256.0);
+            spec = nl > 0.0 ? pow(max(dot(n, normalize(l + v)), 0.0), shininess) : 0.0;
+            vec3 f0 = mix(vec3(0.04), base.rgb, metal);
             float grazing = pow(1.0 - max(dot(n, v), 0.0), 5.0);
             vec3 fresnel = f0 + (vec3(1.0) - f0) * grazing * (1.0 - rough);
-            vec3 reflected = environment(reflect(-v, n), rough) * fresnel;
-            vec3 diffuseLight = base.rgb * (1.0 - pbr.x) * (ambient.rgb * ambientLight.rgb + lightColor.rgb * nl);
+            vec3 reflected = environment(reflect(-v, n), rough) * fresnel * occlusion;
+            vec3 diffuseLight = base.rgb * (1.0 - metal) * (ambient.rgb * ambientLight.rgb * occlusion + lightColor.rgb * nl);
             color = glow + diffuseLight + reflected + f0 * lightColor.rgb * spec;
             // a glass shows its reflection: it is less transparent where it reflects more
             base.a = mix(base.a, 1.0, max(fresnel.r, max(fresnel.g, fresnel.b)));
@@ -554,7 +569,7 @@ bool Renderer::createShaders() {
     d.vertex = kVertexShader;
     d.fragment = kFragmentShader;
     d.uniformBlocks = {{"Frame", FRAME_SLOT}, {"Material", MATERIAL_SLOT}};
-    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}, {"emissiveMap", 3}, {"normalMap", 4}};
+    d.samplers = {{"diffuseMap", 0}, {"shadowMap", 1}, {"indexMap", 2}, {"emissiveMap", 3}, {"normalMap", 4}, {"metallicRoughnessMap", 5}, {"occlusionMap", 6}};
     d.debugName = "phong";
     shader_ = device_.createShader(d);
     if (!shader_) {
@@ -695,7 +710,7 @@ std::shared_ptr<GpuMesh> Renderer::uploadMesh(const assets::Mesh &mesh) {
     return m;
 }
 
-std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture, gpu::TextureHandle emissiveTexture, gpu::TextureHandle normalTexture) {
+std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Material &p, gpu::TextureHandle texture, gpu::TextureHandle indexTexture, const MaterialTextures &more) {
     gpu::Device *dev = &device_;
     auto m = std::shared_ptr<MaterialInstance>(new MaterialInstance, [dev](MaterialInstance *mi) {
         dev->destroyBuffer(mi->uniforms);
@@ -704,8 +719,10 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     m->params = p;
     m->texture = texture;
     m->indexTexture = indexTexture;
-    m->emissiveTexture = emissiveTexture;
-    m->normalTexture = normalTexture;
+    m->emissiveTexture = more.emissive;
+    m->normalTexture = more.normal;
+    m->metallicRoughnessTexture = more.metallicRoughness;
+    m->occlusionTexture = more.occlusion;
     m->id = nextMaterialId_++;
     MaterialBlock b{};
     b.diffuse[0] = p.diffuse.x;
@@ -740,7 +757,9 @@ std::shared_ptr<MaterialInstance> Renderer::createMaterial(const assets::Materia
     b.animation[2] = p.fog ? 0.0f : 1.0f;
     b.pbr[0] = p.metallic;
     b.pbr[1] = p.roughness;
-    b.pbr[2] = normalTexture ? p.normalScale : 0.0f;
+    b.pbr[2] = more.normal ? p.normalScale : 0.0f;
+    b.pbr2[0] = more.metallicRoughness ? 1.0f : 0.0f;
+    b.pbr2[1] = more.occlusion ? p.occlusionStrength : 0.0f;
     m->uniforms = device_.createBuffer(gpu::BufferUsage::UNIFORM, &b, sizeof b, false);
     return m;
 }
@@ -754,9 +773,15 @@ scene::NodePtr Renderer::upload(const assets::Model &model) {
     for (const assets::Material &m : model.materials) {
         gpu::TextureHandle texture = m.diffuseImage >= 0 && m.diffuseImage < (int)textures.size() ? textures[m.diffuseImage] : gpu::TextureHandle{};
         gpu::TextureHandle indexTexture = m.indexImage >= 0 && m.indexImage < (int)textures.size() ? textures[m.indexImage] : gpu::TextureHandle{};
-        gpu::TextureHandle emissiveTexture = m.emissiveImage >= 0 && m.emissiveImage < (int)textures.size() ? textures[m.emissiveImage] : gpu::TextureHandle{};
-        gpu::TextureHandle normalTexture = m.normalImage >= 0 && m.normalImage < (int)textures.size() ? textures[m.normalImage] : gpu::TextureHandle{};
-        materials.push_back(createMaterial(m, texture, indexTexture, emissiveTexture, normalTexture));
+        auto textureOf = [&](int image) {
+            return image >= 0 && image < (int)textures.size() ? textures[image] : gpu::TextureHandle{};
+        };
+        MaterialTextures more;
+        more.emissive = textureOf(m.emissiveImage);
+        more.normal = textureOf(m.normalImage);
+        more.metallicRoughness = textureOf(m.metallicRoughnessImage);
+        more.occlusion = textureOf(m.occlusionImage);
+        materials.push_back(createMaterial(m, texture, indexTexture, more));
     }
     std::vector<std::shared_ptr<GpuMesh>> meshes;
     for (const assets::Mesh &m : model.meshes) {
@@ -1291,6 +1316,8 @@ void Renderer::render(scene::Node &root, const Camera &cam, int x, int y, int wi
                 }
                 device_.bindTexture(3, it.material->emissiveTexture ? it.material->emissiveTexture : white_);
                 device_.bindTexture(4, it.material->normalTexture ? it.material->normalTexture : white_);
+                device_.bindTexture(5, it.material->metallicRoughnessTexture ? it.material->metallicRoughnessTexture : white_);
+                device_.bindTexture(6, it.material->occlusionTexture ? it.material->occlusionTexture : white_);
                 lastMaterial = it.material;
             }
             if (it.mesh != lastMesh) {
