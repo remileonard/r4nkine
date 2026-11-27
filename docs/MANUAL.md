@@ -655,6 +655,15 @@ Other formats use Assimp. Build with the option `R4_WITH_ASSIMP` to read them. E
 
 An OpenFlight file can refer to other files. The loader finds these files with the search paths. Chapter 7.5 describes the search paths.
 
+The glTF loader changes the PBR materials to the materials of R4nkine:
+
+- The base color gives the diffuse color. The metallic and roughness factors give the specular color and the shininess.
+- `alphaMode` gives the alpha mode: `BLEND` or `MASK` with its cutoff.
+- `KHR_materials_transmission` (glass) gives a blended material: a fully transmissive material lets 85 % of the light through. There is no refraction.
+- `KHR_materials_emissive_strength` multiplies the emissive color.
+- `KHR_materials_unlit` gives an unlit material.
+- A polished metal reflects its environment in PBR. R4nkine has no environment map: a white metal (chrome, mirror) shows white.
+
 ### 7.4 Images
 
 An `Image` is a set of pixels in memory. Each pixel has one byte for each channel. The first row is at the bottom of the image.

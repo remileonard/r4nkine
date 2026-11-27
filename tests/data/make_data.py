@@ -129,3 +129,14 @@ gltf = {
                   {"bufferView": 3, "componentType": 5123, "count": 3, "type": "SCALAR"}],
 }
 open('tri.gltf', 'w').write(json.dumps(gltf, indent=1))
+
+# glTF: the same triangle in glass (KHR_materials_transmission) that glows (KHR_materials_emissive_strength)
+glass = dict(gltf)
+glass["extensionsUsed"] = ["KHR_materials_transmission", "KHR_materials_emissive_strength"]
+glass["materials"] = [{"name": "glass", "pbrMetallicRoughness": {"baseColorFactor": [1, 1, 1, 1], "roughnessFactor": 0, "metallicFactor": 0},
+                       "emissiveFactor": [0.1, 0.2, 0.3],
+                       "extensions": {"KHR_materials_transmission": {"transmissionFactor": 1},
+                                      "KHR_materials_emissive_strength": {"emissiveStrength": 2}}}]
+del glass["textures"]
+del glass["images"]
+open('glass.gltf', 'w').write(json.dumps(glass, indent=1))

@@ -366,6 +366,16 @@ static void testStep2(const std::string &dir) {
     } else {
         std::fprintf(stderr, "%s\n", err.c_str());
     }
+    // glass: a blend that lets 85 % of the light through; the emissive strength multiplies the emissive color
+    auto glass = assets::loadModel(dir + "/glass.gltf", &err);
+    CHECK(glass != nullptr);
+    if (glass) {
+        const assets::Material &m = glass->materials[glass->meshes[0].material];
+        CHECK(m.alpha == assets::AlphaMode::BLEND && near(m.diffuse.w, 0.15f));
+        CHECK(near(m.emissive.x, 0.2f) && near(m.emissive.z, 0.6f));
+    } else {
+        std::fprintf(stderr, "%s\n", err.c_str());
+    }
 }
 
 static void testRaster() {

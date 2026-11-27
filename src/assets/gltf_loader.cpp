@@ -25,6 +25,9 @@
 namespace r4::assets {
 namespace {
 
+// the part of the light that a fully transmissive material (glass) lets through: its opacity is 1 - 0.85
+constexpr float kTransmitted = 0.85f;
+
 std::string resultText(cgltf_result r) {
     switch (r) {
     case cgltf_result_data_too_short:
@@ -163,6 +166,9 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
             m.shininess = std::fmin(2.0f / (rough * rough * rough * rough) - 2.0f, 256.0f);
         }
         m.emissive = {gm.emissive_factor[0], gm.emissive_factor[1], gm.emissive_factor[2]};
+        if (gm.has_emissive_strength) {
+            m.emissive *= gm.emissive_strength.emissive_strength;
+        }
         if (gm.unlit) {
             m.shading = Shading::UNLIT;
         }
@@ -172,6 +178,11 @@ std::shared_ptr<Model> loadGLTF(const std::string &path, std::string *error) {
         } else if (gm.alpha_mode == cgltf_alpha_mode_mask) {
             m.alpha = AlphaMode::MASK;
             m.alphaCutoff = gm.alpha_cutoff;
+        }
+        // KHR_materials_transmission (glass): no refraction here, a blend that lets the light through; its highlight stays
+        if (gm.has_transmission && gm.transmission.transmission_factor > 0 && m.alpha != AlphaMode::MASK) {
+            m.alpha = AlphaMode::BLEND;
+            m.diffuse.w *= 1.0f - kTransmitted * gm.transmission.transmission_factor;
         }
         materials[&gm] = (int)model->materials.size();
         model->materials.push_back(m);
