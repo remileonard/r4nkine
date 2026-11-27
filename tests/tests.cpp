@@ -581,6 +581,25 @@ static void testAssimp(const std::string &dir) {
         return;
     }
     CHECK(std::find(ext.begin(), ext.end(), "fbx") != ext.end());
+    // the same texture coordinates as the loaders of R4nkine, for a format with v from the bottom (OBJ) and one with v from
+    // the top (glTF)
+    for (const char *file : {"/quad.obj", "/tri.gltf"}) {
+        std::string why;
+        auto own = assets::loadModel(dir + file, &why);
+        auto other = assets::loadAssimp(dir + file, &why);
+        CHECK(own && other);
+        if (own && other) {
+            bool same = true;
+            for (const assets::Vertex &a : own->meshes[0].vertices) {
+                bool found = false;
+                for (const assets::Vertex &b : other->meshes[0].vertices) {
+                    found = found || (length(a.position - b.position) < 1e-4f && near(a.uv.x, b.uv.x) && near(a.uv.y, b.uv.y));
+                }
+                same = same && found;
+            }
+            CHECK(same);
+        }
+    }
     std::vector<std::string> all = assets::modelExtensions();
     CHECK(std::count(all.begin(), all.end(), "obj") == 1);
     std::string err;

@@ -229,7 +229,8 @@ std::shared_ptr<Model> loadAssimp(const std::string &path, std::string *error) {
                 out.normal = {am.mNormals[v].x, am.mNormals[v].y, am.mNormals[v].z};
             }
             if (am.HasTextureCoords(0)) {
-                out.uv = {am.mTextureCoords[0][v].x, 1.0f - am.mTextureCoords[0][v].y};
+                // Assimp gives the texture coordinates of OpenGL (v from the bottom) for all the formats, as R4nkine
+                out.uv = {am.mTextureCoords[0][v].x, am.mTextureCoords[0][v].y};
             }
             if (am.HasVertexColors(0)) {
                 const aiColor4D &c = am.mColors[0][v];
