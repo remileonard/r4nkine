@@ -14,12 +14,13 @@ This folder holds code for libRealSpace (branch `r4nkine`). Move it into libReal
 
 ## Apply
 
-From the root of libRealSpace, on the branch `r4nkine`:
+The branch `r4nkine` of libRealSpace (commit `3a11f13`) has the files of `src` and most of the changes. The patch has the changes that are not in it. From the root of libRealSpace, on the branch `r4nkine`:
 
 ```sh
-cp -r <r4nkine>/contrib/librealspace/src/. src/
 git apply <r4nkine>/contrib/librealspace/patches/r4-audio.patch
 ```
+
+The files of `src` are the same as in libRealSpace at `3a11f13`. Do not copy them again.
 
 Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg, OpenAL Soft). Without `r4nkine_audio`, `R4Mixer` is not built and `neosc_r4` keeps `RSMixer` and SDL_mixer.
 
@@ -27,17 +28,10 @@ Configure with a R4nkine that has `r4nkine_audio` (the `audio` feature of vcpkg,
 
 | File | Change |
 | --- | --- |
-| `src/engine/AILXmidiDriver.h`, `.cpp` | `endlessLoopStarts` and `endlessLoopJumps`: the driver counts the loops without end (`FOR_LOOP` with a count of 0) and the jumps of their `NEXT_LOOP`. |
-| `src/engine/RSMixer.h`, `.cpp` | `setInstance`, as `SCRenderer`. The members are protected. The functions of the effects and of the channels are virtual. `init` is in two parts: `initEngine(rate)` makes the devices, and `init` opens SDL_mixer. New: `playEffectAt` and `playOrUpdateEffectAt` with the position. |
 | `src/engine/Mt32Synth.h`, `.cpp`, `Mt32EmuOutput.h` | `Mt32Synth::readRoms` reads the files of the ROM folder once, and `open(roms, rate)` starts a synth from them in memory (`mt32emu_add_rom_data`). `open(romDir, rate)` does the two. |
-| `src/strike_commander/SCMission.h`, `.cpp` | `playEffect` and `playOrUpdateEffect` give the position to the mixer. `playOrUpdateEffect` takes the position of the emitter, not the distance. |
-| `src/strike_commander/SCPlane.cpp`, `SCMissionActors.cpp` | The calls of `playOrUpdateEffect` give the position. |
-| `src/r4bridge/CMakeLists.txt` | `R4SoundFx`. |
-| `src/r4game/CMakeLists.txt` | `R4Mixer` and the link to `r4nkine::r4nkine_audio` when the target exists (`R4GAME_AUDIO`). |
-| `src/r4game/R4Screen.cpp` | `R4Mixer::update()` at each frame, in `refresh`. |
 | `src/r4game/R4ConfigPanel.cpp` | In the Sound group: Music Volume and Effects Volume (they apply at once), Effects Synthesizer and HRTF (at the next start). |
-| `src/executables/neosc_r4/main.cpp` | `RSMixer::setInstance(std::make_unique<R4Mixer>())`. |
-| `cmake/R4nkine.cmake` | `r4soundplayer`, when `r4nkine::r4nkine_audio` exists. |
+
+The other changes are in libRealSpace at `3a11f13`: `AILXmidiDriver` (the loops without end), `RSMixer` (`setInstance`, `initEngine`, `playEffectAt`, `playOrUpdateEffectAt`), `SCMission`, `SCPlane`, `SCMissionActors`, the CMake files of `r4bridge` and `r4game`, `R4Screen`, `neosc_r4/main.cpp` and `cmake/R4nkine.cmake`.
 
 ## Player
 
@@ -76,7 +70,7 @@ The volumes are the volume groups of `r4nkine_audio`: the music stream is in the
 
 ## Tests done
 
-- The build of all the targets of libRealSpace with the patch, on Linux.
+- The build of all the targets of libRealSpace at `3a11f13` with the patch, on Linux.
 - The effects of `SOUNDFX.ADL` on the OPL (`LILTRE.TRE`): 14 effects, rendered in 0.5 to 0.9 s. 4 loop: `GUN_FIRE` (introduction 1 s, loop 4.42 s) and the effects 6, 7 and 13. They hold a note without end: their loop is found in the wave. At the join of each loop, the step between two samples is as small as the median step of the sound. The 10 other effects end (0.33 to 4.08 s).
 - The TVFX voices keep a noise of 1 to 6 units after the end of an effect. Below 16 units, `renderSoundFx` takes it as silence.
 - `decodeVoc`: the 31 VOC of `DSOUNDFX.PAK` (entry 22 is empty), and the 39 VOC of the cutscenes, which have the length that SDL_mixer gives.
