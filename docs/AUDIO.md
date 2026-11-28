@@ -1,6 +1,6 @@
 # Spatial audio: `r4nkine_audio`
 
-This document gives the design of the audio of R4nkine. Steps 1 to 4 of "Sequence of work" are done. The code of steps 5 and 6 is in `contrib/librealspace`, to move into libRealSpace. The API is in `include/r4/audio/audio.h`.
+This document gives the design of the audio of R4nkine. Steps 1 to 4 of "Sequence of work" are done. The code of steps 5 and 6 is in libRealSpace (branch `r4nkine`). The API is in `include/r4/audio/audio.h`.
 
 The scene graph knows the position of each node, the camera, and the head in virtual reality. Thus, R4nkine can put the sounds in space. The module plays the sounds and puts them in space. The application makes the sounds. The OpenAL module of OpenSceneGraph (osgAL, then osgAudio) uses the same model.
 
@@ -215,5 +215,5 @@ Thus, `neosc_r4` opens one audio device only, and it does not need SDL_mixer.
 2. r4fly: `-sound file.wav` plays a sound that turns about the models, heard from the camera; `-hrtf`. **Done.**
 3. Virtual reality: the listener on the head (`fromCameraPose(session.head())`, in r4fly with `-vr`). **Done.**
 4. `r4nkine_audio`: loop points in `Sound` (`AL_SOFT_loop_points`): a sound plays its introduction one time, then loops on its body. `Listener::setPose`. The volume groups (`Source::group`, `Context::setGroupGain`). **Done.**
-5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. **Code in `contrib/librealspace`** (`R4Mixer`, `patches/r4-audio.patch`). The VOC decoder gives the lengths of SDL_mixer.
-6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Code in `contrib/librealspace`** (`R4SoundFx` in r4bridge, `R4Mixer`). The 14 effects of `SOUNDFX.ADL` are rendered on the OPL; 4 hold a note without end, and their loop is found in the wave. `r4soundplayer` plays the effects, the VOC and the music. Not tested: a sound card, the MT-32 ROMs. Refer to `contrib/librealspace/README.md`.
+5. libRealSpace, `R4Mixer`: the output through `r4nkine_audio` for all the modes. The music in a `Stream`, the voices and the radio on sources without position, the VOC decoder. **Done in libRealSpace** (`src/r4game/R4Mixer`). The VOC decoder gives the lengths of SDL_mixer.
+6. libRealSpace: the render of the XMIDI effects into PCM buffers (the loops, the synthesizer of each mode), the effects on positional sources, the listener on the camera. **Done in libRealSpace** (`R4SoundFx` in `src/r4bridge`, `R4Mixer`). The 14 effects of `SOUNDFX.ADL` are rendered on the OPL; 4 hold a note without end, and their loop is found in the wave. `r4soundplayer` plays the effects, the VOC and the music. Not tested: a sound card, the MT-32 ROMs. Refer to `README_R4NKINE.md` of libRealSpace.
